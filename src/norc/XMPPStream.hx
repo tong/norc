@@ -6,6 +6,7 @@ class XMPPStream extends jabber.client.Stream {
 
 	public function new( host : String, ?ip : String) {
 
+		
 		#if crx
 		//trace("chrome_ext");
 		//trace(host);
@@ -14,7 +15,7 @@ class XMPPStream extends jabber.client.Stream {
 		var cnx = new jabber.BOSHConnection( host, "localhost:7070/http-bind/" );
 		//var cnx = new jabber.SocketConnection( 'localhost' );
 
-		#elseif chrome_app
+		#elseif cra
 		var cnx = new jabber.SocketConnection( host );
 		
 		#elseif web
@@ -23,8 +24,14 @@ class XMPPStream extends jabber.client.Stream {
 		//#elseif java
 		//var cnx = new jabber.JavaSocketConnection( "localhost" );
 
+		#elseif android
+		if( ip == null ) ip = host;
+		var cnx = new jabber.SocketConnection( ip );
+
 		#elseif sys
-		var cnx = new jabber.SocketConnection( host );
+		if( ip == null ) ip = host;
+		var cnx = new jabber.SocketConnection( ip );
+		//var cnx = new jabber.SecureSocketConnection( ip );
 
 		#end
 
