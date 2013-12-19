@@ -14,6 +14,7 @@ import om.EventDispatcher;
 using Lambda;
 
 /**
+	Norc xmpp session
 */
 class Session {
 
@@ -23,10 +24,10 @@ class Session {
 	public var onDisconnect(default,null) : EventDispatcher<Null<String>>;
 
 	public var connected(default,null) : Bool;
-	public var user(default,null) : String;
-	public var host(default,null) : String;
-	public var resource(default,null) : String;
 	public var jid(default,null) : JID;
+	//public var user(get,null) : String;
+	//public var host(get,null) : String;
+	//public var resource(get,null) : String;
 	public var password(default,null) : String;
 	public var ip(default,null) : String;
 
@@ -41,18 +42,16 @@ class Session {
 	//public var chat(default,null) : ChatManager;
 	//public var groupChat(default,null) : GroupChatManager;
 
-	@:allow(norc.session)
-	var stream : XMPPStream;
 	var discoListener : ServiceDiscoveryListener;
 	var pong : jabber.Pong;
+	
+	@:allow(norc.session) var stream : XMPPStream;
 
 	function new( jid : String, password : String, ?ip : String ) {
 		
 		if( !JIDUtil.isValid( jid ) )
 			throw 'Invalid jid ($jid)';
 
-		//this.user = user;
-		//this.
 		this.jid = new JID( jid );
 		this.password = password;
 		this.ip = ip;
@@ -68,9 +67,9 @@ class Session {
 		//commands = new CommandManager( this );
 	}
 
-	//inline function get_node() : String return jid.node;
-	//inline function get_server() : String return jid.domain;
-	//inline function get_resource() return jid.resource;
+	inline function get_user() : String return jid.node;
+	inline function get_server() : String return jid.domain;
+	inline function get_resource() return jid.resource;
 
 	/*
 	function get_ip() : String {
@@ -83,10 +82,7 @@ class Session {
 	*/
 
 	public function connect() {
-		//TODO
-		//var host = 'jabber.disktree.net';//jid.domain;
-		//var ip = 'localhost';
-		stream = new XMPPStream( host, ip );
+		stream = new XMPPStream( jid.domain, ip );
 		stream.onOpen = handleStreamOpen;
 		stream.onClose = handleStreamClose;
 		stream.open( jid.s );
@@ -98,19 +94,26 @@ class Session {
 		}
 	}
 
-	/*
-	public function sendMessage( to : String, content : String, ?html : String ) {
-		var m = new xmpp.Message( to, content );
+	public function sendMessage( jid : String, content : String, ?html : String ) {
+		var m = new xmpp.Message( jid, content );
 		if( html != null )
 			xmpp.XHTML.attach( m, html );
 		stream.sendPacket( m );
 	}
-	*/
+
+	public function toString() : String {
+		var s = new StringBuf();
+		s.add( 'norc.Session {\n' );
+		s.add( '  $jid' );
+		//s.add( '\t$presence' );
+		s.add( '\n}' );
+		return s.toString();
+	}
 
 	function handleStreamOpen() {
 		var mechs : Array<jabber.sasl.Mechanism> = [
 			new jabber.sasl.MD5Mechanism(),
-			new jabber.sasl.PlainMechanism()
+			//new jabber.sasl.PlainMechanism()
 		];
 		var auth = new jabber.client.Authentication( stream, mechs );
 		auth.onSuccess = handleLogin;
@@ -130,17 +133,20 @@ class Session {
 
 	function handleLogin() {
 
-		//new jabber.PresenceListener( stream, handlePresence );
-		//new jabber.MessageListener( stream, handleMessage );
+		contacts = new ContactManager( this );
+		contacts.onLoad = handleContactsLoad;
+		contacts.load();
 
-		//discoListener = new ServiceDiscoveryListener( stream );
-		//discoListener.onInfoQuery = handleDiscoInfoQuery;
-		//discoListener.onItemsQuery = handleDiscoItemsQuery;
+		new jabber.PresenceListener( stream, handlePresence );
+		new jabber.MessageListener( stream, handleMessage );
 
+		discoListener = new ServiceDiscoveryListener( stream );
+		discoListener.onInfoQuery = handleDiscoInfoQuery;
+		discoListener.onItemsQuery = handleDiscoItemsQuery;
 		
-		onConnect.dispatch( true );
+		//onConnect.dispatch( true );
 
-		trace("!!!!!!!!! " );
+		//trace("!!!!!!!!! " );
 
 		/*
 		server.requestInfo(function(info){
@@ -185,7 +191,7 @@ class Session {
 
 		var jid = new JID( p.from );
 		
-		trace( jid );
+		//trace( "handlePresence "+jid );
 
 		if( jid.bare == this.jid.bare ) {
 			trace("TODO handle presence from own account");
@@ -193,24 +199,45 @@ class Session {
 		}
 
 		var contact = contacts.get(jid.bare );
+		/*
 		if( contact == null ) {
-			trace("presence from inknown entity "+p.from );
+			trace( 'Received presence from unknown entity (${p.from})' );
 			return;
 		}
-		contact.handlePresence( p );
-		contacts.onPresence.dispatch( contact );
+		*/
+		if( contact != null ) {
+			contact.handlePresence( p );
+			contacts.onPresence.dispatch( contact );
+		}
 	}
 
 	function handleMessage( m : xmpp.Message ) {
-		trace( 'handleMessage '+m.from );
+		//trace( 'handleMessage '+m.from );
+		var jid = new JID( m.from );
+		if( jid.bare == this.jid.bare ) {
+			trace("TODO handle message from own account");
+			return;
+		}
+		var contact = contacts.get(jid.bare );
+		/*
+		if( contact == null ) {
+			trace("message from unknown entity "+m.from );
+			return;
+		}
+		*/
+		if( contact != null ) {
+			contact.handleMessage( m );
+			//var e = new norc.event.MessageEvent( m.from, m.body );
+			//contacts.onMessage.dispatch( e );
+		}
 	}
 
 	function handleContactsLoad() {
 
 		//commands = new norc.session.CommandManager( this );
 
-		connected = true;
-		onConnect.dispatch( true );
+		//connected = true;
+		//onConnect.dispatch( true );
 
 		handleReady();
 	}
@@ -242,7 +269,8 @@ class Session {
 	}
 
 	function handleReady() {
-		trace( "norc session ready" );
+		connected = true;
+		onConnect.dispatch( true );
 	}
 
 	function cleanup() {

@@ -3,7 +3,9 @@
 ## NORC - Network Organism Responsible for Communication
 ##
 
-all: cra crx sys web
+### cra crx ffos sys web
+
+all: sys
 
 cra:
 	@(cd app/cra;make)
@@ -14,11 +16,11 @@ crx:
 ffos:
 	@(cd app/ffos;make)
 
-googlescript:
-	@(cd app/googlescript;make)
+#googlescript:
+#	@(cd app/googlescript;make)
 
 sys:
-	@(cd app/sys;make)
+	@make -C app/sys --no-print-directory
 
 web:
 	@(cd app/web;make)
