@@ -8,7 +8,6 @@ import norc.session.PresenceManager;
 import norc.session.ContactManager;
 import norc.session.ServerInfo;
 import norc.session.CommandManager;
-import norc.session.FileTransferManager;
 import om.EventDispatcher;
 
 using Lambda;
@@ -18,22 +17,19 @@ using Lambda;
 */
 class Session {
 
-	// TODO put the event dispatchers into another class to decouple listeners from this class
 
 	public var onConnect(default,null) : EventDispatcher<Dynamic>;
 	public var onDisconnect(default,null) : EventDispatcher<Null<String>>;
 
 	public var connected(default,null) : Bool;
-	public var jid(default,null) : JID;
-	//public var user(get,null) : String;
-	//public var host(get,null) : String;
-	//public var resource(get,null) : String;
-	public var password(default,null) : String;
 	public var ip(default,null) : String;
-
+	public var jid(default,null) : JID;
+	public var node(get,null) : String;
+	public var host(get,null) : String;
+	public var resource(get,null) : String;
+	public var password(default,null) : String;
 	public var presence(default,null) : PresenceManager;
 	public var contacts(default,null) : ContactManager;
-	
 //	public var server(default,null) : ServerInfo;
 //	public var commands(default,null) : CommandManager;
 //	public var fileTransfer(default,null) : FileTransferManager;
@@ -65,10 +61,12 @@ class Session {
 		presence = new PresenceManager( this );
 		contacts = new ContactManager( this );
 		//commands = new CommandManager( this );
+		
+		stream = new XMPPStream( host, ip );
 	}
 
-	inline function get_user() : String return jid.node;
-	inline function get_server() : String return jid.domain;
+	inline function get_node() : String return jid.node;
+	inline function get_host() : String return jid.domain;
 	inline function get_resource() return jid.resource;
 
 	/*
@@ -82,7 +80,6 @@ class Session {
 	*/
 
 	public function connect() {
-		stream = new XMPPStream( jid.domain, ip );
 		stream.onOpen = handleStreamOpen;
 		stream.onClose = handleStreamClose;
 		stream.open( jid.s );
@@ -145,7 +142,6 @@ class Session {
 		discoListener.onItemsQuery = handleDiscoItemsQuery;
 		
 		//onConnect.dispatch( true );
-
 		//trace("!!!!!!!!! " );
 
 		/*
@@ -212,7 +208,6 @@ class Session {
 	}
 
 	function handleMessage( m : xmpp.Message ) {
-		//trace( 'handleMessage '+m.from );
 		var jid = new JID( m.from );
 		if( jid.bare == this.jid.bare ) {
 			trace("TODO handle message from own account");
