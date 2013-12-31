@@ -18,6 +18,9 @@ class XMPPStream extends jabber.client.Stream {
 		#elseif cra
 		var cnx = new jabber.SocketConnection( host );
 		
+		#elseif googlescript
+		var cnx = new jabber.BOSHConnection( host, "jabber.spektral.at/jabber" );
+
 		#elseif web
 		var cnx = new jabber.BOSHConnection( host, "localhost/http-bind" );
 		

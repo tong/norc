@@ -17,7 +17,6 @@ using Lambda;
 */
 class Session {
 
-
 	public var onConnect(default,null) : EventDispatcher<Dynamic>;
 	public var onDisconnect(default,null) : EventDispatcher<Null<String>>;
 
@@ -30,18 +29,17 @@ class Session {
 	public var password(default,null) : String;
 	public var presence(default,null) : PresenceManager;
 	public var contacts(default,null) : ContactManager;
-//	public var server(default,null) : ServerInfo;
 //	public var commands(default,null) : CommandManager;
+//	public var server(default,null) : ServerInfo;
 //	public var fileTransfer(default,null) : FileTransferManager;
-	//public var cloud(default,null) : Cloud;
-	//public var ext(default,null) : ExtensionManager;
 	//public var chat(default,null) : ChatManager;
 	//public var groupChat(default,null) : GroupChatManager;
 
 	var discoListener : ServiceDiscoveryListener;
 	var pong : jabber.Pong;
 	
-	@:allow(norc.session) var stream : XMPPStream;
+	@:allow(norc.session)
+	var stream : XMPPStream;
 
 	function new( jid : String, password : String, ?ip : String ) {
 		
@@ -57,10 +55,10 @@ class Session {
 		onConnect = new EventDispatcher();
 		onDisconnect = new EventDispatcher();
 
-		//server = new ServerInfo( this );
 		presence = new PresenceManager( this );
 		contacts = new ContactManager( this );
 		//commands = new CommandManager( this );
+		//server = new ServerInfo( this );
 		
 		stream = new XMPPStream( host, ip );
 	}
@@ -80,13 +78,16 @@ class Session {
 	*/
 
 	public function connect() {
+		if( connected )
+			disconnect();
 		stream.onOpen = handleStreamOpen;
 		stream.onClose = handleStreamClose;
 		stream.open( jid.s );
 	}
 
 	public function disconnect() {
-		if( stream != null ) {
+		if( connected ) {
+			connected = false;
 			stream.close( true );
 		}
 	}
@@ -110,7 +111,7 @@ class Session {
 	function handleStreamOpen() {
 		var mechs : Array<jabber.sasl.Mechanism> = [
 			new jabber.sasl.MD5Mechanism(),
-			//new jabber.sasl.PlainMechanism()
+			new jabber.sasl.PlainMechanism()
 		];
 		var auth = new jabber.client.Authentication( stream, mechs );
 		auth.onSuccess = handleLogin;
@@ -184,16 +185,12 @@ class Session {
 	}
 
 	function handlePresence( p : xmpp.Presence ) {
-
 		var jid = new JID( p.from );
-		
 		//trace( "handlePresence "+jid );
-
 		if( jid.bare == this.jid.bare ) {
 			trace("TODO handle presence from own account");
 			return;
 		}
-
 		var contact = contacts.get(jid.bare );
 		/*
 		if( contact == null ) {
@@ -228,12 +225,9 @@ class Session {
 	}
 
 	function handleContactsLoad() {
-
 		//commands = new norc.session.CommandManager( this );
-
 		//connected = true;
 		//onConnect.dispatch( true );
-
 		handleReady();
 	}
 
@@ -244,12 +238,9 @@ class Session {
 	}
 
 	function handleDiscoItemsQuery( iq : IQ ) : IQ {
-	
 		trace("handleDiscoItemsQuery");
-
 		var r = IQ.createResult( iq );
 		var items = new xmpp.disco.Items();
-
 		/*
 		//TODO
 		var commandList = commands.getCommandList();
@@ -257,9 +248,7 @@ class Session {
 			items.add( new xmpp.disco.Item( jid.toString(), cmd.name, cmd.node ) );
 		}
 		*/
-
 		r.x = items;
-
 		return r;
 	}
 

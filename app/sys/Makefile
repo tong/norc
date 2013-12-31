@@ -1,25 +1,26 @@
 
 ##
-## Norc:sys
+## NORC-sys
 ##
 
-DEBUG=true
-SRC := $(shell find ../../src/norc/ src/norc/sys/*.hx -name *.hx -print)
+RELEASE = false
+TARGET = sys
 CP = -cp src \
 	 -cp ../../src/ \
 	 -cp ../../../hxmpp/src \
 	 -cp ../../../om/src
 LIBS = -lib hxargs
-FLAGS = -D xmpp_debug -D jabber_debug -D norc_debug
+FLAGS =
 
-ifeq (${DEBUG},true)
-	FLAGS += -debug
+ifeq (${RELEASE},true)
+	FLAGS += -dce full --no-traces
 else
-	FLAGS += -dce full
-	FLAGS += --no-traces
+	FLAGS += -debug -D xmpp_debug -D jabber_debug -D norc_debug
 endif
 
 HX = haxe -main norc.sys.App $(CP) $(FLAGS) $(LIBS)
+
+SRC := $(shell find ../../src/norc/ src/norc/sys/*.hx -name *.hx -print)
 
 all: build
 
@@ -29,7 +30,7 @@ build/norc.n: $(SRC)
 
 build: build/norc.n
 	@mkdir -p build
-	rsync data/creds.json build
+	rsync res/creds.json build
 	
 clean:
 	rm -rf build/norc.n

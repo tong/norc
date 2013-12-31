@@ -1,20 +1,28 @@
 
 ##
-## NORC - Network Organism Responsible for Communication
+## NORC
 ##
 
-### cra crx ffos sys web
+all: documentation build
 
-all: sys
+release:
+	@make -C app/sys release --no-print-directory
+
+#documentation:
+
+build: android cra crx fos sys web
+
+android:
+	@make -C app/android --no-print-directory
 
 cra:
-	@(cd app/cra;make)
+	@make -C app/cra --no-print-directory
 
 crx:
-	@(cd app/crx;make)
+	@make -C app/crx --no-print-directory
 
-ffos:
-	@(cd app/ffos;make)
+fos:
+	@make -C app/fos --no-print-directory
 
 #googlescript:
 #	@(cd app/googlescript;make)
@@ -23,14 +31,15 @@ sys:
 	@make -C app/sys --no-print-directory
 
 web:
-	@(cd app/web;make)
+	@make -C app/web --no-print-directory
 
-#android:
-	
 clean:
-	@(cd app/crx;make clean)
-	@(cd app/cra;make clean)
-	@(cd app/sys;make clean)
-	@(cd app/web;make clean)
+	@make -C app/android clean --no-print-directory
+	@make -C app/cra clean --no-print-directory
+	@make -C app/crx clean --no-print-directory
+	@make -C app/fos clean --no-print-directory
+	@make -C app/gs clean --no-print-directory
+	@make -C app/sys clean --no-print-directory
+	@make -C app/web clean --no-print-directory
 
-.PHONY: all clean
+.PHONY: all build cra crx fos sys web clean

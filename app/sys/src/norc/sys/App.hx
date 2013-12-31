@@ -11,7 +11,7 @@ import norc.event.MessageEvent;
 */
 class App {
 
-	var session : norc.sys.Session;
+	var session : Session;
 
 	function new() {
 		Database.init();
@@ -24,7 +24,7 @@ class App {
 			Sys.exit(1);
 		}
 		var creds = Json.parse( File.getContent( credsPath ) );
-		session = new norc.sys.Session( creds.jid, creds.password );
+		session = new Session( creds.jid, creds.password );
 		session.onConnect.bind( onSessionReady );
 		session.onDisconnect.bind( onSessionDisconnect );
 		println( "Connecting to "+session.host );
