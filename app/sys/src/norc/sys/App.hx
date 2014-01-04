@@ -6,30 +6,38 @@ import sys.io.File;
 import haxe.Json;
 import norc.event.MessageEvent;
 
-/*
+using haxe.io.Path;
+
+/**
 	Norc-sys
 */
 class App {
 
+	var root : String;
 	var session : Session;
 
-	function new() {
-		Database.init();
+	function new( root : String ) {
+		this.root = root.addTrailingSlash();
+		Database.init( this.root+'norc.db' );
 	}
 
 	function connectSession() {
-		var credsPath = 'creds.json';
+		
+		var credsPath = root+'norc.creds';
 		if( !FileSystem.exists( credsPath ) ) {
 			println( 'Credentials file not found($credsPath)' );
 			Sys.exit(1);
 		}
 		var creds = Json.parse( File.getContent( credsPath ) );
-		session = new Session( creds.jid, creds.password );
+		trace(creds);
+		
+		session = new Session( creds.jid, creds.password, creds.ip );
+		//session.stream.cnx.host = creds.ip;
 		session.onConnect.bind( onSessionReady );
 		session.onDisconnect.bind( onSessionDisconnect );
-		println( "Connecting to "+session.host );
+		println( "Connecting "+session.jid );
 		try session.connect() catch(e:Dynamic) {
-			Sys.println( "Disconnected: "+e );
+			println( "Disconnected: "+e );
 		}
 	}
 
@@ -43,17 +51,6 @@ class App {
 		session.presence.priority = -5;
 		session.presence.status = 'Oi.';
 		session.presence.send();
-	}
-
-	function onUserInput( input : String ) {
-		trace(input);
-		/*
-		switch input {
-		case "quit": //exit();
-		case "help":
-			Sys.println( 'commands : List all availavle commands' );
-		}
-		*/
 	}
 
 	function onSessionDisconnect( info : String ) {
@@ -76,6 +73,17 @@ class App {
 		}
 	}
 
+	function onUserInput( input : String ) {
+		trace(input);
+		/*
+		switch input {
+		case "quit": //exit();
+		case "help":
+			println( 'commands : List all availavle commands' );
+		}
+		*/
+	}
+
 	function cleanup() {
 		Database.close();
 	}
@@ -95,23 +103,25 @@ class App {
 
 		println( 'NORC '+Lib.VERSION );
 
-		/*
-		var user : String;
-		var server : String;
-		var ip : String;
-		var port = jabber.client.Stream.PORT;
+		//var user : String;
+		//var server : String;
+		//var ip : String;
+		//var port = jabber.client.Stream.PORT;
+		var path = Sys.getCwd();
 		var args = hxargs.Args.generate([
+			@doc( 'Path to norc installation' ) ['-root','-r'] => function(filepath:String) path = filepath,
+			/*
 			@doc( 'User/Node name' ) ['-user','-u'] => function(v:String) user = v,
 			@doc( 'Server name' ) ['-server','-s'] => function(v:String) server = v,
 			@doc( 'Jabber-id' ) ['-jid'] => function(v:String) server = v,
 			@doc( 'Server ip address' ) ['-ip'] => function(v:String) ip = v,
 			@doc( 'Server port number' ) ['-port'] => function(v:String) port = Std.parseInt(v),
+			*/
 			_ => function(arg:String) throw "Unknown command: " +arg
 		]);
 		args.parse( Sys.args() );
-		*/
 		
-		var app = new App();
+		var app = new App( path );
 		try app.connectSession() catch(e:Dynamic) {
 			println( 'ERROR : '+e );
 			Log.error(e);

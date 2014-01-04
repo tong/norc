@@ -3,14 +3,12 @@
 ## NORC
 ##
 
-all: documentation build
+all: build
 
 release:
 	@make -C app/sys release --no-print-directory
 
-#documentation:
-
-build: android cra crx fos sys web
+build: cra crx
 
 android:
 	@make -C app/android --no-print-directory
@@ -42,4 +40,4 @@ clean:
 	@make -C app/sys clean --no-print-directory
 	@make -C app/web clean --no-print-directory
 
-.PHONY: all build cra crx fos sys web clean
+.PHONY: all build android cra crx fos sys web clean
