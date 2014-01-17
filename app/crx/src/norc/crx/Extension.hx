@@ -5,12 +5,12 @@ import jabber.JID;
 /**
 	Norc-crx
 */
-class App implements IExt {
+class Extension implements IExtension {
 
 	static var session : Session;
 
 	static function connectSession() {
-		session = new Session( 'tong@jabber.disktree.net', 'test', 'localhost' );
+		session = new Session( 'hxmpp@jabber.spektral.at', 'test' );
 		session.onConnect.bind( onSessionReady );
 		session.onDisconnect.bind( onSessionDisconnect );
 		session.connect();
@@ -20,16 +20,24 @@ class App implements IExt {
 
 		trace( 'Connected as ${session.jid}' );
 
-	//	session.contacts.onPresence.bind( onPresence );
-	//	session.contacts.onMessage.bind( onChatMessage );
+		session.contacts.onPresence.bind( onPresence );
+		session.contacts.onMessage.bind( onChatMessage );
 
-	//	session.presence.priority = 0;
-	//	session.presence.status = 'Oi.';
-	//	session.presence.send();
+		session.presence.priority = 0;
+		session.presence.status = 'Oi.';
+		session.presence.send();
+
 	}
 
 	static function onSessionDisconnect(e) {
 		trace( "handle Disconnect" );
+	}
+
+	static function onPresence( c : norc.session.Contact ) {
+		trace( "Presence received: "+c.jid );
+	}
+
+	static function onChatMessage( e : norc.event.MessageEvent ) {
 	}
 
 	static function main() {

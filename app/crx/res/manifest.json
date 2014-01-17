@@ -14,10 +14,10 @@
 			"38": "icon/norc_48.png"
 		},
 		"default_title": "Norc",
-		"default_popup": "html/popup.html"
+		"default_popup": "popup.html"
 	},
 	"omnibox": { "keyword" : "norc" },
-	"options_page": "html/settings.html",
+	"options_page": "settings.html",
 	"icons": {
 		"16": "icon/norc_16.png",
 		"32": "icon/norc_32.png",
