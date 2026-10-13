@@ -16,6 +16,9 @@ enum Event {
 
 	/** Time to reconnect **/
 	Reconnect;
+
+	/** Callback to run on the main thread, e.g. of the sockets of file transfers **/
+	Call(f:() -> Void);
 }
 
 enum NetEvent {

@@ -87,6 +87,8 @@ class Client {
 			case Reconnect:
 				if (session == null && !quitting)
 					connect();
+			case Call(f):
+				f();
 		}
 	}
 
@@ -98,7 +100,7 @@ class Client {
 		stream.onPresence = onPresence;
 		Roster.handleRequests(stream, (item, ver) -> rosterPush(item));
 		Ping.handleRequests(stream);
-		files = new FileTransfers(stream, account.downloadDir ?? Config.downloadDir(), bare -> [
+		files = new FileTransfers(stream, account.downloadDir ?? Config.downloadDir(), f -> events.add(Call(f)), bare -> [
 			for (jid in presences.keys())
 				if (Jid.parseBare(jid) == bare) jid
 		]);
@@ -108,6 +110,7 @@ class Client {
 		session.onOnline = () -> {
 			attempt = 0;
 			Term.info('online as ${stream.jid}');
+			files.discoverProxies();
 			stream.loadRoster(res -> switch res {
 				case Result(payload):
 					roster = Roster.parseRoster(payload).items;
