@@ -111,7 +111,7 @@ class Client {
 			return null;
 		});
 		addModule(contacts);
-		addModule(new Discovery(contacts.resolveOptional));
+		addModule(new Discovery(contacts.resolveOptional, resourcesOf));
 		addModule(new FileTransfers(account.downloadDir ?? Config.downloadDir(), emit, contacts.resolve, f -> events.add(Call(f)), bare -> [
 			for (jid in presences.keys())
 				if (Jid.parseBare(jid) == bare) jid
@@ -426,6 +426,10 @@ class Client {
 		wasOnline = false;
 		emit("logout", [reason], ["reason" => reason, "reconnect" => reconnect ? "1" : "0"]);
 	}
+
+	/** The available full jids of a contact (bare jid) **/
+	function resourcesOf(bare:String):Array<String>
+		return [for (jid in presences.keys()) if (Jid.parseBare(jid) == bare) jid];
 
 	function online():Bool
 		return session != null && session.online;

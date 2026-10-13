@@ -19,6 +19,7 @@ Options:
       --api              socket interface for other programs (port and token in the state dir: api)
       --xmpp-debug       print the XMPP stream
       --no-color         disable colored output
+  -v, --version          show the version
   -h, --help             show this help';
 
 function main() {
@@ -67,6 +68,9 @@ function main() {
 				yes = true;
 			case "--purge":
 				purge = true;
+			case "-v", "--version":
+				Sys.println('norc ${norc.Version.VERSION}');
+				Sys.exit(0);
 			case "-h", "--help":
 				Sys.println(USAGE);
 				Sys.exit(0);

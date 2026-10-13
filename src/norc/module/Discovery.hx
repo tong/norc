@@ -4,8 +4,10 @@ import norc.Commands;
 import norc.Module;
 import norc.Output;
 import norc.Term;
+import xmpp.Jid;
 import xmpp.Response;
 import xmpp.ServiceDiscovery;
+import xmpp.SoftwareVersion;
 import xmpp.XML;
 import xmpp.client.Stream;
 
@@ -18,12 +20,23 @@ class Discovery implements Module {
 	/** A contact name to its jid, other input unchanged **/
 	final resolve:String->String;
 
-	public function new(resolve:String->String) {
+	/** The available full jids of a bare jid **/
+	final resources:String->Array<String>;
+
+	public function new(resolve:String->String, resources:String->Array<String>) {
 		this.resolve = resolve;
+		this.resources = resources;
 	}
 
 	public function commands():Array<Commands.Command>
 		return [
+			{
+				name: "software",
+				args: "<jid>",
+				description: "software and version of a client or server (of each online client of a contact)",
+				online: true,
+				run: (args, out) -> software(args[0], out)
+			},
 			{
 				name: "disco",
 				description: "service discovery",
@@ -49,8 +62,11 @@ class Discovery implements Module {
 	public function features():Array<String>
 		return [];
 
-	public function attach(stream:Stream)
+	public function attach(stream:Stream) {
 		this.stream = stream;
+		// answer software version requests
+		SoftwareVersion.handleRequests(stream, {name: "norc", version: norc.Version.VERSION, os: Sys.systemName()});
+	}
 
 	public function online() {}
 
@@ -105,6 +121,28 @@ class Discovery implements Module {
 			case Error(e):
 				out.error('$target: ${errorText(e)}');
 		});
+	}
+
+	/**
+		`/software`: the software (name, version, operating system) of an entity.
+		For a contact without resource, of each of its available clients.
+	**/
+	function software(input:String, out:Output) {
+		final jid = resolve(input);
+		final online = (Jid.parseResource(jid) == null) ? resources(jid) : [];
+		final targets = (online.length > 0) ? online : [jid];
+		for (target in targets)
+			SoftwareVersion.getSoftwareVersion(stream, target, res -> switch res {
+				case Result(payload):
+					final info = SoftwareVersion.parse(payload);
+					if (info.name == null && info.version == null && info.os == null)
+						out.info('$target: no software information');
+					else
+						out.print('$target: ' + [info.name, info.version].filter(v -> v != null).join(" ")
+							+ (info.os != null ? Term.style(' (${info.os})', 2) : ''));
+				case Error(e):
+					out.error('$target: ${errorText(e)}');
+			});
 	}
 
 	function describe(?jid:String, ?node:String):String
