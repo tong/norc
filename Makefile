@@ -8,7 +8,7 @@ PCRE := $(addprefix include/pcre/pcre2_,auto_possess chartables compile config c
 LIBHL_SRC := $(PCRE) src/gc $(addprefix src/std/,array buffer bytes cast date error debug file fun \
 	maps math obj random regexp socket string sys types ucs2 thread process track)
 
-.PHONY: all build clean install uninstall
+.PHONY: all build from-c clean install uninstall
 all: norc.hl
 
 # Rebuild when sources or build settings change
@@ -115,6 +115,14 @@ endif
 
 # The single binary (same as `make norc`)
 build: $(BIN)
+
+# The single binary from C code generated before (out/, e.g. on another machine), without haxe:
+# for building on systems without haxe (e.g. arm64)
+from-c: | $(HASHLINK_SRC)/src/hl.h
+	@test -f out/hlc.json || { echo "no generated C code in out/: run 'haxe build.hlc.hxml' first" >&2; exit 1; }
+	$(MAKE) $(STATIC)/$(BIN)
+	cp $(STATIC)/$(BIN) $(BIN)
+	strip $(BIN)
 
 # --- Install (Linux): `make install`, `sudo make install`, `make install PREFIX=~/.local` ---------------
 #
