@@ -438,7 +438,8 @@ Without a jid, unregister and passwd use the account given with -a, or the only 
 	/** Error message, mentioning a data form the server asks to fill in (not supported) **/
 	static function formError(e:xmpp.Stanza.Error):String {
 		final form = e.payload != null ? Registration.parseFields(e.payload).form : null;
-		return '${e.condition}' + (e.text != null ? ' (${e.text})' : '')
+		return '${e.condition}'
+			+ (e.text != null ? ' (${e.text})' : '')
 			+ (form != null ? ': the server asks for more information (${form.title ?? form.formType}), which norc does not support yet' : '');
 	}
 }

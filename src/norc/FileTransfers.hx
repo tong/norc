@@ -199,8 +199,8 @@ class FileTransfers {
 					ServiceDiscovery.discoInfo(stream, item.jid, res -> switch res {
 						case Result(payload) if (payload != null):
 							final info = ServiceDiscovery.parseInfo(payload);
-							if (info.identities.filter(i -> i.category == "proxy" && i.type == "bytestreams").length > 0)
-								JingleS5B.requestStreamhost(stream, item.jid, res -> {
+							if (info.identities.filter(i -> i.category == "proxy" && i.type == "bytestreams")
+								.length > 0) JingleS5B.requestStreamhost(stream, item.jid, res -> {
 									final host = JingleS5B.parseStreamhost(res.payload);
 									if (host != null && s5b.proxies.filter(p -> p.jid == host.jid).length == 0)
 										s5b.proxies.push(host);
@@ -235,7 +235,8 @@ class FileTransfers {
 		transfers.push(t);
 		session.onTerminate = reason -> {
 			if (transfers.remove(t))
-				info('#${t.id} ${session.peer} cancelled the offer of ${file.name ?? "a file"}' + (reason.condition != JingleReason.cancel ? ' (${formatReason(reason)})' : ''));
+				info('#${t.id} ${session.peer} cancelled the offer of ${file.name ?? "a file"}'
+					+ (reason.condition != JingleReason.cancel ? ' (${formatReason(reason)})' : ''));
 		}
 		info('#${t.id} ${session.peer} offers ${describe(file)}: /accept ${t.id} or /decline ${t.id}');
 	}
@@ -274,7 +275,8 @@ class FileTransfers {
 				return;
 			}
 			ServiceDiscovery.discoInfo(stream, candidates[i], res -> switch res {
-				case Result(payload) if (payload != null && ServiceDiscovery.parseInfo(payload).features.contains(JingleFileTransfer.XMLNS)):
+				case Result(payload) if (payload != null
+					&& ServiceDiscovery.parseInfo(payload).features.contains(JingleFileTransfer.XMLNS)):
 					callback(candidates[i]);
 				case _:
 					next(i + 1);

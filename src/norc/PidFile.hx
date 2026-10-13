@@ -69,9 +69,14 @@ class PidFile {
 						if (bytes.get(i) == 0)
 							bytes.set(i, " ".code);
 					bytes.toString();
-				} catch (_) "";
+				} catch (_)
+					"";
 			case "Windows":
-				output("powershell", ["-NoProfile", "-Command", '(Get-CimInstance Win32_Process -Filter "ProcessId=$pid").CommandLine']);
+				output("powershell", [
+					"-NoProfile",
+					"-Command",
+					'(Get-CimInstance Win32_Process -Filter "ProcessId=$pid").CommandLine'
+				]);
 			case _:
 				output("ps", ["-p", '$pid', "-o", "command="]);
 		}
@@ -83,6 +88,7 @@ class PidFile {
 			final out = proc.stdout.readAll().toString();
 			proc.close();
 			out;
-		} catch (_) "";
+		} catch (_)
+			"";
 	}
 }

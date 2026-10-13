@@ -24,8 +24,10 @@ enum Event {
 enum NetEvent {
 	Connected;
 	ConnectFailed(error:String);
+
 	/** Received raw data, possibly ending within a UTF-8 sequence **/
 	Data(bytes:haxe.io.Bytes);
+
 	TlsReady;
 	TlsFailed(error:String);
 	Disconnected(?error:String);
