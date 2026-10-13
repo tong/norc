@@ -26,8 +26,11 @@ typedef Account = {
 class Config {
 	public static final DEFAULT_RESOURCE = "norc";
 
+	/** Overrides the config directory (`--config`) **/
+	public static var dir:Null<String>;
+
 	public static function configDir():String
-		return (windows() ? env("APPDATA", "AppData/Roaming") : env("XDG_CONFIG_HOME", ".config")) + "/norc";
+		return dir ?? (windows() ? env("APPDATA", "AppData/Roaming") : env("XDG_CONFIG_HOME", ".config")) + "/norc";
 
 	public static function accountsDir():String
 		return configDir() + "/accounts";

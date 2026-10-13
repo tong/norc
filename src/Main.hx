@@ -6,8 +6,9 @@ import norc.Term;
 private final USAGE = 'Usage: norc [options]
 
 Options:
-  -a, --account <name>   account to use (config: ${Config.accountsDir()}/<name>)
+  -a, --account <name>   account to use (config: <config dir>/accounts/<name>)
   -j, --jid <jid>        use this jid instead of a configured account
+  -c, --config <dir>     config directory (default: ${Config.configDir()})
       --host <host>      server host (default: the jid\'s domain)
       --port <port>      server port (default: 5222)
   -i, --interactive      read commands from stdin
@@ -32,6 +33,8 @@ function main() {
 	}
 	while (i < args.length) {
 		switch args[i] {
+			case "-c", "--config":
+				Config.dir = haxe.io.Path.removeTrailingSlashes(value());
 			case "-a", "--account":
 				accountName = value();
 			case "-j", "--jid":
