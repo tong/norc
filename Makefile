@@ -13,6 +13,9 @@ all: norc.hl
 
 # Rebuild when sources or build settings change
 SRC := $(shell find src -name '*.hx') norc.hxml
+# and when the haxelibs change (e.g. git/dev libraries)
+LIB_SRC := $(foreach lib,hxmpp sasl,$(shell haxelib libpath $(lib) 2>/dev/null))
+SRC += $(shell find $(addsuffix src,$(LIB_SRC)) -name '*.hx' 2>/dev/null)
 
 # HashLink bytecode
 norc.hl: build.hl.hxml $(SRC)
