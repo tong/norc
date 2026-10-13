@@ -1,0 +1,15 @@
+name: Setup
+description: Install Haxe and the haxelib dependencies
+
+runs:
+  using: composite
+  steps:
+    - uses: krdlab/setup-haxe@v2
+      with:
+        haxe-version: 5.0.0-preview.1
+
+    - name: Install haxelibs
+      shell: bash
+      run: |
+        haxelib git sasl https://github.com/tong/hxsasl --always
+        haxelib git hxmpp https://github.com/tong/hxmpp --always

@@ -1,0 +1,14 @@
+name: test
+
+on: push
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/setup
+
+      - name: Build HashLink bytecode
+        run: make norc.hl

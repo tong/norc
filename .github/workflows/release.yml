@@ -1,0 +1,68 @@
+name: release
+
+on:
+  push:
+    tags: ['*']
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            os: ubuntu-24.04
+            bin: norc
+          - name: macos-arm64
+            os: macos-latest
+            bin: norc
+          - name: windows-x86_64
+            os: windows-latest
+            bin: norc.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          # HashLink sources (lib/hashlink), compiled into the binary
+          submodules: true
+
+      # Tag filters can't select a branch: only release tags on main
+      - name: Check that the tag is on main
+        if: github.event_name == 'push'
+        shell: bash
+        run: git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+
+      - uses: ./.github/actions/setup
+
+      - name: Install musl
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Build (Linux, macOS)
+        if: runner.os != 'Windows'
+        run: |
+          make norc
+          ./norc --help
+
+      - uses: msys2/setup-msys2@v2
+        if: runner.os == 'Windows'
+        with:
+          msystem: MINGW64
+          install: make mingw-w64-x86_64-gcc
+          # haxe and haxelib are installed outside of MSYS2
+          path-type: inherit
+
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: |
+          make norc
+          ./norc.exe --help
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: norc-${{ github.ref_name }}-${{ matrix.name }}
+          path: ${{ matrix.bin }}
+          if-no-files-found: error
