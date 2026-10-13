@@ -5,6 +5,7 @@ import norc.Module;
 import norc.Output;
 import norc.Term;
 import xmpp.Jid;
+import xmpp.LastActivity;
 import xmpp.Response;
 import xmpp.ServiceDiscovery;
 import xmpp.SoftwareVersion;
@@ -23,13 +24,24 @@ class Discovery implements Module {
 	/** The available full jids of a bare jid **/
 	final resources:String->Array<String>;
 
-	public function new(resolve:String->String, resources:String->Array<String>) {
+	/** Seconds since the last input of the user, to answer last activity requests; `null` to not answer them **/
+	final idle:Null<() -> Int>;
+
+	public function new(resolve:String->String, resources:String->Array<String>, ?idle:() -> Int) {
 		this.resolve = resolve;
 		this.resources = resources;
+		this.idle = idle;
 	}
 
 	public function commands():Array<Commands.Command>
 		return [
+			{
+				name: "lastactivity",
+				args: "[jid]",
+				description: "uptime of a server (default: yours), when an account was last online, idle time of a client",
+				online: true,
+				run: (args, out) -> lastActivity(args[0] != null ? resolve(args[0]) : null, out)
+			},
 			{
 				name: "software",
 				args: "<jid>",
@@ -66,6 +78,9 @@ class Discovery implements Module {
 		this.stream = stream;
 		// answer software version requests
 		SoftwareVersion.handleRequests(stream, {name: "norc", version: norc.Version.VERSION, os: Sys.systemName()});
+		// reveals when the user was last active: only if enabled (last_activity)
+		if (idle != null)
+			LastActivity.handleRequests(stream, idle);
 	}
 
 	public function online() {}
@@ -143,6 +158,42 @@ class Discovery implements Module {
 				case Error(e):
 					out.error('$target: ${errorText(e)}');
 			});
+	}
+
+	/**
+		`/lastactivity`: depending on the entity, the uptime of a server, the time since an account was online,
+		or the idle time of a client.
+	**/
+	function lastActivity(jid:Null<String>, out:Output) {
+		final target = jid ?? stream.domain;
+		LastActivity.getLastActivity(stream, target, res -> switch res {
+			case Result(payload):
+				final last = (payload == null) ? null : LastActivity.parse(payload);
+				if (last == null) {
+					out.info('$target: no last activity');
+					return;
+				}
+				final time = formatDuration(last.seconds);
+				final text = if (Jid.parseNode(target) == null) {
+					'up for $time';
+				} else if (Jid.parseResource(target) == null) {
+					last.seconds == 0 ? 'online' : 'last seen $time ago';
+				} else {
+					'idle for $time';
+				}
+				out.print('$target: $text' + (last.status != null ? ' (${last.status})' : ''));
+			case Error(e):
+				out.error('$target: ${errorText(e)}');
+		});
+	}
+
+	/** e.g. `2d 3h`, `5h 12m`, `3m 20s`, `45s` **/
+	static function formatDuration(seconds:Int):String {
+		final d = Std.int(seconds / 86400);
+		final h = Std.int(seconds % 86400 / 3600);
+		final m = Std.int(seconds % 3600 / 60);
+		final s = seconds % 60;
+		return if (d > 0) '${d}d ${h}h' else if (h > 0) '${h}h ${m}m' else if (m > 0) '${m}m ${s}s' else '${s}s';
 	}
 
 	function describe(?jid:String, ?node:String):String

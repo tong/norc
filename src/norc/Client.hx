@@ -71,6 +71,9 @@ class Client {
 	/** Time of the login, presences shortly after are the initial ones of the contacts **/
 	var onlineSince = 0.0;
 
+	/** Time of the last input of the user (commands from the terminal or api), for last activity requests **/
+	var lastInput = Sys.time();
+
 	/** The session was online (for the logout event) **/
 	var wasOnline = false;
 
@@ -111,7 +114,7 @@ class Client {
 			return null;
 		});
 		addModule(contacts);
-		addModule(new Discovery(contacts.resolveOptional, resourcesOf));
+		addModule(new Discovery(contacts.resolveOptional, resourcesOf, account.lastActivity == true ? () -> Std.int(Sys.time() - lastInput) : null));
 		addModule(new FileTransfers(account.downloadDir ?? Config.downloadDir(), emit, contacts.resolve, f -> events.add(Call(f)), bare -> [
 			for (jid in presences.keys())
 				if (Jid.parseBare(jid) == bare) jid
@@ -133,7 +136,10 @@ class Client {
 			events.add(Call(() -> session?.tick()));
 		});
 		if (account.api == true) {
-			final api = new Api((line, out) -> commands.run(line, out, false), f -> events.add(Call(f)));
+			final api = new Api((line, out) -> {
+			lastInput = Sys.time();
+			commands.run(line, out, false);
+		}, f -> events.add(Call(f)));
 			try {
 				final host = account.apiHost ?? "127.0.0.1";
 				api.start(Config.stateDir(account.name), host, account.apiPort ?? 0);
@@ -179,6 +185,7 @@ class Client {
 				if (session != null && session.owns(c))
 					session.handle(e);
 			case Line(line):
+				lastInput = Sys.time();
 				commands.run(line);
 			case InputClosed:
 			case Reconnect:

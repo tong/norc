@@ -25,6 +25,9 @@ typedef Account = {
 	/** Socket interface for other programs (`Api`) **/
 	var ?api:Bool;
 
+	/** Answer last activity requests with the idle time **/
+	var ?lastActivity:Bool;
+
 	/** Address of the socket interface, `127.0.0.1` if not set **/
 	var ?apiHost:String;
 
@@ -41,7 +44,8 @@ typedef Account = {
 
 	Keys: `jid`, `host`, `port`, `resource`, `password_cmd`, `download_dir` (`~/` is the home directory),
 	`keepalive` (seconds without data before pinging the server, `0` to disable),
-	`api` (`1`: socket interface for other programs), `api_host`, `api_port`.
+	`api` (`1`: socket interface for other programs), `api_host`, `api_port`,
+	`last_activity` (`1`: answer last activity requests with the idle time).
 
 	The runtime state of an account (pid file) is in `$XDG_STATE_HOME/norc/<name>/` (Windows: `%LOCALAPPDATA%\norc\<name>\`).
 **/
@@ -206,11 +210,9 @@ class Config {
 				case "download_dir":
 					account.downloadDir = expandHome(value);
 				case "api":
-					account.api = switch value.toLowerCase() {
-						case "1", "true", "yes", "on": true;
-						case "0", "false", "no", "off": false;
-						case _: throw '$source: invalid api: $value (1 or 0)';
-					}
+					account.api = parseBool(value, key, source);
+				case "last_activity":
+					account.lastActivity = parseBool(value, key, source);
 				case "api_host":
 					account.apiHost = value;
 				case "api_port":
@@ -225,6 +227,13 @@ class Config {
 			}
 		}
 	}
+
+	static function parseBool(value:String, key:String, source:String):Bool
+		return switch value.toLowerCase() {
+			case "1", "true", "yes", "on": true;
+			case "0", "false", "no", "off": false;
+			case _: throw '$source: invalid $key: $value (1 or 0)';
+		}
 
 	public static function parsePort(value:String, ?source:String):Int {
 		final port = Std.parseInt(value);
