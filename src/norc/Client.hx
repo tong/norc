@@ -91,6 +91,7 @@ class Client {
 			return null;
 		});
 		addModule(contacts);
+		addModule(new Discovery());
 		addModule(new FileTransfers(account.downloadDir ?? Config.downloadDir(), f -> events.add(Call(f)), bare -> [
 			for (jid in presences.keys())
 				if (Jid.parseBare(jid) == bare) jid
