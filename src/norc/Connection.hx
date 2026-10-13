@@ -64,7 +64,6 @@ class Connection {
 		}
 		socket.setBlocking(false);
 		post(Connected);
-		final decoder = new Utf8Decoder();
 		final buf = Bytes.alloc(16384);
 		while (true) {
 			var cmd:Null<Command>;
@@ -120,9 +119,7 @@ class Connection {
 					post(Disconnected("connection closed by server"));
 					return;
 				}
-				final str = decoder.decode(buf, len);
-				if (str.length > 0)
-					post(Data(str));
+				post(Data(buf.sub(0, len)));
 			}
 		}
 	}
