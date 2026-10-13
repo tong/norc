@@ -1,0 +1,90 @@
+#compdef norc
+
+# zsh completion for norc
+#
+# Install: copy to a directory in $fpath, e.g.
+#   mkdir -p ~/.zsh/completions && cp extras/zsh/_norc ~/.zsh/completions/
+#   # in ~/.zshrc, before compinit: fpath=(~/.zsh/completions $fpath)
+
+# Configured accounts: the files in <config dir>/accounts (config dir from -c/--config)
+_norc_accounts() {
+	local dir i
+	for (( i = 1; i < ${#words}; i++ )); do
+		case $words[i] in
+			-c|--config) dir=${~words[i+1]} ;;
+			--config=*) dir=${~words[i]#--config=} ;;
+		esac
+	done
+	dir=${dir:-${XDG_CONFIG_HOME:-$HOME/.config}/norc}
+	local -a accounts
+	accounts=( $dir/accounts/*(N.:t) )
+	_describe -t accounts 'account' accounts
+}
+
+_norc() {
+	local curcontext=$curcontext state line ret=1
+	typeset -A opt_args
+
+	local -a options
+	options=(
+		'(-a --account)'{-a+,--account=}'[account to use]:account:_norc_accounts'
+		'(-j --jid)'{-j+,--jid=}'[use this jid instead of a configured account]:jid: '
+		'(-c --config)'{-c+,--config=}'[config directory]:directory:_directories'
+		'--host=[server host]:host:_hosts'
+		'--port=[server port]:port: '
+		'--xmpp-debug[print the XMPP stream]'
+		'--no-color[disable colored output]'
+		'(- *)'{-h,--help}'[show help]'
+	)
+
+	_arguments -C $options \
+		'(-i --interactive)'{-i,--interactive}'[read commands from stdin]' \
+		'1: :->command' \
+		'*:: :->args' && ret=0
+
+	case $state in
+		command)
+			local -a commands
+			commands=('account:manage accounts')
+			_describe -t commands 'command' commands && ret=0
+			;;
+		args)
+			case $line[1] in
+				account)
+					if (( CURRENT == 2 )); then
+						local -a subcommands
+						subcommands=(
+							'register:create the account on the server'
+							'unregister:delete the account on the server'
+							'passwd:change the password'
+							'list:configured accounts'
+							'help:show help'
+						)
+						_describe -t subcommands 'account command' subcommands && ret=0
+					else
+						case $words[2] in
+							register)
+								_arguments $options \
+									'--save[write the account config]' \
+									'2:jid: ' && ret=0
+								;;
+							unregister)
+								_arguments $options \
+									'--yes[do not ask for confirmation]' \
+									'--purge[also remove the account config and local state]' \
+									'2:account:_norc_accounts' && ret=0
+								;;
+							passwd)
+								_arguments $options \
+									'2:account:_norc_accounts' && ret=0
+								;;
+						esac
+					fi
+					;;
+			esac
+			;;
+	esac
+	return ret
+}
+
+_norc "$@"

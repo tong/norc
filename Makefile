@@ -112,16 +112,24 @@ endif
 
 # --- Install (Linux): `make install`, `sudo make install`, `make install PREFIX=~/.local` ---------------
 #
-# Installs the single binary. DESTDIR is prepended to all paths (packaging).
+# Installs the single binary, and the zsh completion if zsh is the login shell ($SHELL; override with
+# ZSH_COMPLETION=yes or no). DESTDIR is prepended to all paths (packaging).
 
 PREFIX ?= /usr/local
 BINDIR ?= $(PREFIX)/bin
+ZSH_COMPLETION_DIR ?= $(PREFIX)/share/zsh/site-functions
+ZSH_COMPLETION ?= auto
 
 install: $(BIN)
 	install -Dm755 $(BIN) $(DESTDIR)$(BINDIR)/norc
+	@if [ "$(ZSH_COMPLETION)" = yes ] || { [ "$(ZSH_COMPLETION)" = auto ] && [ "$${SHELL##*/}" = zsh ]; }; then \
+		echo install -Dm644 extras/zsh/_norc $(DESTDIR)$(ZSH_COMPLETION_DIR)/_norc; \
+		install -Dm644 extras/zsh/_norc $(DESTDIR)$(ZSH_COMPLETION_DIR)/_norc; \
+	fi
 
 uninstall:
 	rm -f $(DESTDIR)$(BINDIR)/norc
+	rm -f $(DESTDIR)$(ZSH_COMPLETION_DIR)/_norc
 
 clean:
 	rm -rf $(BUILD) out norc.hl $(BIN)
