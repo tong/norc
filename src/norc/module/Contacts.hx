@@ -2,6 +2,7 @@ package norc.module;
 
 import norc.Commands;
 import norc.Module;
+import norc.Output;
 import norc.Term;
 import xmpp.Jid;
 import xmpp.Response;
@@ -36,14 +37,14 @@ class Contacts implements Module {
 			{
 				name: "roster",
 				description: "list contacts",
-				run: args -> list(),
+				run: (args, out) -> list(out),
 				subcommands: [
 					{
 						name: "add",
 						args: "<jid> [name...]",
 						description: "add a contact and ask to see their presence",
 						online: true,
-						run: args -> add(args[0], args[1])
+						run: (args, out) -> add(args[0], args[1], out)
 					},
 					{
 						name: "remove",
@@ -51,40 +52,40 @@ class Contacts implements Module {
 						args: "<jid>",
 						description: "remove a contact (ends the presence subscriptions both ways)",
 						online: true,
-						run: args -> remove(args[0])
+						run: (args, out) -> remove(args[0], out)
 					},
 					{
 						name: "rename",
 						args: "<jid> [name...]",
 						description: "set the name of a contact, or clear it",
 						online: true,
-						run: args -> update(args[0], item -> item.name = args[1])
+						run: (args, out) -> update(args[0], item -> item.name = args[1], out)
 					},
 					{
 						name: "groups",
 						args: "<jid> [groups...]",
 						description: "set the groups of a contact (comma separated), or clear them",
 						online: true,
-						run: args -> update(args[0], item -> item.groups = parseGroups(args[1]))
+						run: (args, out) -> update(args[0], item -> item.groups = parseGroups(args[1]), out)
 					},
 					{
 						name: "requests",
 						description: "list contacts asking to see your presence",
-						run: args -> listRequests()
+						run: (args, out) -> listRequests(out)
 					},
 					{
 						name: "accept",
 						args: "<jid>",
 						description: "allow a contact to see your presence (and ask to see theirs)",
 						online: true,
-						run: args -> accept(args[0])
+						run: (args, out) -> accept(args[0], out)
 					},
 					{
 						name: "deny",
 						args: "<jid>",
 						description: "refuse a request to see your presence, or stop sharing it",
 						online: true,
-						run: args -> deny(args[0])
+						run: (args, out) -> deny(args[0], out)
 					}
 				]
 			}
@@ -118,6 +119,44 @@ class Contacts implements Module {
 		return (item != null && item.name != null && item.name.length > 0) ? item.name : bare;
 	}
 
+	/**
+		The jid of a contact given by `input`: a jid (with `@`) as it is, else the roster name or the local part of
+		the jid of exactly one contact (case-insensitive), or of a pending subscription request.
+		A resource is kept (`alice/phone`). Returns `null` and writes an error to `out` if there is none or several.
+	**/
+	public function resolve(input:String, out:Output):Null<String> {
+		final matches = lookup(input);
+		if (matches.length == 1)
+			return matches[0];
+		out.error(matches.length == 0 ? 'unknown contact: $input' : '$input is ambiguous: ${matches.join(", ")}');
+		return null;
+	}
+
+	/** Like `resolve`, but returns `input` if it matches no contact (e.g. a server) and without error **/
+	public function resolveOptional(input:String):String {
+		final matches = lookup(input);
+		return (matches.length == 1) ? matches[0] : input;
+	}
+
+	/** The jids matching `input` (see `resolve`) **/
+	function lookup(input:String):Array<String> {
+		if (input.contains("@"))
+			return [input];
+		final i = input.indexOf("/");
+		final name = ((i == -1) ? input : input.substr(0, i)).toLowerCase();
+		final resource = (i == -1) ? "" : input.substr(i);
+		final candidates = [for (item in items) {jid: item.jid, name: item.name}].concat([for (jid in requests) {jid: jid, name: null}]);
+		// a roster name before the local part of a jid
+		var matches = [for (c in candidates) if (c.name != null && c.name.toLowerCase() == name) c.jid];
+		if (matches.length == 0)
+			matches = [for (c in candidates) if ((Jid.parseNode(c.jid) ?? "").toLowerCase() == name) c.jid];
+		final unique = new Array<String>();
+		for (m in matches)
+			if (!unique.contains(m))
+				unique.push(m);
+		return [for (m in unique) m + resource];
+	}
+
 	/** A contact asks to see the own presence **/
 	public function request(from:String) {
 		final bare = Jid.parseBare(from);
@@ -125,9 +164,9 @@ class Contacts implements Module {
 			requests.push(bare);
 	}
 
-	function list() {
+	function list(out:Output) {
 		if (items.length == 0) {
-			Term.info("roster is empty");
+			out.info("roster is empty");
 			return;
 		}
 		final sorted = items.copy();
@@ -139,62 +178,69 @@ class Contacts implements Module {
 				details.push("asked");
 			if (item.groups.length > 0)
 				details.push(item.groups.join(", "));
-			Term.println('  ' + (item.name != null && item.name.length > 0 ? '${item.name} <${item.jid}>' : item.jid)
+			out.print('  ' + (item.name != null && item.name.length > 0 ? '${item.name} <${item.jid}>' : item.jid)
 				+ (state != null ? Term.style(' $state', 32) : '') + Term.style(' [${details.join("; ")}]', 2));
 		}
 	}
 
-	function add(jid:String, ?name:String) {
-		if (!valid(jid))
+	function add(jid:String, ?name:String, out:Output) {
+		if (!valid(jid, out))
 			return;
 		final bare = Jid.parseBare(jid);
 		final groups = find(bare)?.groups ?? [];
 		stream.addRosterItem(bare, name, groups, res -> switch res {
 			case Result(_):
 				stream.subscribePresence(bare);
-				Term.info('added $bare, asked to see their presence');
+				out.info('added $bare, asked to see their presence');
 			case Error(e):
-				Term.error('cannot add $bare: ${e.condition}');
+				out.error('cannot add $bare: ${e.condition}');
 		});
 	}
 
-	function remove(jid:String) {
+	function remove(jid:String, out:Output) {
+		final jid = resolve(jid, out);
+		if (jid == null)
+			return;
 		final bare = Jid.parseBare(jid);
 		if (find(bare) == null) {
-			Term.error('$bare is not in the roster');
+			out.error('$bare is not in the roster');
 			return;
 		}
 		stream.removeRosterItem(bare, res -> switch res {
-			case Result(_): Term.info('removed $bare');
-			case Error(e): Term.error('cannot remove $bare: ${e.condition}');
+			case Result(_): out.info('removed $bare');
+			case Error(e): out.error('cannot remove $bare: ${e.condition}');
 		});
 	}
 
 	/** Changes a contact (name or groups) **/
-	function update(jid:String, change:RosterItem->Void) {
+	function update(jid:String, change:RosterItem->Void, out:Output) {
+		final jid = resolve(jid, out);
+		if (jid == null)
+			return;
 		final bare = Jid.parseBare(jid);
 		final current = find(bare);
 		if (current == null) {
-			Term.error('$bare is not in the roster');
+			out.error('$bare is not in the roster');
 			return;
 		}
 		final item:RosterItem = {jid: bare, name: current.name, groups: current.groups.copy()};
 		change(item);
 		stream.addRosterItem(bare, item.name, item.groups, res -> switch res {
-			case Result(_): Term.info('updated $bare');
-			case Error(e): Term.error('cannot update $bare: ${e.condition}');
+			case Result(_): out.info('updated $bare');
+			case Error(e): out.error('cannot update $bare: ${e.condition}');
 		});
 	}
 
-	function listRequests() {
+	function listRequests(out:Output) {
 		if (requests.length == 0)
-			Term.info("no subscription requests");
+			out.info("no subscription requests");
 		for (jid in requests)
-			Term.println('  $jid');
+			out.print('  $jid');
 	}
 
-	function accept(jid:String) {
-		if (!valid(jid))
+	function accept(input:String, out:Output) {
+		final jid = resolve(input, out);
+		if (jid == null || !valid(jid, out))
 			return;
 		final bare = Jid.parseBare(jid);
 		stream.approveSubscription(bare);
@@ -204,16 +250,17 @@ class Contacts implements Module {
 		final subscribed = item != null && (item.subscription == to || item.subscription == both || item.ask == "subscribe");
 		if (!subscribed)
 			stream.subscribePresence(bare);
-		Term.info('$bare can see your presence' + (subscribed ? '' : ', asked to see theirs'));
+		out.info('$bare can see your presence' + (subscribed ? '' : ', asked to see theirs'));
 	}
 
-	function deny(jid:String) {
-		if (!valid(jid))
+	function deny(input:String, out:Output) {
+		final jid = resolve(input, out);
+		if (jid == null || !valid(jid, out))
 			return;
 		final bare = Jid.parseBare(jid);
 		stream.cancelSubscription(bare);
 		requests.remove(bare);
-		Term.info('$bare can not see your presence');
+		out.info('$bare can not see your presence');
 	}
 
 	function push(item:RosterItem) {
@@ -230,10 +277,10 @@ class Contacts implements Module {
 	}
 
 	/** A contact jid: `user@domain` (a domain alone is most likely a mistyped command) **/
-	static function valid(jid:String):Bool {
+	static function valid(jid:String, out:Output):Bool {
 		if (Jid.isValid(jid) && Jid.parseNode(jid) != null)
 			return true;
-		Term.error('invalid jid: $jid (expected user@domain)');
+		out.error('invalid jid: $jid (expected user@domain)');
 		return false;
 	}
 

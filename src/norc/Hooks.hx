@@ -9,6 +9,7 @@ using StringTools;
 /**
 	External hooks: executables in `<config dir>/hooks/` named `on-<event>`, run when the event happens
 	(e.g. `hooks/on-message` for a received message, to show a notification).
+	Files without execute permission are skipped (disabled hooks).
 
 	A hook gets the main values as arguments and all values as environment variables (`NORC_*`, the names
 	uppercased), plus `NORC_EVENT`, `NORC_ACCOUNT` and `NORC_JID`. Hooks run asynchronously; their output is
@@ -38,6 +39,9 @@ class Hooks {
 	public function run(event:String, args:Array<String>, ?values:Map<String, String>) {
 		final path = '$dir/on-$event';
 		if (!FileSystem.exists(path) || FileSystem.isDirectory(path))
+			return;
+		// not executable: disabled (e.g. a placeholder, enabled with chmod +x)
+		if (Sys.systemName() != "Windows" && FileSystem.stat(path).mode & 0x49 == 0)
 			return;
 		final env = values?.copy() ?? new Map<String, String>();
 		env.set("event", event);

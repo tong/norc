@@ -4,8 +4,8 @@ import haxe.io.Bytes;
 import haxe.io.Path;
 import norc.Commands;
 import norc.Config;
-import norc.Hooks;
 import norc.Module;
+import norc.Output;
 import norc.Term;
 import sys.FileSystem;
 import sys.io.File;
@@ -34,6 +34,9 @@ private typedef Transfer = {
 
 	/** Bytes transferred **/
 	var done:Int;
+
+/** Where status messages go: of the command which started or accepted the transfer **/
+var out:Output;
 }
 
 /**
@@ -76,11 +79,16 @@ class FileTransfers implements Module {
 	/**
 		`post` runs a callback on the main thread (callbacks of the sockets of transfers).
 	**/
-	final hooks:Hooks;
+	final emit:(event:String, args:Array<String>, values:Map<String, String>) -> Void;
 
-	public function new(downloadDir:String, hooks:Hooks, post:(() -> Void)->Void, resources:String->Array<String>) {
+/** The jid of a contact given by name or jid, `null` (with an error) if unknown **/
+final resolve:(input:String, out:Output) -> Null<String>;
+
+	public function new(downloadDir:String, emit:(event:String, args:Array<String>, values:Map<String, String>) -> Void,
+resolve:(input:String, out:Output) -> Null<String>, post:(() -> Void)->Void, resources:String->Array<String>) {
 		this.downloadDir = downloadDir;
-		this.hooks = hooks;
+		this.emit = emit;
+this.resolve = resolve;
 		this.resources = resources;
 		s5b = {network: new JingleS5BSysNetwork(post), proxies: []};
 	}
@@ -90,28 +98,28 @@ class FileTransfers implements Module {
 			{
 				name: "send",
 				args: "<jid> <path...>",
-				description: "send a file (without resource: to a client of the contact supporting file transfer)",
+				description: "send a file to a jid or contact name (without resource: to a client supporting file transfer)",
 				online: true,
-				run: args -> send(args[0], args[1])
+				run: (args, out) -> send(args[0], args[1], out)
 			},
 			{
 				name: "accept",
 				args: "[#id] [path...]",
 				description: "accept a file offer, save it to path (a file or directory) or the download directory",
 				online: true,
-				run: args -> accept(args[0] != null ? Std.parseInt(args[0]) : null, args[1])
+				run: (args, out) -> accept(args[0] != null ? Std.parseInt(args[0]) : null, args[1], out)
 			},
 			{
 				name: "decline",
 				args: "[#id]",
 				description: "decline a file offer",
 				online: true,
-				run: args -> decline(args[0] != null ? Std.parseInt(args[0]) : null)
+				run: (args, out) -> decline(args[0] != null ? Std.parseInt(args[0]) : null, out)
 			},
 			{
 				name: "files",
 				description: "list file offers and transfers",
-				run: args -> list()
+				run: (args, out) -> list(out)
 			}
 		];
 
@@ -138,22 +146,25 @@ class FileTransfers implements Module {
 		`/send <jid> <path>`: offers the file at `path` to `jid`.
 		Without a resource, the first available resource of the contact supporting file transfer is used.
 	**/
-	public function send(jid:String, path:String) {
+	public function send(input:String, path:String, out:Output) {
+final jid = resolve(input, out);
+if (jid == null)
+return;
 		path = expandHome(path);
 		if (!FileSystem.exists(path) || FileSystem.isDirectory(path)) {
-			Term.error('no such file: $path');
+			out.error('no such file: $path');
 			return;
 		}
 		final stat = FileSystem.stat(path);
 		if (stat.size > MAX_SIZE) {
-			Term.error('file too large: ${formatSize(stat.size)} (max ${formatSize(MAX_SIZE)})');
+			out.error('file too large: ${formatSize(stat.size)} (max ${formatSize(MAX_SIZE)})');
 			return;
 		}
-		findReceiver(jid, peer -> {
+		findReceiver(jid, out, peer -> {
 			if (peer == null)
 				return;
 			final data = try File.getBytes(path) catch (e) {
-				Term.error('cannot read $path: $e');
+				out.error('cannot read $path: $e');
 				return;
 			}
 			final file:JingleFile = {
@@ -167,21 +178,22 @@ class FileTransfers implements Module {
 				file: file,
 				incoming: false,
 				state: Active,
-				done: 0
+				done: 0,
+			out: out
 			};
-			info('#${t.id} offering ${describe(file)} to $peer');
+			out.info('#${t.id} offering ${describe(file)} to $peer');
 			t.session = JingleFileTransfer.sendFile(jingle, peer, file, data, {s5b: s5b, onProgress: sent -> progress(t, sent)}, reason -> {
 				transfers.remove(t);
 				switch reason.condition {
-					case JingleReason.success: info('#${t.id} sent ${file.name} to $peer');
-					case JingleReason.decline: info('#${t.id} $peer declined ${file.name}');
-					case _: Term.error('#${t.id} sending ${file.name} failed: ${formatReason(reason)}');
+					case JingleReason.success: out.info('#${t.id} sent ${file.name} to $peer');
+					case JingleReason.decline: out.info('#${t.id} $peer declined ${file.name}');
+					case _: out.error('#${t.id} sending ${file.name} failed: ${formatReason(reason)}');
 				}
 			});
 			// sendFile starts sending once accepted
 			final startSending = t.session.onAccept;
 			t.session.onAccept = contents -> {
-				info('#${t.id} $peer accepted ${file.name}');
+				out.info('#${t.id} $peer accepted ${file.name}');
 				startSending(contents);
 			}
 			transfers.push(t);
@@ -192,56 +204,57 @@ class FileTransfers implements Module {
 		`/accept [id] [path]`: accepts a file offer (the only one, if `id` is not given) and saves the file
 		to `path` (a file or directory), or the download directory.
 	**/
-	public function accept(?id:Int, ?path:String) {
-		final t = offer(id);
+	public function accept(?id:Int, ?path:String, out:Output) {
+		final t = offer(id, out);
 		if (t == null)
 			return;
 		if (t.file.size != null && t.file.size > MAX_SIZE) {
-			Term.error('#${t.id} file too large: ${formatSize(t.file.size)} (max ${formatSize(MAX_SIZE)})');
+			out.error('#${t.id} file too large: ${formatSize(t.file.size)} (max ${formatSize(MAX_SIZE)})');
 			return;
 		}
 		final target = try destination(t.file, path) catch (e) {
-			Term.error(Std.string(e));
+			out.error(Std.string(e));
 			return;
 		}
 		t.state = Active;
-		info('#${t.id} receiving ${t.file.name ?? "file"} → $target');
+		t.out = out;
+		out.info('#${t.id} receiving ${t.file.name ?? "file"} → $target');
 		JingleFileTransfer.receiveFile(t.session, {s5b: s5b, onProgress: received -> progress(t, received)}, (reason, data) -> {
 			transfers.remove(t);
 			if (reason.condition != JingleReason.success || data == null) {
-				Term.error('#${t.id} receiving ${t.file.name ?? "file"} failed: ${formatReason(reason)}');
+				out.error('#${t.id} receiving ${t.file.name ?? "file"} failed: ${formatReason(reason)}');
 				return;
 			}
 			try {
 				File.saveBytes(target, data);
-				info('#${t.id} saved $target');
-				hooks.run("file-received", [Jid.parseBare(t.session.peer), target], ["from" => t.session.peer, "path" => target]);
+				out.info('#${t.id} saved $target');
+				emit("file-received", [Jid.parseBare(t.session.peer), target], ["from" => t.session.peer, "path" => target]);
 			} catch (e)
-				Term.error('#${t.id} cannot write $target: $e');
+				out.error('#${t.id} cannot write $target: $e');
 		});
 	}
 
 	/** `/decline [id]`: declines a file offer **/
-	public function decline(?id:Int) {
-		final t = offer(id);
+	public function decline(?id:Int, out:Output) {
+		final t = offer(id, out);
 		if (t == null)
 			return;
 		transfers.remove(t);
 		t.session.terminate(JingleReason.decline);
-		info('#${t.id} declined ${t.file.name ?? "file"}');
+		out.info('#${t.id} declined ${t.file.name ?? "file"}');
 	}
 
 	/** `/files`: lists offers and running transfers **/
-	public function list() {
+	public function list(out:Output) {
 		if (transfers.length == 0)
-			info("no file transfers");
+			out.info("no file transfers");
 		for (t in transfers) {
 			final state = switch t.state {
 				case Offered: "offered by";
 				case Active: (t.incoming ? "receiving from" : "sending to");
 			}
 			final percent = (t.state == Active && t.file.size != null && t.file.size > 0) ? ' ${Std.int(t.done / t.file.size * 100)}%' : '';
-			Term.println('  #${t.id} ${describe(t.file)} $state ${t.session.peer}$percent');
+			out.print('  #${t.id} ${describe(t.file)} $state ${t.session.peer}$percent');
 		}
 	}
 
@@ -271,7 +284,7 @@ class FileTransfers implements Module {
 	/** Ends all transfers (the session ended) **/
 	public function clear() {
 		for (t in transfers)
-			Term.error('#${t.id} ${t.file.name ?? "file"}: transfer aborted');
+			t.out.error('#${t.id} ${t.file.name ?? "file"}: transfer aborted');
 		transfers.resize(0);
 	}
 
@@ -287,16 +300,17 @@ class FileTransfers implements Module {
 			file: file,
 			incoming: true,
 			state: Offered,
-			done: 0
+			done: 0,
+		out: TermOutput.instance
 		};
 		transfers.push(t);
 		session.onTerminate = reason -> {
 			if (transfers.remove(t))
-				info('#${t.id} ${session.peer} cancelled the offer of ${file.name ?? "a file"}'
+				t.out.info('#${t.id} ${session.peer} cancelled the offer of ${file.name ?? "a file"}'
 					+ (reason.condition != JingleReason.cancel ? ' (${formatReason(reason)})' : ''));
 		}
-		info('#${t.id} ${session.peer} offers ${describe(file)}: /accept ${t.id} or /decline ${t.id}');
-		hooks.run("file-offer", [Jid.parseBare(session.peer), file.name ?? "", file.size != null ? Std.string(Std.int(file.size)) : ""], [
+		Term.info('#${t.id} ${session.peer} offers ${describe(file)}: /accept ${t.id} or /decline ${t.id}');
+		emit("file-offer", [Jid.parseBare(session.peer), file.name ?? "", file.size != null ? Std.string(Std.int(file.size)) : ""], [
 			"from" => session.peer,
 			"file" => file.name ?? "",
 			"size" => file.size != null ? Std.string(Std.int(file.size)) : "",
@@ -304,36 +318,36 @@ class FileTransfers implements Module {
 		]);
 	}
 
-	function offer(id:Null<Int>):Null<Transfer> {
+	function offer(id:Null<Int>, out:Output):Null<Transfer> {
 		final offers = transfers.filter(t -> t.state == Offered);
 		if (id == null) {
 			if (offers.length == 1)
 				return offers[0];
-			Term.error(offers.length == 0 ? "no file offers" : 'several file offers, give the number: ${[for (t in offers) '#${t.id}'].join(", ")}');
+			out.error(offers.length == 0 ? "no file offers" : 'several file offers, give the number: ${[for (t in offers) '#${t.id}'].join(", ")}');
 			return null;
 		}
 		for (t in offers)
 			if (t.id == id)
 				return t;
-		Term.error('no file offer #$id');
+		out.error('no file offer #$id');
 		return null;
 	}
 
 	/** Picks the full jid to send a file to: `jid` itself, or a resource supporting file transfer **/
-	function findReceiver(jid:String, callback:Null<String>->Void) {
+	function findReceiver(jid:String, out:Output, callback:Null<String>->Void) {
 		if (Jid.parseResource(jid) != null) {
 			callback(jid);
 			return;
 		}
 		final candidates = resources(Jid.parseBare(jid));
 		if (candidates.length == 0) {
-			Term.error('$jid is not online');
+			out.error('$jid is not online');
 			callback(null);
 			return;
 		}
 		function next(i:Int) {
 			if (i >= candidates.length) {
-				Term.error('no client of $jid supports file transfer (${candidates.join(", ")})');
+				out.error('no client of $jid supports file transfer (${candidates.join(", ")})');
 				callback(null);
 				return;
 			}
@@ -388,11 +402,10 @@ class FileTransfers implements Module {
 		t.done = bytes;
 		final now = Std.int(bytes / size * 4);
 		if (now > before && bytes < size)
-			info('#${t.id} ${now * 25}%');
+			t.out.info('#${t.id} ${now * 25}%');
 	}
 
-	static function info(msg:String)
-		Term.info(msg);
+	
 
 	static function describe(file:JingleFile):String
 		return (file.name ?? "a file") + (file.size != null ? ' (${formatSize(file.size)})' : '');

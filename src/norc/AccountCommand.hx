@@ -48,7 +48,8 @@ Commands:
   passwd [jid]       change the password
   list               configured accounts
 
-Without a jid, unregister and passwd use the account given with -a, or the only configured one.';
+Without a jid, unregister and passwd use the account given with -a, the default account (account in conf),
+or the only configured one.';
 
 	final options:AccountOptions;
 	final events = new Deque<Event>();
@@ -248,11 +249,7 @@ Without a jid, unregister and passwd use the account given with -a, or the only 
 		} else if (options.name != null) {
 			Config.findAccount(options.name);
 		} else {
-			switch names.length {
-				case 0: throw 'no account configured: give a jid';
-				case 1: Config.loadAccount(names[0]);
-				case _: throw 'several accounts configured, select one with -a or give a jid: ${names.join(", ")}';
-			}
+			Config.defaultAccount();
 		}
 		applyOptions(account);
 		return account;

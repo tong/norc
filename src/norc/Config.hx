@@ -21,17 +21,27 @@ typedef Account = {
 
 	/** Seconds without data from the server before pinging it, `0` to disable **/
 	var ?keepalive:Float;
+
+	/** Socket interface for other programs (`Api`) **/
+	var ?api:Bool;
+
+	/** Address of the socket interface, `127.0.0.1` if not set **/
+	var ?apiHost:String;
+
+	/** Port of the socket interface, a free port if not set **/
+	var ?apiPort:Int;
 }
 
 /**
 	Configuration files (`key = value` lines, `#` comments) in the config directory
 	(`$XDG_CONFIG_HOME/norc`, Windows: `%APPDATA%\norc`, or `--config`):
 
-	- `conf`: base config, the defaults of all accounts
+	- `conf`: base config, the defaults of all accounts, and `account`: the account to use without `-a`
 	- `accounts/<name>`: one file per account, overriding values of the base config
 
 	Keys: `jid`, `host`, `port`, `resource`, `password_cmd`, `download_dir` (`~/` is the home directory),
-	`keepalive` (seconds without data before pinging the server, `0` to disable).
+	`keepalive` (seconds without data before pinging the server, `0` to disable),
+	`api` (`1`: socket interface for other programs), `api_host`, `api_port`.
 
 	The runtime state of an account (pid file) is in `$XDG_STATE_HOME/norc/<name>/` (Windows: `%LOCALAPPDATA%\norc\<name>\`).
 **/
@@ -158,10 +168,30 @@ class Config {
 		return FileSystem.exists(path) ? parse(File.getContent(path), path) : [];
 	}
 
+	/**
+		The account to use without `-a`: `account` of the base config, else the only configured account.
+		Throws if there is none, or several without default.
+	**/
+	public static function defaultAccount():Account {
+		final name = loadBase().get("account");
+		if (name != null)
+			return findAccount(name);
+		final names = listAccounts();
+		return switch names.length {
+			case 0: throw 'no account configured: create ${accountsDir()}/<name> or use --jid';
+			case 1: loadAccount(names[0]);
+			case _: throw 'several accounts configured, select one with -a or set account in ${basePath()}: ${names.join(", ")}';
+		}
+	}
+
 	/** Sets the config `values` (from file `source`) **/
 	static function apply(account:Account, values:Map<String, String>, source:String) {
 		for (key => value in values) {
 			switch key {
+				case "account":
+					// the default account, only in the base config
+					if (source != basePath())
+						throw '$source: account is only allowed in ${basePath()}';
 				case "jid":
 				case "host":
 					account.host = value;
@@ -175,6 +205,16 @@ class Config {
 					account.passwordCmd = value;
 				case "download_dir":
 					account.downloadDir = expandHome(value);
+				case "api":
+					account.api = switch value.toLowerCase() {
+						case "1", "true", "yes", "on": true;
+						case "0", "false", "no", "off": false;
+						case _: throw '$source: invalid api: $value (1 or 0)';
+					}
+				case "api_host":
+					account.apiHost = value;
+				case "api_port":
+					account.apiPort = parsePort(value, source);
 				case "keepalive":
 					final v = Std.parseFloat(value);
 					if (Math.isNaN(v) || v < 0)

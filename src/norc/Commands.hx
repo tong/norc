@@ -1,5 +1,7 @@
 package norc;
 
+import norc.Output;
+
 using StringTools;
 
 /**
@@ -30,8 +32,11 @@ typedef Command = {
 	**/
 	var ?subcommands:Array<Command>;
 
-	/** Called with the arguments in the order of `args`, `null` for missing optional ones **/
-	var ?run:(args:Array<Null<String>>) -> Void;
+	/**
+		Called with the arguments in the order of `args` (`null` for missing optional ones), and where to write
+		the output (also later, e.g. for responses of the server).
+	**/
+	var ?run:(args:Array<Null<String>>, out:Output) -> Void;
 }
 
 private typedef Param = {
@@ -70,7 +75,7 @@ class Commands {
 			name: "help",
 			args: "[command...]",
 			description: "list the commands, or show the usage of one",
-			run: args -> help(args[0])
+			run: (args, out) -> help(args[0], out)
 		});
 	}
 
@@ -130,45 +135,53 @@ class Commands {
 			register(c);
 
 	/**
-		Parses and runs an input line, e.g. `/msg juliet@example.com hi`.
+		Parses and runs an input line, e.g. `/msg juliet@example.com hi`, writing its output to `out`
+		(the terminal by default). With `slash` `false` the `/` is optional.
+		Returns `false` if the command could not run (unknown, invalid arguments, not connected).
 	**/
-	public function run(line:String) {
+	public function run(line:String, ?out:Output, slash = true):Bool {
+		out ??= TermOutput.instance;
 		line = line.trim();
 		if (line.length == 0)
-			return;
-		if (!line.startsWith("/")) {
-			Term.error("commands start with / (/help for the commands)");
-			return;
+			return true;
+		if (line.startsWith("/"))
+			line = line.substr(1);
+		else if (slash) {
+			out.error("commands start with / (/help for the commands)");
+			return false;
 		}
-		final resolved = resolve(line.substr(1));
+		final resolved = resolve(line);
 		if (resolved == null) {
 			final i = line.indexOf(" ");
-			Term.error('unknown command: ${(i == -1) ? line : line.substr(0, i)} (/help for the commands)');
-			return;
+			out.error('unknown command: /${(i == -1) ? line : line.substr(0, i)} (/help for the commands)');
+			return false;
 		}
 		final entry = resolved.entry;
 		final command = entry.command;
 		if (command.run == null) {
 			// a command with subcommands only
-			if (resolved.args.length > 0)
-				Term.error('${entry.path}: unknown subcommand: ${resolved.args.split(" ")[0]}');
-			help(entry.path);
-			return;
+			if (resolved.args.length > 0) {
+				out.error('${entry.path}: unknown subcommand: ${resolved.args.split(" ")[0]}');
+				return false;
+			}
+			help(entry.path, out);
+			return true;
 		}
 		if (entry.params.length == 0 && command.subcommands != null && resolved.args.length > 0) {
-			Term.error('${entry.path}: unknown subcommand: ${resolved.args.split(" ")[0]} (/help ${entry.path.substr(1)})');
-			return;
+			out.error('${entry.path}: unknown subcommand: ${resolved.args.split(" ")[0]} (/help ${entry.path.substr(1)})');
+			return false;
 		}
 		if (command.online == true && !isOnline()) {
-			Term.error('${entry.path}: not connected');
-			return;
+			out.error('${entry.path}: not connected');
+			return false;
 		}
 		final args = try parseArgs(entry.params, resolved.args) catch (e:String) {
-			Term.error('${entry.path}: $e, usage: ${usage(entry)}'
+			out.error('${entry.path}: $e, usage: ${usage(entry)}'
 				+ (entry.command.subcommands != null ? ' (/help ${entry.path.substr(1)} for its subcommands)' : ''));
-			return;
+			return false;
 		}
-		command.run(args);
+		command.run(args, out);
+		return true;
 	}
 
 	/**
@@ -192,23 +205,24 @@ class Commands {
 	/**
 		Lists the commands, or shows the usage of command `name` (e.g. `roster` or `roster add`).
 	**/
-	public function help(?name:String) {
+	public function help(?name:String, ?out:Output) {
+		out ??= TermOutput.instance;
 		if (name != null) {
 			final resolved = resolve(name.startsWith("/") ? name.substr(1) : name);
 			if (resolved == null || resolved.args.length > 0) {
-				Term.error('unknown command: $name');
+				out.error('unknown command: $name');
 				return;
 			}
 			final e = resolved.entry;
 			final c = e.command;
 			if (c.run != null)
-				Term.println('  ${usage(e)}\n    ${c.description}');
+				out.print('  ${usage(e)}\n    ${c.description}');
 			else
-				Term.println('  ${e.path}: ${c.description}');
+				out.print('  ${e.path}: ${c.description}');
 			if (c.aliases != null)
-				Term.println('    aliases: ${c.aliases.join(", ")}');
+				out.print('    aliases: ${c.aliases.join(", ")}');
 			if (c.subcommands != null)
-				printTable([for (sub in c.subcommands) e.subs.get(sub.name)]);
+				printTable([for (sub in c.subcommands) e.subs.get(sub.name)], out);
 			return;
 		}
 		final sorted = names.copy();
@@ -222,17 +236,17 @@ class Commands {
 				for (sub in e.command.subcommands)
 					list.push(e.subs.get(sub.name));
 		}
-		printTable(list);
+		printTable(list, out);
 	}
 
-	static function printTable(list:Array<Entry>) {
+	static function printTable(list:Array<Entry>, out:Output) {
 		final lines = [for (e in list) usage(e)];
 		var width = 0;
 		for (l in lines)
 			if (l.length > width)
 				width = l.length;
 		for (i in 0...list.length)
-			Term.println('  ${lines[i].rpad(" ", width + 2)}${list[i].command.description}');
+			out.print('  ${lines[i].rpad(" ", width + 2)}${list[i].command.description}');
 	}
 
 	static function usage(entry:Entry):String {

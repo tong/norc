@@ -16,6 +16,7 @@ Options:
       --host <host>      server host (default: the jid\'s domain)
       --port <port>      server port (default: 5222)
   -i, --interactive      read commands from stdin
+      --api              socket interface for other programs (port and token in the state dir: api)
       --xmpp-debug       print the XMPP stream
       --no-color         disable colored output
   -h, --help             show this help';
@@ -28,6 +29,7 @@ function main() {
 	var port:Null<String> = null;
 	var debug = false;
 	var interactive = false;
+	var api = false;
 	var save = false;
 	var yes = false;
 	var purge = false;
@@ -53,6 +55,8 @@ function main() {
 				port = value();
 			case "-i", "--interactive":
 				interactive = true;
+			case "--api":
+				api = true;
 			case "--xmpp-debug":
 				debug = true;
 			case "--no-color":
@@ -93,20 +97,14 @@ function main() {
 		if (jid != null) {
 			Config.createAccount(accountName ?? xmpp.Jid.parseBare(jid), jid);
 		} else {
-			if (accountName == null) {
-				final accounts = Config.listAccounts();
-				switch accounts.length {
-					case 0: exit('no account configured: create ${Config.accountsDir()}/<name> or use --jid');
-					case 1: accountName = accounts[0];
-					case _: exit('several accounts configured, select one with -a: ${accounts.join(", ")}');
-				}
-			}
-			Config.findAccount(accountName);
+			accountName != null ? Config.findAccount(accountName) : Config.defaultAccount();
 		}
 	} catch (e)
 		exit(Std.string(e));
 	if (host != null)
 		account.host = host;
+	if (api)
+		account.api = true;
 	if (port != null)
 		account.port = try Config.parsePort(port) catch (e) exit(Std.string(e));
 	final pidFile = try PidFile.acquire(Config.stateDir(account.name)) catch (e) exit('${account.name}: $e');

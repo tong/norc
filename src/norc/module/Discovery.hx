@@ -2,6 +2,7 @@ package norc.module;
 
 import norc.Commands;
 import norc.Module;
+import norc.Output;
 import norc.Term;
 import xmpp.Response;
 import xmpp.ServiceDiscovery;
@@ -14,7 +15,12 @@ import xmpp.client.Stream;
 class Discovery implements Module {
 	var stream:Null<Stream>;
 
-	public function new() {}
+	/** A contact name to its jid, other input unchanged **/
+final resolve:String->String;
+
+public function new(resolve:String->String) {
+this.resolve = resolve;
+}
 
 	public function commands():Array<Commands.Command>
 		return [
@@ -27,14 +33,14 @@ class Discovery implements Module {
 						args: "[jid] [node]",
 						description: "identities and features of an entity (default: the server)",
 						online: true,
-						run: args -> info(args[0], args[1])
+						run: (args, out) -> info(args[0] != null ? resolve(args[0]) : null, args[1], out)
 					},
 					{
 						name: "items",
 						args: "[jid] [node]",
 						description: "items of an entity, e.g. the services of the server (default: the server)",
 						online: true,
-						run: args -> items(args[0], args[1])
+						run: (args, out) -> items(args[0] != null ? resolve(args[0]) : null, args[1], out)
 					}
 				]
 			}
@@ -51,53 +57,53 @@ class Discovery implements Module {
 	public function detach()
 		stream = null;
 
-	function info(?jid:String, ?node:String) {
+	function info(?jid:String, ?node:String, out:Output) {
 		final target = describe(jid, node);
 		ServiceDiscovery.discoInfo(stream, jid, node, res -> switch res {
 			case Result(payload):
 				if (payload == null) {
-					Term.info('$target: no information');
+					out.info('$target: no information');
 					return;
 				}
 				final info = ServiceDiscovery.parseInfo(payload);
-				Term.println(Term.style(target, 1));
+				out.print(Term.style(target, 1));
 				if (info.identities.length > 0) {
-					Term.println("  identities:");
+					out.print("  identities:");
 					for (i in info.identities)
-						Term.println('    ${i.category}/${i.type}' + (i.name != null ? '  ${i.name}' : '') + (i.lang != null ? Term.style(' [${i.lang}]', 2) : ''));
+						out.print('    ${i.category}/${i.type}' + (i.name != null ? '  ${i.name}' : '') + (i.lang != null ? Term.style(' [${i.lang}]', 2) : ''));
 				}
 				if (info.features.length > 0) {
-					Term.println("  features:");
+					out.print("  features:");
 					final features = info.features.copy();
 					features.sort(Reflect.compare);
 					for (f in features)
-						Term.println('    $f');
+						out.print('    $f');
 				}
 				for (form in info.forms) {
-					Term.println('  ${form.formType ?? "form"}:');
+					out.print('  ${form.formType ?? "form"}:');
 					for (field in form.fields)
 						if (field.variable != null && field.variable != xmpp.DataForm.FORM_TYPE)
-							Term.println('    ${field.label ?? field.variable}: ${(field.values ?? []).join(", ")}');
+							out.print('    ${field.label ?? field.variable}: ${(field.values ?? []).join(", ")}');
 				}
 			case Error(e):
-				Term.error('$target: ${errorText(e)}');
+				out.error('$target: ${errorText(e)}');
 		});
 	}
 
-	function items(?jid:String, ?node:String) {
+	function items(?jid:String, ?node:String, out:Output) {
 		final target = describe(jid, node);
 		ServiceDiscovery.discoItems(stream, jid, node, res -> switch res {
 			case Result(payload):
 				final items = (payload == null) ? [] : ServiceDiscovery.parseItems(payload);
 				if (items.length == 0) {
-					Term.info('$target: no items');
+					out.info('$target: no items');
 					return;
 				}
-				Term.println(Term.style(target, 1));
+				out.print(Term.style(target, 1));
 				for (item in items)
-					Term.println('  ${item.jid}' + (item.node != null ? Term.style(' node=${item.node}', 2) : '') + (item.name != null ? '  ${item.name}' : ''));
+					out.print('  ${item.jid}' + (item.node != null ? Term.style(' node=${item.node}', 2) : '') + (item.name != null ? '  ${item.name}' : ''));
 			case Error(e):
-				Term.error('$target: ${errorText(e)}');
+				out.error('$target: ${errorText(e)}');
 		});
 	}
 

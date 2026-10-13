@@ -1,6 +1,7 @@
 package norc;
 
 import norc.Config.Account;
+import norc.Output;
 import norc.module.Contacts;
 import norc.module.Discovery;
 import norc.module.FileTransfers;
@@ -51,6 +52,9 @@ class Client {
 	/** External programs run on events (`<config dir>/hooks/on-<event>`) **/
 	final hooks:Hooks;
 
+	/** Socket interface for other programs, if enabled **/
+	var api:Null<Api>;
+
 	/** Features of the client, each with its commands and part of the session **/
 	final modules = new Array<Module>();
 	var attempt = 0;
@@ -78,22 +82,22 @@ class Client {
 			{
 				name: "msg",
 				args: "<jid> <text...>",
-				description: "send a message (\\n for a newline)",
+				description: "send a message to a jid or contact name (\\n for a newline)",
 				online: true,
-				run: args -> sendMessage(args[0], args[1].replace("\\n", "\n"))
+				run: (args, out) -> sendMessage(args[0], args[1].replace("\\n", "\n"), out)
 			},
 			{
 				name: "presence",
 				args: "[state] [status...]",
 				description: "show or set your presence: available, chat, away, xa (extended away), dnd (busy), with a status message",
-				run: args -> setPresence(args[0], args[1])
+				run: (args, out) -> setPresence(args[0], args[1], out)
 			},
 			{
 				name: "quit",
 				aliases: ["exit"],
 				description: "disconnect and exit",
 				exit: true,
-				run: args -> quit()
+				run: (args, out) -> quit()
 			}
 		]);
 		contacts = new Contacts(bare -> {
@@ -104,8 +108,8 @@ class Client {
 			return null;
 		});
 		addModule(contacts);
-		addModule(new Discovery());
-		addModule(new FileTransfers(account.downloadDir ?? Config.downloadDir(), hooks, f -> events.add(Call(f)), bare -> [
+		addModule(new Discovery(contacts.resolveOptional));
+		addModule(new FileTransfers(account.downloadDir ?? Config.downloadDir(), emit, contacts.resolve, f -> events.add(Call(f)), bare -> [
 			for (jid in presences.keys())
 				if (Jid.parseBare(jid) == bare) jid
 		]));
@@ -125,6 +129,19 @@ class Client {
 			Sys.sleep(5);
 			events.add(Call(() -> session?.tick()));
 		});
+		if (account.api == true) {
+			final api = new Api((line, out) -> commands.run(line, out, false), f -> events.add(Call(f)));
+			try {
+				final host = account.apiHost ?? "127.0.0.1";
+				api.start(Config.stateDir(account.name), host, account.apiPort ?? 0);
+				this.api = api;
+				Term.info('api: ${Config.stateDir(account.name)}/api');
+				if (!host.startsWith("127.") && host != "localhost" && host != "::1")
+					Term.error('warning: the api is reachable over the network ($host), unencrypted: '
+						+ 'the token can be read from the traffic, giving control over the account');
+			} catch (e)
+				Term.error('cannot start the api: $e');
+		}
 		final editor = interactive ? LineEditor.start() : null;
 		Term.editor = editor;
 		connect();
@@ -132,6 +149,7 @@ class Client {
 			Thread.create(() -> readStdin(editor));
 		while (exitCode == null)
 			handle(events.pop(true));
+		api?.stop();
 		Term.editor = null;
 		editor?.stop();
 		return exitCode;
@@ -190,7 +208,7 @@ class Client {
 			attempt = 0;
 			Term.info('online as ${stream.jid}');
 			onlineSince = Sys.time();
-			hooks.run("online", [stream.jid]);
+			emit("online", [stream.jid], ["jid" => stream.jid]);
 			for (m in modules)
 				m.online();
 			sendPresence();
@@ -220,7 +238,7 @@ class Client {
 				exit(0);
 			} else {
 				Term.error('disconnected' + (msg != null ? ': $msg' : ''));
-				hooks.run("disconnected", [msg ?? ""]);
+				emit("disconnected", [msg ?? ""], ["reason" => msg ?? ""]);
 				retry();
 			}
 		}
@@ -254,7 +272,7 @@ class Client {
 		Term.println(prefix + lines[0]);
 		for (i in 1...lines.length)
 			Term.println(StringTools.lpad("", " ", timestamp(date).length + displayName(from).length + 4) + lines[i]);
-		hooks.run("message", [from, m.body], [
+		emit("message", [from, m.body], [
 			"from" => m.from ?? from,
 			"name" => displayName(from),
 			"body" => m.body,
@@ -290,7 +308,7 @@ class Client {
 				'$full is offline$status';
 			case subscribe:
 				contacts.request(p.from);
-				hooks.run("subscribe", [Jid.parseBare(p.from)], ["from" => p.from, "name" => who]);
+				emit("subscribe", [Jid.parseBare(p.from)], ["from" => p.from, "name" => who]);
 				'$who wants to see your presence: /roster accept ${Jid.parseBare(p.from)} or /roster deny ${Jid.parseBare(p.from)}';
 			case subscribed: '$who allowed you to see their presence';
 			case unsubscribed: '$who removed your presence subscription';
@@ -301,17 +319,20 @@ class Client {
 		Term.println(timestamp(Date.now()) + ' ' + Term.style(msg, 2));
 	}
 
-	function sendMessage(to:String, body:String) {
+	function sendMessage(input:String, body:String, out:Output) {
+		final to = contacts.resolve(input, out);
+		if (to == null)
+		return;
 		if (!Jid.isValid(to)) {
-			Term.error('invalid jid: $to');
+			out.error('invalid jid: $to');
 			return;
 		}
 		session.stream.send(new Message(to, body));
 	}
 
-	function setPresence(state:Null<String>, status:Null<String>) {
+	function setPresence(state:Null<String>, status:Null<String>, out:Output) {
 		if (state == null) {
-			Term.info('presence: ${describePresence()}' + (online() ? '' : ' (not connected)'));
+			out.info('presence: ${describePresence()}' + (online() ? '' : ' (not connected)'));
 			return;
 		}
 		switch state {
@@ -320,7 +341,7 @@ class Client {
 			case _:
 				final s = Show.fromString(state);
 				if (s == null) {
-					Term.error('unknown presence: $state (available, chat, away, xa, dnd)');
+					out.error('unknown presence: $state (available, chat, away, xa, dnd)');
 					return;
 				}
 				show = s;
@@ -328,7 +349,7 @@ class Client {
 		this.status = status;
 		if (online())
 			sendPresence();
-		Term.info('presence: ${describePresence()}' + (online() ? '' : ' (sent once connected)'));
+		out.info('presence: ${describePresence()}' + (online() ? '' : ' (sent once connected)'));
 	}
 
 	function sendPresence() {
@@ -362,6 +383,15 @@ class Client {
 	inline function exit(code:Int)
 		exitCode = code;
 
+	/**
+		An event: runs its hook and sends it to the API clients.
+		`args` are the arguments of the hook, `values` its environment variables and the values of the API event.
+	**/
+	function emit(event:String, args:Array<String>, values:Map<String, String>) {
+		hooks.run(event, args, values);
+		api?.event(event, values);
+	}
+
 	function presenceHook(from:String, state:String, status:Null<String>) {
 		final bare = Jid.parseBare(from);
 		final previous = states.get(from) ?? "offline";
@@ -374,7 +404,7 @@ class Client {
 		for (jid in states.keys())
 			if (Jid.parseBare(jid) == bare)
 				resources++;
-		hooks.run("presence", [bare, state, status ?? ""], [
+		emit("presence", [bare, state, status ?? ""], [
 			"from" => from,
 			"name" => displayName(bare),
 			"state" => state,
