@@ -10,11 +10,9 @@ import xmpp.Message;
 import xmpp.Presence;
 import xmpp.XML;
 import xmpp.Response;
-import xmpp.client.Roster;
 
 using StringTools;
 using xmpp.DelayedDelivery;
-using xmpp.client.Roster;
 
 /**
 	XMPP client session of one account.
@@ -50,7 +48,9 @@ class Client {
 	/** Features of the client, each with its commands and part of the session **/
 	final modules = new Array<Module>();
 	var attempt = 0;
-	var roster = new Array<RosterItem>();
+
+	/** Roster and presence subscriptions **/
+	final contacts:Contacts;
 
 	/** Last printed presence of each available full jid **/
 	var presences = new Map<String, String>();
@@ -76,11 +76,6 @@ class Client {
 				run: args -> setPresence(args[0], args[1])
 			},
 			{
-				name: "roster",
-				description: "list contacts",
-				run: args -> printRoster()
-			},
-			{
 				name: "quit",
 				aliases: ["exit"],
 				description: "disconnect and exit",
@@ -88,6 +83,14 @@ class Client {
 				run: args -> quit()
 			}
 		]);
+		contacts = new Contacts(bare -> {
+			// the presence of the first available resource
+			for (jid => state in presences)
+				if (Jid.parseBare(jid) == bare)
+					return state;
+			return null;
+		});
+		addModule(contacts);
 		addModule(new FileTransfers(account.downloadDir ?? Config.downloadDir(), f -> events.add(Call(f)), bare -> [
 			for (jid in presences.keys())
 				if (Jid.parseBare(jid) == bare) jid
@@ -147,7 +150,6 @@ class Client {
 		final stream = session.stream;
 		stream.onMessage = onMessage;
 		stream.onPresence = onPresence;
-		Roster.handleRequests(stream, (item, ver) -> rosterPush(item));
 		Ping.handleRequests(stream);
 		final features = new Array<String>();
 		for (m in modules) {
@@ -163,12 +165,6 @@ class Client {
 			Term.info('online as ${stream.jid}');
 			for (m in modules)
 				m.online();
-			stream.loadRoster(res -> switch res {
-				case Result(payload):
-					roster = Roster.parseRoster(payload).items;
-				case Error(e):
-					Term.error('cannot load roster: ${e.condition}');
-			});
 			sendPresence();
 		}
 		session.onError = (msg, retryable) -> {
@@ -253,7 +249,9 @@ class Client {
 					return;
 				presences.remove(p.from);
 				'$full is offline$status';
-			case subscribe: '$who wants to subscribe to your presence';
+			case subscribe:
+				contacts.request(p.from);
+				'$who wants to see your presence: /roster accept ${Jid.parseBare(p.from)} or /roster deny ${Jid.parseBare(p.from)}';
 			case subscribed: '$who allowed you to see their presence';
 			case unsubscribed: '$who removed your presence subscription';
 			case unsubscribe: '$who unsubscribed from your presence';
@@ -261,12 +259,6 @@ class Client {
 			case _: return;
 		}
 		Sys.println(timestamp(Date.now()) + ' ' + Term.style(msg, 2));
-	}
-
-	function rosterPush(item:RosterItem) {
-		roster = roster.filter(i -> i.jid != item.jid);
-		if (item.subscription != remove)
-			roster.push(item);
 	}
 
 	function sendMessage(to:String, body:String) {
@@ -309,13 +301,6 @@ class Client {
 	function describePresence():String
 		return (show ?? "available") + (status != null ? ' ($status)' : '');
 
-	function printRoster() {
-		if (roster.length == 0)
-			Term.info("roster is empty");
-		for (item in roster)
-			Sys.println('  ${item.jid}' + (item.name != null ? ' (${item.name})' : '') + Term.style(' [${item.subscription ?? "none"}]', 2));
-	}
-
 	function quit() {
 		quitting = true;
 		if (session == null)
@@ -337,12 +322,8 @@ class Client {
 	inline function exit(code:Int)
 		exitCode = code;
 
-	function displayName(bare:String):String {
-		for (item in roster)
-			if (item.jid == bare && item.name != null)
-				return item.name;
-		return bare;
-	}
+	inline function displayName(bare:String):String
+		return contacts.name(bare);
 
 	static function timestamp(date:Date):String {
 		final now = Date.now();

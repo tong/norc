@@ -24,8 +24,14 @@ typedef Command = {
 	/** Ends the client: no more input is read after it **/
 	var ?exit:Bool;
 
+	/**
+		Subcommands, selected by the first word (e.g. `/roster add <jid>`).
+		Without a subcommand, `run` is called (if set, else the help of the command is shown).
+	**/
+	var ?subcommands:Array<Command>;
+
 	/** Called with the arguments in the order of `args`, `null` for missing optional ones **/
-	var run:(args:Array<Null<String>>) -> Void;
+	var ?run:(args:Array<Null<String>>) -> Void;
 }
 
 private typedef Param = {
@@ -38,6 +44,12 @@ private typedef Param = {
 private typedef Entry = {
 	var command:Command;
 	var params:Array<Param>;
+
+	/** Usage prefix, e.g. `/roster add` **/
+	var path:String;
+
+	/** Subcommands by name and alias **/
+	var subs:Map<String, Entry>;
 }
 
 /**
@@ -56,7 +68,7 @@ class Commands {
 		this.isOnline = isOnline;
 		register({
 			name: "help",
-			args: "[command]",
+			args: "[command...]",
 			description: "list the commands, or show the usage of one",
 			run: args -> help(args[0])
 		});
@@ -66,13 +78,50 @@ class Commands {
 		Registers `command`; throws if its name or an alias is taken or the arguments are invalid.
 	**/
 	public function register(command:Command) {
-		final entry = {command: command, params: parseParams(command.args ?? "", command.name)};
+		final entry = createEntry(command, '/${command.name}');
 		for (name in [command.name].concat(command.aliases ?? [])) {
 			if (entries.exists(name))
 				throw 'command /$name already registered';
 			entries.set(name, entry);
 		}
 		names.push(command.name);
+	}
+
+	static function createEntry(command:Command, path:String):Entry {
+		final entry:Entry = {
+			command: command,
+			params: parseParams(command.args ?? "", path),
+			path: path,
+			subs: new Map()
+		};
+		if (command.subcommands != null)
+			for (sub in command.subcommands) {
+				final e = createEntry(sub, '$path ${sub.name}');
+				for (name in [sub.name].concat(sub.aliases ?? [])) {
+					if (entry.subs.exists(name))
+						throw 'command $path $name already registered';
+					entry.subs.set(name, e);
+				}
+			}
+		return entry;
+	}
+
+	/**
+		The command of `line` (without `/`) and its arguments, descending into subcommands; `null` if unknown.
+	**/
+	function resolve(line:String):Null<{entry:Entry, args:String}> {
+		var i = line.indexOf(" ");
+		var entry = entries.get((i == -1) ? line : line.substr(0, i));
+		var args = (i == -1) ? "" : line.substr(i + 1).ltrim();
+		while (entry != null && args.length > 0) {
+			i = args.indexOf(" ");
+			final sub = entry.subs.get((i == -1) ? args : args.substr(0, i));
+			if (sub == null)
+				break;
+			entry = sub;
+			args = (i == -1) ? "" : args.substr(i + 1).ltrim();
+		}
+		return (entry == null) ? null : {entry: entry, args: args};
 	}
 
 	/** Registers several commands **/
@@ -91,20 +140,32 @@ class Commands {
 			Term.error("commands start with / (/help for the commands)");
 			return;
 		}
-		final i = line.indexOf(" ");
-		final name = (i == -1) ? line.substr(1) : line.substring(1, i);
-		final entry = entries.get(name);
-		if (entry == null) {
-			Term.error('unknown command: /$name (/help for the commands)');
+		final resolved = resolve(line.substr(1));
+		if (resolved == null) {
+			final i = line.indexOf(" ");
+			Term.error('unknown command: ${(i == -1) ? line : line.substr(0, i)} (/help for the commands)');
 			return;
 		}
+		final entry = resolved.entry;
 		final command = entry.command;
-		if (command.online == true && !isOnline()) {
-			Term.error('/${command.name}: not connected');
+		if (command.run == null) {
+			// a command with subcommands only
+			if (resolved.args.length > 0)
+				Term.error('${entry.path}: unknown subcommand: ${resolved.args.split(" ")[0]}');
+			help(entry.path);
 			return;
 		}
-		final args = try parseArgs(entry.params, (i == -1) ? "" : line.substr(i + 1)) catch (e:String) {
-			Term.error('/${command.name}: $e, usage: ${usage(command)}');
+		if (entry.params.length == 0 && command.subcommands != null && resolved.args.length > 0) {
+			Term.error('${entry.path}: unknown subcommand: ${resolved.args.split(" ")[0]} (/help ${entry.path.substr(1)})');
+			return;
+		}
+		if (command.online == true && !isOnline()) {
+			Term.error('${entry.path}: not connected');
+			return;
+		}
+		final args = try parseArgs(entry.params, resolved.args) catch (e:String) {
+			Term.error('${entry.path}: $e, usage: ${usage(entry)}'
+				+ (entry.command.subcommands != null ? ' (/help ${entry.path.substr(1)} for its subcommands)' : ''));
 			return;
 		}
 		command.run(args);
@@ -118,41 +179,66 @@ class Commands {
 		line = line.trim();
 		if (!line.startsWith("/"))
 			return false;
-		final i = line.indexOf(" ");
-		final entry = entries.get((i == -1) ? line.substr(1) : line.substring(1, i));
-		if (entry == null || entry.command.exit != true)
+		final resolved = resolve(line.substr(1));
+		if (resolved == null || resolved.entry.command.exit != true)
 			return false;
 		// only if it will run
 		return try {
-			parseArgs(entry.params, (i == -1) ? "" : line.substr(i + 1));
+			parseArgs(resolved.entry.params, resolved.args);
 			true;
 		} catch (_:String) false;
 	}
 
+	/**
+		Lists the commands, or shows the usage of command `name` (e.g. `roster` or `roster add`).
+	**/
 	public function help(?name:String) {
 		if (name != null) {
-			final entry = entries.get(name.startsWith("/") ? name.substr(1) : name);
-			if (entry == null) {
-				Term.error('unknown command: /$name');
+			final resolved = resolve(name.startsWith("/") ? name.substr(1) : name);
+			if (resolved == null || resolved.args.length > 0) {
+				Term.error('unknown command: $name');
 				return;
 			}
-			final c = entry.command;
-			Sys.println('  ${usage(c)}\n    ${c.description}' + (c.aliases != null ? '\n    aliases: ${c.aliases.map(a -> '/$a').join(", ")}' : ''));
+			final e = resolved.entry;
+			final c = e.command;
+			if (c.run != null)
+				Sys.println('  ${usage(e)}\n    ${c.description}');
+			else
+				Sys.println('  ${e.path}: ${c.description}');
+			if (c.aliases != null)
+				Sys.println('    aliases: ${c.aliases.join(", ")}');
+			if (c.subcommands != null)
+				printTable([for (sub in c.subcommands) e.subs.get(sub.name)]);
 			return;
 		}
 		final sorted = names.copy();
 		sorted.sort(Reflect.compare);
-		final lines = [for (n in sorted) usage(entries.get(n).command)];
+		final list = [];
+		for (n in sorted) {
+			final e = entries.get(n);
+			if (e.command.run != null)
+				list.push(e);
+			if (e.command.subcommands != null)
+				for (sub in e.command.subcommands)
+					list.push(e.subs.get(sub.name));
+		}
+		printTable(list);
+	}
+
+	static function printTable(list:Array<Entry>) {
+		final lines = [for (e in list) usage(e)];
 		var width = 0;
 		for (l in lines)
 			if (l.length > width)
 				width = l.length;
-		for (i in 0...sorted.length)
-			Sys.println('  ${lines[i].rpad(" ", width + 2)}${entries.get(sorted[i]).command.description}');
+		for (i in 0...list.length)
+			Sys.println('  ${lines[i].rpad(" ", width + 2)}${list[i].command.description}');
 	}
 
-	static function usage(command:Command):String
-		return '/${command.name}' + (command.args != null && command.args.length > 0 ? ' ${command.args}' : '');
+	static function usage(entry:Entry):String {
+		final args = entry.command.args;
+		return entry.path + (args != null && args.length > 0 ? ' $args' : '');
+	}
 
 	static function parseParams(spec:String, command:String):Array<Param> {
 		final params = new Array<Param>();
@@ -161,7 +247,7 @@ class Commands {
 			if (word.length == 0)
 				continue;
 			if (!re.match(word) || (re.matched(1) == "<") != (re.matched(5) == ">"))
-				throw 'command /$command: invalid argument $word';
+				throw 'command $command: invalid argument $word';
 			final param = {
 				optional: re.matched(1) == "[",
 				integer: re.matched(2) == "#",
@@ -169,7 +255,7 @@ class Commands {
 				rest: re.matched(4) != null
 			};
 			if (params.length > 0 && params[params.length - 1].rest)
-				throw 'command /$command: only the last argument can take the rest of the line';
+				throw 'command $command: only the last argument can take the rest of the line';
 			params.push(param);
 		}
 		return params;
