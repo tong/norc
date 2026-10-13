@@ -7,7 +7,7 @@ PCRE := $(addprefix include/pcre/pcre2_,auto_possess chartables compile config c
 LIBHL_SRC := $(PCRE) src/gc $(addprefix src/std/,array buffer bytes cast date error debug file fun \
 	maps math obj random regexp socket string sys types ucs2 thread process track)
 
-.PHONY: all static clean
+.PHONY: all clean
 all: norc.hl
 
 # Rebuild when sources or build settings change
@@ -17,12 +17,7 @@ SRC := $(shell find src -name '*.hx') norc.hxml
 norc.hl: build.hl.hxml $(SRC)
 	haxe build.hl.hxml
 
-# HashLink/C (haxe generates out/ and runs its Makefile, which links out/main)
-norc: build.hlc.hxml $(SRC)
-	haxe build.hlc.hxml
-	cp out/main norc
-
-# --- Fully static binary: ./norc-static ------------------------------------------------------------
+# --- HashLink/C, fully static binary: ./norc ------------------------------------------------------------
 #
 # Everything is compiled with musl (glibc can't resolve hostnames in static binaries) from source:
 #   out/      the generated HashLink/C code
@@ -46,8 +41,9 @@ FMT_OBJ := $(addprefix $(STATIC)/fmt/,$(addsuffix .o,libs/fmt/fmt libs/fmt/sha1 
 # fmt.c includes png/jpeg/vorbis headers for functions that are never linked: take them from the system
 FMT_CFLAGS := -I$(HASHLINK_SRC)/libs/fmt -I$(HASHLINK_SRC)/include/zlib -I$(HASHLINK_SRC)/include/minimp3 -idirafter /usr/include
 
-# Generated code; only known once out/ exists, so the link runs in a sub-make
-OUT_OBJ := $(patsubst %.c,$(STATIC)/%.o,$(shell find out -name '*.c' 2>/dev/null))
+# Generated code: listed in out/objects.txt (written by out/Makefile, which haxe runs), which also
+# leaves out stale files of removed classes. Only known once out/ exists, so the link runs in a sub-make
+OUT_OBJ := $(addprefix $(STATIC)/out/,$(shell cat out/objects.txt 2>/dev/null))
 
 $(STATIC)/libhl/%.o: $(HASHLINK_SRC)/%.c
 	@mkdir -p $(dir $@)
@@ -68,13 +64,11 @@ $(STATIC)/out/%.o: out/%.c
 $(STATIC)/norc: $(OUT_OBJ) $(SSL_OBJ) $(FMT_OBJ) $(LIBHL_OBJ)
 	$(MUSL_CC) -static -Wl,--gc-sections -o $@ $^ -lm -lpthread
 
-static: norc-static
-
-norc-static: build.hlc.hxml $(SRC)
+norc: build.hlc.hxml $(SRC)
 	haxe build.hlc.hxml
 	$(MAKE) $(STATIC)/norc
-	cp $(STATIC)/norc norc-static
-	strip norc-static
+	cp $(STATIC)/norc norc
+	strip norc
 
 clean:
-	rm -rf $(BUILD) out norc.hl norc norc-static
+	rm -rf $(BUILD) out norc.hl norc
