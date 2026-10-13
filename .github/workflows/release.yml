@@ -58,6 +58,8 @@ jobs:
           name: c-code
           path: out/
           if-no-files-found: error
+          # removed by the arm64 job, kept at most a day if that fails
+          retention-days: 1
 
       - uses: msys2/setup-msys2@v2
         if: runner.os == 'Windows'
@@ -87,6 +89,10 @@ jobs:
     # also if other platforms failed
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      # to remove the c-code artifact
+      actions: write
     steps:
       - uses: actions/checkout@v7
         with:
@@ -112,3 +118,14 @@ jobs:
           name: norc-${{ github.ref_name }}-linux-arm64
           path: norc
           if-no-files-found: error
+
+      # only needed to build this binary
+      - name: Remove the c-code artifact
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for id in $(gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts" \
+              --jq '.artifacts[] | select(.name == "c-code") | .id'); do
+            gh api -X DELETE "repos/${{ github.repository }}/actions/artifacts/$id"
+          done
