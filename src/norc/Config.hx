@@ -15,13 +15,21 @@ typedef Account = {
 	var port:Int;
 	var resource:String;
 	var ?passwordCmd:String;
+
+	/** Directory for received files **/
+	var ?downloadDir:String;
 }
 
 /**
-	Configuration files (`key = value` lines, `#` comments):
+	Configuration files (`key = value` lines, `#` comments) in the config directory
+	(`$XDG_CONFIG_HOME/norc`, Windows: `%APPDATA%\norc`, or `--config`):
 
-	- `$XDG_CONFIG_HOME/norc/accounts/<name>` (Windows: `%APPDATA%\norc\accounts\<name>`): one file per account
-	- `$XDG_STATE_HOME/norc/<name>/` (Windows: `%LOCALAPPDATA%\norc\<name>\`): runtime state of an account (pid file)
+	- `conf`: base config, the defaults of all accounts
+	- `accounts/<name>`: one file per account, overriding values of the base config
+
+	Keys: `jid`, `host`, `port`, `resource`, `password_cmd`, `download_dir` (`~/` is the home directory).
+
+	The runtime state of an account (pid file) is in `$XDG_STATE_HOME/norc/<name>/` (Windows: `%LOCALAPPDATA%\norc\<name>\`).
 **/
 class Config {
 	public static final DEFAULT_RESOURCE = "norc";
@@ -34,6 +42,10 @@ class Config {
 
 	public static function accountsDir():String
 		return configDir() + "/accounts";
+
+	/** The base config, defaults of all accounts **/
+	public static function basePath():String
+		return configDir() + "/conf";
 
 	public static function stateDir(account:String):String
 		return (windows() ? env("LOCALAPPDATA", "AppData/Local") : env("XDG_STATE_HOME", ".local/state")) + '/norc/$account';
@@ -48,6 +60,10 @@ class Config {
 		return names;
 	}
 
+	/** Directory for received files: `$XDG_DOWNLOAD_DIR` or `Downloads` in the home directory **/
+	public static function downloadDir():String
+		return windows() ? home() + "/Downloads" : env("XDG_DOWNLOAD_DIR", "Downloads");
+
 	public static function accountPath(name:String):String
 		return accountsDir() + '/$name';
 
@@ -58,14 +74,19 @@ class Config {
 		final path = accountPath(account.name);
 		if (FileSystem.exists(path))
 			throw 'account config exists: $path';
+		// values of the base config are not repeated
+		final defaults = createAccount(account.name, Jid.parseBare(account.jid));
 		final lines = ['jid = ${Jid.parseBare(account.jid)}'];
-		if (account.host != null)
+		if (account.host != defaults.host)
 			lines.push('host = ${account.host}');
-		if (account.port != xmpp.client.Stream.PORT)
+		if (account.port != defaults.port)
 			lines.push('port = ${account.port}');
-		if (account.resource != DEFAULT_RESOURCE)
+		if (account.resource != defaults.resource)
 			lines.push('resource = ${account.resource}');
-		lines.push(account.passwordCmd != null ? 'password_cmd = ${account.passwordCmd}' : '# password_cmd = pass xmpp/${Jid.parseBare(account.jid)}');
+		if (account.passwordCmd != defaults.passwordCmd)
+			lines.push('password_cmd = ${account.passwordCmd}');
+		else if (account.passwordCmd == null)
+			lines.push('# password_cmd = pass xmpp/${Jid.parseBare(account.jid)}');
 		FileSystem.createDirectory(accountsDir());
 		File.saveContent(path, lines.join("\n") + "\n");
 	}
@@ -75,29 +96,26 @@ class Config {
 		if (!FileSystem.exists(path))
 			throw 'no such account: $name ($path)';
 		final values = parse(File.getContent(path), path);
-		final jid = values.get("jid");
+		final base = loadBase();
+		final jid = values.get("jid") ?? base.get("jid");
 		if (jid == null)
 			throw '$path: missing jid';
-		final account = createAccount(name, jid);
-		for (key => value in values) {
-			switch key {
-				case "jid":
-				case "host":
-					account.host = value;
-				case "port":
-					account.port = parsePort(value, path);
-				case "resource":
-					account.resource = value;
-				case "password_cmd":
-					account.passwordCmd = value;
-				case _:
-					throw '$path: unknown key: $key';
-			}
-		}
+		final account = newAccount(name, jid);
+		apply(account, base, basePath());
+		apply(account, values, path);
 		return account;
 	}
 
+	/**
+		An account without config file (e.g. `--jid`), with the values of the base config.
+	**/
 	public static function createAccount(name:String, jid:String):Account {
+		final account = newAccount(name, jid);
+		apply(account, loadBase(), basePath());
+		return account;
+	}
+
+	static function newAccount(name:String, jid:String):Account {
 		if (!Jid.isValid(jid))
 			throw 'invalid jid: $jid';
 		final j:Jid = jid;
@@ -109,6 +127,34 @@ class Config {
 			port: xmpp.client.Stream.PORT,
 			resource: j.resource ?? DEFAULT_RESOURCE
 		};
+	}
+
+	static function loadBase():Map<String, String> {
+		final path = basePath();
+		return FileSystem.exists(path) ? parse(File.getContent(path), path) : [];
+	}
+
+	/** Sets the config `values` (from file `source`) **/
+	static function apply(account:Account, values:Map<String, String>, source:String) {
+		for (key => value in values) {
+			switch key {
+				case "jid":
+				case "host":
+					account.host = value;
+				case "port":
+					account.port = parsePort(value, source);
+				case "resource":
+					// the base config doesn't override a resource given with the jid
+					if (source != basePath() || account.jid.resource == null)
+						account.resource = value;
+				case "password_cmd":
+					account.passwordCmd = value;
+				case "download_dir":
+					account.downloadDir = expandHome(value);
+				case _:
+					throw '$source: unknown key: $key';
+			}
+		}
 	}
 
 	public static function parsePort(value:String, ?source:String):Int {
@@ -139,6 +185,9 @@ class Config {
 		final dir = Sys.getEnv(name);
 		return (dir != null && dir.length > 0) ? dir : home() + '/$fallback';
 	}
+
+	public static function expandHome(path:String):String
+		return path.startsWith("~/") ? home() + path.substr(1) : path;
 
 	static function home():String
 		return Sys.getEnv(windows() ? "USERPROFILE" : "HOME");

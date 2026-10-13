@@ -3,7 +3,9 @@ package norc;
 import norc.Config.Account;
 import sys.thread.Deque;
 import sys.thread.Thread;
+import xmpp.EntityCapabilities;
 import xmpp.Jid;
+import xmpp.Ping;
 import xmpp.Message;
 import xmpp.Presence;
 import xmpp.Response;
@@ -20,6 +22,9 @@ using xmpp.client.Roster;
 	happens here, input threads (network, stdin, timers) only post events.
 **/
 class Client {
+	/** Identifies norc in its capabilities (XEP-0115) **/
+	static inline var NODE = "https://github.com/tong/norc";
+
 	/** Seconds to wait before reconnect attempts **/
 	static final BACKOFF = [1, 2, 5, 10, 30, 60];
 
@@ -30,6 +35,7 @@ class Client {
 	final events = new Deque<Event>();
 
 	var session:Null<Session>;
+	var files:Null<FileTransfers>;
 	var quitting = false;
 	var attempt = 0;
 	var roster = new Array<RosterItem>();
@@ -88,6 +94,13 @@ class Client {
 		stream.onMessage = onMessage;
 		stream.onPresence = onPresence;
 		Roster.handleRequests(stream, (item, ver) -> rosterPush(item));
+		Ping.handleRequests(stream);
+		files = new FileTransfers(stream, account.downloadDir ?? Config.downloadDir(), bare -> [
+			for (jid in presences.keys())
+				if (Jid.parseBare(jid) == bare) jid
+		]);
+		// after all request handlers are registered: the features are part of the capabilities
+		final caps = EntityCapabilities.handleRequests(stream, {category: "client", type: "console", name: "norc"}, NODE, FileTransfers.FEATURES);
 		session.onSecured = features -> session.login(password, features);
 		session.onOnline = () -> {
 			attempt = 0;
@@ -98,7 +111,9 @@ class Client {
 				case Error(e):
 					Term.error('cannot load roster: ${e.condition}');
 			});
-			stream.send(new Presence());
+			final presence = new Presence();
+			presence.properties.push(caps());
+			stream.send(presence);
 		}
 		session.onError = (msg, retryable) -> {
 			if (retryable) {
@@ -118,6 +133,7 @@ class Client {
 		session.onClosed = (?msg) -> {
 			this.session = null;
 			presences.clear();
+			files?.clear();
 			if (quitting) {
 				exit(0);
 			} else {
@@ -220,11 +236,34 @@ class Client {
 					Term.error('invalid jid: $to');
 					return;
 				}
-				if (session == null || !session.online) {
+				if (!online()) {
 					Term.error("not connected");
 					return;
 				}
 				session.stream.send(new Message(to, body));
+			case "send":
+				final j = args.indexOf(" ");
+				if (j == -1) {
+					Term.error("usage: /send <jid> <path>");
+					return;
+				}
+				if (!online()) {
+					Term.error("not connected");
+					return;
+				}
+				files.send(args.substr(0, j), args.substr(j + 1).trim());
+			case "accept":
+				final a = args.length > 0 ? args.split(" ") : [];
+				final id = a.length > 0 ? Std.parseInt(a[0].replace("#", "")) : null;
+				// "/accept <path>" for the only offer
+				final path = (id == null && a.length > 0) ? args : (a.length > 1 ? a.slice(1).join(" ") : null);
+				if (online())
+					files.accept(id, path);
+			case "decline":
+				if (online())
+					files.decline(args.length > 0 ? Std.parseInt(args.replace("#", "")) : null);
+			case "files":
+				files?.list();
 			case "roster":
 				if (roster.length == 0)
 					Term.info("roster is empty");
@@ -233,7 +272,15 @@ class Client {
 			case "quit":
 				quit();
 			case "help":
-				Sys.println("  /msg <jid> <text>   send a message (\\n for a newline)\n  /roster            list contacts\n  /quit              disconnect and exit");
+				Sys.println([
+					"  /msg <jid> <text>        send a message (\\n for a newline)",
+					"  /send <jid> <path>       send a file",
+					"  /accept [#] [path]       accept a file offer (save to path or the download directory)",
+					"  /decline [#]             decline a file offer",
+					"  /files                   list file offers and transfers",
+					"  /roster                  list contacts",
+					"  /quit                    disconnect and exit"
+				].join("\n"));
 			case _:
 				Term.error('unknown command: /$cmd');
 		}
@@ -253,6 +300,9 @@ class Client {
 		session?.abort();
 		exit(1);
 	}
+
+	inline function online():Bool
+		return session != null && session.online;
 
 	inline function exit(code:Int)
 		exitCode = code;
