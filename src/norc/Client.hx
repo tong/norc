@@ -55,9 +55,9 @@ class Client {
 	/**
 		Connects and processes events until the client quits; returns the exit code.
 	**/
-	public function run(readInput:Bool):Int {
+	public function run(interactive:Bool):Int {
 		connect();
-		if (readInput)
+		if (interactive)
 			Thread.create(readStdin);
 		while (exitCode == null)
 			handle(events.pop(true));

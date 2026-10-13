@@ -10,8 +10,8 @@ Options:
   -j, --jid <jid>        use this jid instead of a configured account
       --host <host>      server host (default: the jid\'s domain)
       --port <port>      server port (default: 5222)
-      --debug            print the XMPP stream
-      --no-input         don\'t read commands from stdin
+  -i, --interactive      read commands from stdin
+      --xmpp-debug       print the XMPP stream
       --no-color         disable colored output
   -h, --help             show this help';
 
@@ -22,7 +22,7 @@ function main() {
 	var host:Null<String> = null;
 	var port:Null<String> = null;
 	var debug = false;
-	var input = true;
+	var interactive = false;
 	var i = 0;
 	function value():String {
 		final opt = args[i];
@@ -40,10 +40,10 @@ function main() {
 				host = value();
 			case "--port":
 				port = value();
-			case "--debug":
+			case "-i", "--interactive":
+				interactive = true;
+			case "--xmpp-debug":
 				debug = true;
-			case "--no-input":
-				input = false;
 			case "--no-color":
 				Term.colors = false;
 			case "-h", "--help":
@@ -83,7 +83,7 @@ function main() {
 	}
 	final client = new Client(account, password);
 	client.debug = debug;
-	final code = client.run(input);
+	final code = client.run(interactive);
 	pidFile.release();
 	Sys.exit(code);
 }
