@@ -91,6 +91,26 @@ class Config {
 		File.saveContent(path, lines.join("\n") + "\n");
 	}
 
+	/**
+		The account `name`: a config file with this name, else the only configured account whose jid
+		has this local part (e.g. `tong` for `tong@example.org`) or bare jid.
+	**/
+	public static function findAccount(name:String):Account {
+		if (FileSystem.exists(accountPath(name)))
+			return loadAccount(name);
+		final matches = new Array<Account>();
+		for (n in listAccounts()) {
+			final account = try loadAccount(n) catch (_) continue;
+			if (account.jid.node == name || Jid.parseBare(account.jid) == name)
+				matches.push(account);
+		}
+		return switch matches.length {
+			case 0: throw 'no such account: $name (${accountPath(name)})';
+			case 1: matches[0];
+			case _: throw 'several accounts match $name, give the full name: ${[for (a in matches) a.name].join(", ")}';
+		}
+	}
+
 	public static function loadAccount(name:String):Account {
 		final path = accountPath(name);
 		if (!FileSystem.exists(path))

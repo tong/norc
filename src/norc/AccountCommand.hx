@@ -228,10 +228,13 @@ Without a jid, unregister and passwd use the account given with -a, or the only 
 		}
 	}
 
-	/** The account with config name or jid `jid`, else the one given with `-a` or the only configured one **/
+	/** The account `jid` (config name, local part or jid), else the one given with `-a` or the only configured one **/
 	function resolve(jid:Null<String>):Account {
 		final names = Config.listAccounts();
-		final account = if (jid != null) {
+		final account = if (jid != null && !jid.contains("@")) {
+			// an account name, or the local part of a configured account
+			Config.findAccount(jid);
+		} else if (jid != null) {
 			// a configured account (by name or jid), or an unconfigured jid
 			var found:Null<Account> = null;
 			for (name in names) {
@@ -243,7 +246,7 @@ Without a jid, unregister and passwd use the account given with -a, or the only 
 			}
 			found ?? Config.createAccount(options.name ?? Jid.parseBare(jid), jid);
 		} else if (options.name != null) {
-			Config.loadAccount(options.name);
+			Config.findAccount(options.name);
 		} else {
 			switch names.length {
 				case 0: throw 'no account configured: give a jid';

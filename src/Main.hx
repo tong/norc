@@ -101,7 +101,7 @@ function main() {
 					case _: exit('several accounts configured, select one with -a: ${accounts.join(", ")}');
 				}
 			}
-			Config.loadAccount(accountName);
+			Config.findAccount(accountName);
 		}
 	} catch (e)
 		exit(Std.string(e));
