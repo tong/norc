@@ -1,0 +1,93 @@
+# bash completion for norc
+#
+# Install: copy to the bash-completion directory, e.g.
+#   mkdir -p ~/.local/share/bash-completion/completions && cp extras/bash/norc ~/.local/share/bash-completion/completions/
+# or source it in ~/.bashrc.
+
+# Configured accounts: the files in <config dir>/accounts (config dir from -c/--config)
+_norc_accounts() {
+	local dir="${XDG_CONFIG_HOME:-$HOME/.config}/norc" i
+	for ((i = 1; i < ${#COMP_WORDS[@]} - 1; i++)); do
+		case ${COMP_WORDS[i]} in
+		-c | --config) dir=${COMP_WORDS[i + 1]/#\~/$HOME} ;;
+		esac
+	done
+	local f
+	for f in "$dir"/accounts/*; do
+		[[ -f $f ]] && printf '%s\n' "${f##*/}"
+	done
+}
+
+_norc() {
+	local cur=${COMP_WORDS[COMP_CWORD]} prev=${COMP_WORDS[COMP_CWORD - 1]}
+	COMPREPLY=()
+	local options="-a --account -j --jid -c --config --host --port -i --interactive --xmpp-debug --no-color -h --help"
+
+	# values of options
+	case $prev in
+	-a | --account)
+		local IFS=$'\n'
+		COMPREPLY=($(compgen -W "$(_norc_accounts)" -- "$cur"))
+		return
+		;;
+	-c | --config)
+		compopt -o filenames 2>/dev/null
+		COMPREPLY=($(compgen -d -- "$cur"))
+		return
+		;;
+	--host)
+		COMPREPLY=($(compgen -A hostname -- "$cur"))
+		return
+		;;
+	-j | --jid | --port)
+		return
+		;;
+	esac
+
+	# the command and its arguments (skipping options and their values)
+	local i word command="" subcommand="" args=0
+	for ((i = 1; i < COMP_CWORD; i++)); do
+		word=${COMP_WORDS[i]}
+		case $word in
+		-a | --account | -j | --jid | -c | --config | --host | --port) ((i++)) ;;
+		-*) ;;
+		*)
+			if [[ -z $command ]]; then
+				command=$word
+			elif [[ -z $subcommand ]]; then
+				subcommand=$word
+			else
+				((args++))
+			fi
+			;;
+		esac
+	done
+
+	if [[ -z $command ]]; then
+		if [[ $cur == -* ]]; then
+			COMPREPLY=($(compgen -W "$options" -- "$cur"))
+		else
+			COMPREPLY=($(compgen -W "account" -- "$cur"))
+		fi
+		return
+	fi
+
+	[[ $command == account ]] || return
+	if [[ -z $subcommand ]]; then
+		COMPREPLY=($(compgen -W "register unregister passwd list help" -- "$cur"))
+		return
+	fi
+	local extra=""
+	case $subcommand in
+	register) extra="--save" ;;
+	unregister) extra="--yes --purge" ;;
+	esac
+	if [[ $cur == -* ]]; then
+		COMPREPLY=($(compgen -W "$options $extra" -- "$cur"))
+	elif ((args == 0)) && [[ $subcommand == unregister || $subcommand == passwd ]]; then
+		local IFS=$'\n'
+		COMPREPLY=($(compgen -W "$(_norc_accounts)" -- "$cur"))
+	fi
+}
+
+complete -F _norc norc
