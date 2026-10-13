@@ -155,7 +155,7 @@ class Session {
 		if (out && (str.startsWith("<auth ") || str.contains("<password")))
 			str = str.substr(0, str.indexOf(">") + 1) + "…";
 		final pretty = try xmpp.xml.Printer.print(str, true) catch (_) str;
-		Sys.stderr().writeString(Term.style(pretty.trim(), out ? 32 : 33) + "\n");
+		Term.println(Term.style(pretty.trim(), out ? 32 : 33), true);
 	}
 
 	static function streamError(xml:XML):String {

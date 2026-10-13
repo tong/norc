@@ -107,18 +107,23 @@ class Client {
 		Connects and processes events until the client quits; returns the exit code.
 	**/
 	public function run(interactive:Bool):Int {
+		final editor = interactive ? LineEditor.start() : null;
+		Term.editor = editor;
 		connect();
 		if (interactive)
-			Thread.create(readStdin);
+			Thread.create(() -> readStdin(editor));
 		while (exitCode == null)
 			handle(events.pop(true));
+		Term.editor = null;
+		editor?.stop();
 		return exitCode;
 	}
 
-	function readStdin() {
+	function readStdin(editor:Null<LineEditor>) {
 		final stdin = Sys.stdin();
 		while (true) {
-			final line = try stdin.readLine() catch (_:haxe.io.Eof) {
+			final line = if (editor != null) editor.readLine() else try stdin.readLine() catch (_:haxe.io.Eof) null;
+			if (line == null) {
 				events.add(InputClosed);
 				return;
 			}
@@ -222,9 +227,9 @@ class Client {
 		final date = delay?.date ?? Date.now();
 		final lines = m.body.split("\n");
 		final prefix = '${timestamp(date)} ' + Term.style('<${displayName(from)}>', 36) + ' ';
-		Sys.println(prefix + lines[0]);
+		Term.println(prefix + lines[0]);
 		for (i in 1...lines.length)
-			Sys.println(StringTools.lpad("", " ", timestamp(date).length + displayName(from).length + 4) + lines[i]);
+			Term.println(StringTools.lpad("", " ", timestamp(date).length + displayName(from).length + 4) + lines[i]);
 	}
 
 	function onPresence(p:Presence) {
@@ -259,7 +264,7 @@ class Client {
 			case error: 'presence error from $full';
 			case _: return;
 		}
-		Sys.println(timestamp(Date.now()) + ' ' + Term.style(msg, 2));
+		Term.println(timestamp(Date.now()) + ' ' + Term.style(msg, 2));
 	}
 
 	function sendMessage(to:String, body:String) {

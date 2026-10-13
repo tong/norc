@@ -232,7 +232,7 @@ class FileTransfers implements Module {
 				case Active: (t.incoming ? "receiving from" : "sending to");
 			}
 			final percent = (t.state == Active && t.file.size != null && t.file.size > 0) ? ' ${Std.int(t.done / t.file.size * 100)}%' : '';
-			Sys.println('  #${t.id} ${describe(t.file)} $state ${t.session.peer}$percent');
+			Term.println('  #${t.id} ${describe(t.file)} $state ${t.session.peer}$percent');
 		}
 	}
 

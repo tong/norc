@@ -202,11 +202,11 @@ class Commands {
 			final e = resolved.entry;
 			final c = e.command;
 			if (c.run != null)
-				Sys.println('  ${usage(e)}\n    ${c.description}');
+				Term.println('  ${usage(e)}\n    ${c.description}');
 			else
-				Sys.println('  ${e.path}: ${c.description}');
+				Term.println('  ${e.path}: ${c.description}');
 			if (c.aliases != null)
-				Sys.println('    aliases: ${c.aliases.join(", ")}');
+				Term.println('    aliases: ${c.aliases.join(", ")}');
 			if (c.subcommands != null)
 				printTable([for (sub in c.subcommands) e.subs.get(sub.name)]);
 			return;
@@ -232,7 +232,7 @@ class Commands {
 			if (l.length > width)
 				width = l.length;
 		for (i in 0...list.length)
-			Sys.println('  ${lines[i].rpad(" ", width + 2)}${list[i].command.description}');
+			Term.println('  ${lines[i].rpad(" ", width + 2)}${list[i].command.description}');
 	}
 
 	static function usage(entry:Entry):String {

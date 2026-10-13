@@ -57,24 +57,24 @@ class Discovery implements Module {
 					return;
 				}
 				final info = ServiceDiscovery.parseInfo(payload);
-				Sys.println(Term.style(target, 1));
+				Term.println(Term.style(target, 1));
 				if (info.identities.length > 0) {
-					Sys.println("  identities:");
+					Term.println("  identities:");
 					for (i in info.identities)
-						Sys.println('    ${i.category}/${i.type}' + (i.name != null ? '  ${i.name}' : '') + (i.lang != null ? Term.style(' [${i.lang}]', 2) : ''));
+						Term.println('    ${i.category}/${i.type}' + (i.name != null ? '  ${i.name}' : '') + (i.lang != null ? Term.style(' [${i.lang}]', 2) : ''));
 				}
 				if (info.features.length > 0) {
-					Sys.println("  features:");
+					Term.println("  features:");
 					final features = info.features.copy();
 					features.sort(Reflect.compare);
 					for (f in features)
-						Sys.println('    $f');
+						Term.println('    $f');
 				}
 				for (form in info.forms) {
-					Sys.println('  ${form.formType ?? "form"}:');
+					Term.println('  ${form.formType ?? "form"}:');
 					for (field in form.fields)
 						if (field.variable != null && field.variable != xmpp.DataForm.FORM_TYPE)
-							Sys.println('    ${field.label ?? field.variable}: ${(field.values ?? []).join(", ")}');
+							Term.println('    ${field.label ?? field.variable}: ${(field.values ?? []).join(", ")}');
 				}
 			case Error(e):
 				Term.error('$target: ${errorText(e)}');
@@ -90,9 +90,9 @@ class Discovery implements Module {
 					Term.info('$target: no items');
 					return;
 				}
-				Sys.println(Term.style(target, 1));
+				Term.println(Term.style(target, 1));
 				for (item in items)
-					Sys.println('  ${item.jid}' + (item.node != null ? Term.style(' node=${item.node}', 2) : '') + (item.name != null ? '  ${item.name}' : ''));
+					Term.println('  ${item.jid}' + (item.node != null ? Term.style(' node=${item.node}', 2) : '') + (item.name != null ? '  ${item.name}' : ''));
 			case Error(e):
 				Term.error('$target: ${errorText(e)}');
 		});

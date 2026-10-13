@@ -8,11 +8,25 @@ using StringTools;
 class Term {
 	public static var colors = true;
 
+	/** The line editor reading input (`-i` on a terminal): output is printed above its input line **/
+	public static var editor:Null<LineEditor>;
+
+	/** Prints a line (to stderr if `error`), above the input line while the editor is active **/
+	public static function println(text:String, error = false) {
+		final e = editor;
+		if (e != null)
+			e.print(text, error);
+		else if (error)
+			Sys.stderr().writeString(text + "\n");
+		else
+			Sys.println(text);
+	}
+
 	public static function error(msg:String)
-		Sys.stderr().writeString(style(msg, 31) + "\n");
+		println(style(msg, 31), true);
 
 	public static function info(msg:String)
-		Sys.println(style(msg, 2));
+		println(style(msg, 2));
 
 	public static function style(str:String, code:Int):String
 		return colors ? '\x1B[${code}m$str\x1B[0m' : str;

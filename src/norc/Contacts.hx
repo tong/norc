@@ -136,7 +136,7 @@ class Contacts implements Module {
 				details.push("asked");
 			if (item.groups.length > 0)
 				details.push(item.groups.join(", "));
-			Sys.println('  ' + (item.name != null && item.name.length > 0 ? '${item.name} <${item.jid}>' : item.jid)
+			Term.println('  ' + (item.name != null && item.name.length > 0 ? '${item.name} <${item.jid}>' : item.jid)
 				+ (state != null ? Term.style(' $state', 32) : '') + Term.style(' [${details.join("; ")}]', 2));
 		}
 	}
@@ -187,7 +187,7 @@ class Contacts implements Module {
 		if (requests.length == 0)
 			Term.info("no subscription requests");
 		for (jid in requests)
-			Sys.println('  $jid');
+			Term.println('  $jid');
 	}
 
 	function accept(jid:String) {
