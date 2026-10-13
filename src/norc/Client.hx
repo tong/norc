@@ -35,8 +35,12 @@ class Client {
 	final events = new Deque<Event>();
 
 	var session:Null<Session>;
-	var files:Null<FileTransfers>;
 	var quitting = false;
+
+	final commands:Commands;
+
+	/** Features of the client, each with its commands and part of the session **/
+	final modules = new Array<Module>();
 	var attempt = 0;
 	var roster = new Array<RosterItem>();
 
@@ -48,6 +52,37 @@ class Client {
 	public function new(account:Account, password:String) {
 		this.account = account;
 		this.password = password;
+		commands = new Commands(online);
+		commands.registerAll([
+			{
+				name: "msg",
+				args: "<jid> <text...>",
+				description: "send a message (\\n for a newline)",
+				online: true,
+				run: args -> sendMessage(args[0], args[1].replace("\\n", "\n"))
+			},
+			{
+				name: "roster",
+				description: "list contacts",
+				run: args -> printRoster()
+			},
+			{
+				name: "quit",
+				aliases: ["exit"],
+				description: "disconnect and exit",
+				exit: true,
+				run: args -> quit()
+			}
+		]);
+		addModule(new FileTransfers(account.downloadDir ?? Config.downloadDir(), f -> events.add(Call(f)), bare -> [
+			for (jid in presences.keys())
+				if (Jid.parseBare(jid) == bare) jid
+		]));
+	}
+
+	public function addModule(module:Module) {
+		modules.push(module);
+		commands.registerAll(module.commands());
 	}
 
 	/**
@@ -71,7 +106,7 @@ class Client {
 			}
 			events.add(Line(line));
 			// Stop reading: exit() waits for the lock of stdin, held while a read blocks
-			if (line.trim() == "/quit")
+			if (commands.exits(line))
 				return;
 		}
 	}
@@ -82,7 +117,7 @@ class Client {
 				if (session != null && session.owns(c))
 					session.handle(e);
 			case Line(line):
-				command(line);
+				commands.run(line);
 			case InputClosed:
 			case Reconnect:
 				if (session == null && !quitting)
@@ -100,17 +135,20 @@ class Client {
 		stream.onPresence = onPresence;
 		Roster.handleRequests(stream, (item, ver) -> rosterPush(item));
 		Ping.handleRequests(stream);
-		files = new FileTransfers(stream, account.downloadDir ?? Config.downloadDir(), f -> events.add(Call(f)), bare -> [
-			for (jid in presences.keys())
-				if (Jid.parseBare(jid) == bare) jid
-		]);
+		final features = new Array<String>();
+		for (m in modules) {
+			m.attach(stream);
+			for (f in m.features())
+				features.push(f);
+		}
 		// after all request handlers are registered: the features are part of the capabilities
-		final caps = EntityCapabilities.handleRequests(stream, {category: "client", type: "console", name: "norc"}, NODE, FileTransfers.FEATURES);
+		final caps = EntityCapabilities.handleRequests(stream, {category: "client", type: "console", name: "norc"}, NODE, features);
 		session.onSecured = features -> session.login(password, features);
 		session.onOnline = () -> {
 			attempt = 0;
 			Term.info('online as ${stream.jid}');
-			files.discoverProxies();
+			for (m in modules)
+				m.online();
 			stream.loadRoster(res -> switch res {
 				case Result(payload):
 					roster = Roster.parseRoster(payload).items;
@@ -139,7 +177,8 @@ class Client {
 		session.onClosed = (?msg) -> {
 			this.session = null;
 			presences.clear();
-			files?.clear();
+			for (m in modules)
+				m.detach();
 			if (quitting) {
 				exit(0);
 			} else {
@@ -218,78 +257,19 @@ class Client {
 			roster.push(item);
 	}
 
-	function command(line:String) {
-		line = line.trim();
-		if (line.length == 0)
-			return;
-		if (!line.startsWith("/")) {
-			Term.error("use /msg <jid> <text> to send a message (/help for commands)");
+	function sendMessage(to:String, body:String) {
+		if (!Jid.isValid(to)) {
+			Term.error('invalid jid: $to');
 			return;
 		}
-		final i = line.indexOf(" ");
-		final cmd = i == -1 ? line.substr(1) : line.substring(1, i);
-		final args = i == -1 ? "" : line.substr(i + 1).trim();
-		switch cmd {
-			case "msg":
-				final j = args.indexOf(" ");
-				if (j == -1) {
-					Term.error("usage: /msg <jid> <text>");
-					return;
-				}
-				final to = args.substr(0, j);
-				final body = args.substr(j + 1).replace("\\n", "\n");
-				if (!Jid.isValid(to)) {
-					Term.error('invalid jid: $to');
-					return;
-				}
-				if (!online()) {
-					Term.error("not connected");
-					return;
-				}
-				session.stream.send(new Message(to, body));
-			case "send":
-				final j = args.indexOf(" ");
-				if (j == -1) {
-					Term.error("usage: /send <jid> <path>");
-					return;
-				}
-				if (!online()) {
-					Term.error("not connected");
-					return;
-				}
-				files.send(args.substr(0, j), args.substr(j + 1).trim());
-			case "accept":
-				final a = args.length > 0 ? args.split(" ") : [];
-				final id = a.length > 0 ? Std.parseInt(a[0].replace("#", "")) : null;
-				// "/accept <path>" for the only offer
-				final path = (id == null && a.length > 0) ? args : (a.length > 1 ? a.slice(1).join(" ") : null);
-				if (online())
-					files.accept(id, path);
-			case "decline":
-				if (online())
-					files.decline(args.length > 0 ? Std.parseInt(args.replace("#", "")) : null);
-			case "files":
-				files?.list();
-			case "roster":
-				if (roster.length == 0)
-					Term.info("roster is empty");
-				for (item in roster)
-					Sys.println('  ${item.jid}' + (item.name != null ? ' (${item.name})' : '') + Term.style(' [${item.subscription ?? "none"}]', 2));
-			case "quit":
-				quit();
-			case "help":
-				Sys.println([
-					"  /msg <jid> <text>        send a message (\\n for a newline)",
-					"  /send <jid> <path>       send a file",
-					"  /accept [#] [path]       accept a file offer (save to path or the download directory)",
-					"  /decline [#]             decline a file offer",
-					"  /files                   list file offers and transfers",
-					"  /roster                  list contacts",
-					"  /quit                    disconnect and exit"
-				].join("\n"));
-			case _:
-				Term.error('unknown command: /$cmd');
-		}
+		session.stream.send(new Message(to, body));
+	}
+
+	function printRoster() {
+		if (roster.length == 0)
+			Term.info("roster is empty");
+		for (item in roster)
+			Sys.println('  ${item.jid}' + (item.name != null ? ' (${item.name})' : '') + Term.style(' [${item.subscription ?? "none"}]', 2));
 	}
 
 	function quit() {
@@ -307,7 +287,7 @@ class Client {
 		exit(1);
 	}
 
-	inline function online():Bool
+	function online():Bool
 		return session != null && session.online;
 
 	inline function exit(code:Int)

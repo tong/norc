@@ -39,7 +39,7 @@ private typedef Transfer = {
 
 	Files are kept in memory while they are transferred, so their size is limited (`MAX_SIZE`).
 **/
-class FileTransfers {
+class FileTransfers implements Module {
 	/** Features to advertise for service discovery **/
 	public static final FEATURES = [
 		JingleFileTransfer.XMLNS,
@@ -53,9 +53,11 @@ class FileTransfers {
 	/** Largest file sent or accepted (bytes) **/
 	public static inline var MAX_SIZE = 100 * 1024 * 1024;
 
-	final stream:Stream;
-	final jingle:Jingle;
 	final downloadDir:String;
+
+	/** The stream and its session manager while attached **/
+	var stream:Null<Stream>;
+	var jingle:Null<Jingle>;
 
 	/** Returns the available full jids of a bare jid **/
 	final resources:String->Array<String>;
@@ -67,15 +69,61 @@ class FileTransfers {
 	final s5b:JingleS5BConfig;
 
 	/**
-		`post` runs a callback on the thread using the stream (callbacks of the sockets of transfers).
+		`post` runs a callback on the main thread (callbacks of the sockets of transfers).
 	**/
-	public function new(stream:Stream, downloadDir:String, post:(() -> Void)->Void, resources:String->Array<String>) {
-		this.stream = stream;
+	public function new(downloadDir:String, post:(() -> Void)->Void, resources:String->Array<String>) {
 		this.downloadDir = downloadDir;
 		this.resources = resources;
 		s5b = {network: new JingleS5BSysNetwork(post), proxies: []};
+	}
+
+	public function commands():Array<Commands.Command>
+		return [
+			{
+				name: "send",
+				args: "<jid> <path...>",
+				description: "send a file (without resource: to a client of the contact supporting file transfer)",
+				online: true,
+				run: args -> send(args[0], args[1])
+			},
+			{
+				name: "accept",
+				args: "[#id] [path...]",
+				description: "accept a file offer, save it to path (a file or directory) or the download directory",
+				online: true,
+				run: args -> accept(args[0] != null ? Std.parseInt(args[0]) : null, args[1])
+			},
+			{
+				name: "decline",
+				args: "[#id]",
+				description: "decline a file offer",
+				online: true,
+				run: args -> decline(args[0] != null ? Std.parseInt(args[0]) : null)
+			},
+			{
+				name: "files",
+				description: "list file offers and transfers",
+				run: args -> list()
+			}
+		];
+
+	public function features():Array<String>
+		return FEATURES;
+
+	public function attach(stream:Stream) {
+		this.stream = stream;
 		jingle = new Jingle(stream);
 		jingle.onSessionInitiate = onOffer;
+	}
+
+	public function online()
+		discoverProxies();
+
+	public function detach() {
+		clear();
+		s5b.proxies.resize(0);
+		stream = null;
+		jingle = null;
 	}
 
 	/**
