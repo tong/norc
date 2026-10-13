@@ -1,6 +1,9 @@
 package norc;
 
 import norc.Config.Account;
+import norc.module.Contacts;
+import norc.module.Discovery;
+import norc.module.FileTransfers;
 import sys.thread.Deque;
 import sys.thread.Thread;
 import xmpp.EntityCapabilities;

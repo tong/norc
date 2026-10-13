@@ -1,5 +1,8 @@
-package norc;
+package norc.module;
 
+import norc.Commands;
+import norc.Module;
+import norc.Term;
 import xmpp.Jid;
 import xmpp.Response;
 import xmpp.XML;

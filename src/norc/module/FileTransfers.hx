@@ -1,7 +1,12 @@
-package norc;
+package norc.module;
 
 import haxe.io.Bytes;
 import haxe.io.Path;
+import norc.Commands;
+import norc.Config;
+import norc.Hooks;
+import norc.Module;
+import norc.Term;
 import sys.FileSystem;
 import sys.io.File;
 import xmpp.Jid;
