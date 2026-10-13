@@ -39,27 +39,42 @@ class PidFile {
 		catch (_) {}
 	}
 
-	static function ownPid():Int {
-		// /proc/self links to /proc/<pid>
-		final pid = Std.parseInt(haxe.io.Path.withoutDirectory(FileSystem.fullPath("/proc/self")));
-		if (pid == null)
-			throw "cannot determine own pid (no /proc?)";
-		return pid;
+	@:hlNative("std", "sys_getpid")
+	static function ownPid():Int
+		return 0;
+
+	/** Returns `true` if process `pid` is running and is norc (the pid may have been reused) **/
+	static function isNorc(pid:Int):Bool
+		return commandLine(pid).contains("norc");
+
+	/** The command line of process `pid`, `""` if it doesn't exist **/
+	static function commandLine(pid:Int):String {
+		return switch Sys.systemName() {
+			case "Linux":
+				// Files in /proc report size 0, so read them as a stream (File.getContent returns "")
+				try {
+					final f = File.read('/proc/$pid/cmdline');
+					final bytes = f.readAll();
+					f.close();
+					// Arguments are separated by NUL, which ends the string on HL
+					for (i in 0...bytes.length)
+						if (bytes.get(i) == 0)
+							bytes.set(i, " ".code);
+					bytes.toString();
+				} catch (_) "";
+			case "Windows":
+				output("powershell", ["-NoProfile", "-Command", '(Get-CimInstance Win32_Process -Filter "ProcessId=$pid").CommandLine']);
+			case _:
+				output("ps", ["-p", '$pid', "-o", "command="]);
+		}
 	}
 
-	static function isNorc(pid:Int):Bool {
-		// Files in /proc report size 0, so read them as a stream (File.getContent returns "")
-		final content = try {
-			final f = File.read('/proc/$pid/cmdline');
-			final bytes = f.readAll();
-			f.close();
-			// Arguments are separated by NUL, which ends the string on HL
-			for (i in 0...bytes.length)
-				if (bytes.get(i) == 0)
-					bytes.set(i, " ".code);
-			bytes.toString();
-		} catch (_)
-			"";
-		return content.contains("norc");
+	static function output(cmd:String, args:Array<String>):String {
+		return try {
+			final proc = new sys.io.Process(cmd, args);
+			final out = proc.stdout.readAll().toString();
+			proc.close();
+			out;
+		} catch (_) "";
 	}
 }

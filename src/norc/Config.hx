@@ -20,20 +20,20 @@ typedef Account = {
 /**
 	Configuration files (`key = value` lines, `#` comments):
 
-	- `$XDG_CONFIG_HOME/norc/accounts/<name>`: one file per account
-	- `$XDG_STATE_HOME/norc/<name>/`: runtime state of an account (pid file)
+	- `$XDG_CONFIG_HOME/norc/accounts/<name>` (Windows: `%APPDATA%\norc\accounts\<name>`): one file per account
+	- `$XDG_STATE_HOME/norc/<name>/` (Windows: `%LOCALAPPDATA%\norc\<name>\`): runtime state of an account (pid file)
 **/
 class Config {
 	public static final DEFAULT_RESOURCE = "norc";
 
 	public static function configDir():String
-		return xdg("XDG_CONFIG_HOME", ".config") + "/norc";
+		return (windows() ? env("APPDATA", "AppData/Roaming") : env("XDG_CONFIG_HOME", ".config")) + "/norc";
 
 	public static function accountsDir():String
 		return configDir() + "/accounts";
 
 	public static function stateDir(account:String):String
-		return xdg("XDG_STATE_HOME", ".local/state") + '/norc/$account';
+		return (windows() ? env("LOCALAPPDATA", "AppData/Local") : env("XDG_STATE_HOME", ".local/state")) + '/norc/$account';
 
 	/** Names of the configured accounts **/
 	public static function listAccounts():Array<String> {
@@ -109,8 +109,15 @@ class Config {
 		return values;
 	}
 
-	static function xdg(env:String, fallback:String):String {
-		final dir = Sys.getEnv(env);
-		return (dir != null && dir.length > 0) ? dir : Sys.getEnv("HOME") + '/$fallback';
+	/** Directory from environment variable `name`, or `fallback` in the home directory **/
+	static function env(name:String, fallback:String):String {
+		final dir = Sys.getEnv(name);
+		return (dir != null && dir.length > 0) ? dir : home() + '/$fallback';
 	}
+
+	static function home():String
+		return Sys.getEnv(windows() ? "USERPROFILE" : "HOME");
+
+	static inline function windows():Bool
+		return Sys.systemName() == "Windows";
 }

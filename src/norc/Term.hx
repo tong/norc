@@ -23,20 +23,39 @@ class Term {
 	public static function readPassword(prompt:String):String {
 		Sys.stderr().writeString(prompt);
 		Sys.stderr().flush();
-		final echoOff = Sys.command("stty -echo 2>/dev/null") == 0;
-		final password = try Sys.stdin().readLine() catch (_:haxe.io.Eof) "";
-		if (echoOff) {
-			Sys.command("stty echo 2>/dev/null");
-			Sys.stderr().writeString("\n");
+		final windows = Sys.systemName() == "Windows";
+		// Read key by key: the terminal is in raw mode (Unix) or reads unbuffered (Windows) without echo
+		final bytes = new Array<Int>();
+		while (true) {
+			final c = Sys.getChar(false);
+			switch c {
+				case -1, 4, 10, 13: // eof, ctrl-d, enter
+					break;
+				case 3: // ctrl-c (no signal in raw mode)
+					Sys.stderr().writeString("\n");
+					throw "cancelled";
+				case 8, 127: // backspace: remove the last character, including its UTF-8 continuation bytes
+					while (bytes.length > 0)
+						if (bytes.pop() & 0xC0 != 0x80)
+							break;
+				case 0, 224 if (windows): // function and arrow keys are followed by a second code
+					Sys.getChar(false);
+				case _:
+					bytes.push(c);
+			}
 		}
-		return password;
+		Sys.stderr().writeString("\n");
+		final b = haxe.io.Bytes.alloc(bytes.length);
+		for (i in 0...bytes.length)
+			b.set(i, bytes[i]);
+		return b.getString(0, b.length, UTF8);
 	}
 
 	/**
-		Runs `cmd` with the shell and returns the first line of its output.
+		Runs `cmd` with the shell (`cmd` on Windows) and returns the first line of its output.
 	**/
 	public static function readCommand(cmd:String):String {
-		final proc = new sys.io.Process("sh", ["-c", cmd]);
+		final proc = Sys.systemName() == "Windows" ? new sys.io.Process("cmd", ["/c", cmd]) : new sys.io.Process("sh", ["-c", cmd]);
 		final out = proc.stdout.readAll().toString();
 		final code = proc.exitCode();
 		proc.close();
