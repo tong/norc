@@ -18,6 +18,9 @@ typedef Account = {
 
 	/** Directory for received files **/
 	var ?downloadDir:String;
+
+	/** Seconds without data from the server before pinging it, `0` to disable **/
+	var ?keepalive:Float;
 }
 
 /**
@@ -27,7 +30,8 @@ typedef Account = {
 	- `conf`: base config, the defaults of all accounts
 	- `accounts/<name>`: one file per account, overriding values of the base config
 
-	Keys: `jid`, `host`, `port`, `resource`, `password_cmd`, `download_dir` (`~/` is the home directory).
+	Keys: `jid`, `host`, `port`, `resource`, `password_cmd`, `download_dir` (`~/` is the home directory),
+	`keepalive` (seconds without data before pinging the server, `0` to disable).
 
 	The runtime state of an account (pid file) is in `$XDG_STATE_HOME/norc/<name>/` (Windows: `%LOCALAPPDATA%\norc\<name>\`).
 **/
@@ -171,6 +175,11 @@ class Config {
 					account.passwordCmd = value;
 				case "download_dir":
 					account.downloadDir = expandHome(value);
+				case "keepalive":
+					final v = Std.parseFloat(value);
+					if (Math.isNaN(v) || v < 0)
+						throw '$source: invalid keepalive: $value (seconds, 0 to disable)';
+					account.keepalive = v;
 				case _:
 					throw '$source: unknown key: $key';
 			}

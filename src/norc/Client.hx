@@ -58,6 +58,12 @@ class Client {
 	/** Last printed presence of each available full jid **/
 	var presences = new Map<String, String>();
 
+	/** State (`available`, `away`, …) of each available full jid, for the presence hook **/
+	final states = new Map<String, String>();
+
+	/** Time of the login, presences shortly after are the initial ones of the contacts **/
+	var onlineSince = 0.0;
+
 	var exitCode:Null<Int>;
 
 	public function new(account:Account, password:String) {
@@ -111,6 +117,11 @@ class Client {
 		Connects and processes events until the client quits; returns the exit code.
 	**/
 	public function run(interactive:Bool):Int {
+		// regular checks, e.g. the keepalive of the session
+		Thread.create(() -> while (true) {
+			Sys.sleep(5);
+			events.add(Call(() -> session?.tick()));
+		});
 		final editor = interactive ? LineEditor.start() : null;
 		Term.editor = editor;
 		connect();
@@ -157,6 +168,8 @@ class Client {
 	function connect() {
 		final session = new Session(events, account, debug);
 		this.session = session;
+		if (account.keepalive != null)
+			session.keepalive = account.keepalive;
 		final stream = session.stream;
 		stream.onMessage = onMessage;
 		stream.onPresence = onPresence;
@@ -173,6 +186,7 @@ class Client {
 		session.onOnline = () -> {
 			attempt = 0;
 			Term.info('online as ${stream.jid}');
+			onlineSince = Sys.time();
 			hooks.run("online", [stream.jid]);
 			for (m in modules)
 				m.online();
@@ -196,6 +210,7 @@ class Client {
 		session.onClosed = (?msg) -> {
 			this.session = null;
 			presences.clear();
+			states.clear();
 			for (m in modules)
 				m.detach();
 			if (quitting) {
@@ -346,11 +361,25 @@ class Client {
 
 	function presenceHook(from:String, state:String, status:Null<String>) {
 		final bare = Jid.parseBare(from);
+		final previous = states.get(from) ?? "offline";
+		if (state == "offline")
+			states.remove(from);
+		else
+			states.set(from, state);
+		// available resources of the contact after this change
+		var resources = 0;
+		for (jid in states.keys())
+			if (Jid.parseBare(jid) == bare)
+				resources++;
 		hooks.run("presence", [bare, state, status ?? ""], [
 			"from" => from,
 			"name" => displayName(bare),
 			"state" => state,
-			"status" => status ?? ""
+			"status" => status ?? "",
+			"previous" => previous,
+			"resources" => Std.string(resources),
+			// the server sends the presences of all available contacts after the login
+			"initial" => (Sys.time() - onlineSince < 5) ? "1" : "0"
 		]);
 	}
 

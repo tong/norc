@@ -3,6 +3,7 @@ package norc;
 import norc.Config.Account;
 import norc.Event;
 import sys.thread.Deque;
+import xmpp.Ping;
 import xmpp.Presence;
 import xmpp.XML;
 import xmpp.client.Authentication;
@@ -27,6 +28,18 @@ class Session {
 	final conn:Connection;
 	final debug:Bool;
 	var failed = false;
+
+	/** Seconds without received data before pinging the server, `0` to disable (call `tick` regularly) **/
+	public var keepalive = 60.0;
+
+	/** Seconds to wait for data after a ping before closing the connection **/
+	public static inline var PING_TIMEOUT = 30.0;
+
+	var lastReceived = Sys.time();
+	var pingSent:Null<Float>;
+
+	/** Why the session closed the connection itself, passed to `onClosed` **/
+	var closeReason:Null<String>;
 
 	/** The stream is secured with TLS: `login`, or use it unauthenticated (e.g. to register) **/
 	public dynamic function onSecured(features:XML) {}
@@ -96,6 +109,8 @@ class Session {
 			case ConnectFailed(msg):
 				onError(msg, true);
 			case Data(bytes):
+				lastReceived = Sys.time();
+				pingSent = null;
 				if (debug)
 					log(bytes.toString(), false);
 				stream.recvBytes(bytes);
@@ -106,7 +121,7 @@ class Session {
 			case Disconnected(msg):
 				online = false;
 				if (!failed)
-					onClosed(msg);
+					onClosed(closeReason ?? msg);
 		}
 	}
 
@@ -128,6 +143,26 @@ class Session {
 			online = true;
 			onOnline();
 		});
+	}
+
+	/**
+		Keepalive: pings the server after `keepalive` seconds without received data, and closes the connection
+		if nothing is received within `PING_TIMEOUT` after the ping (e.g. a dead connection after a network change).
+	**/
+	public function tick() {
+		if (!online || keepalive <= 0 || closeReason != null)
+			return;
+		final now = Sys.time();
+		if (pingSent != null) {
+			if (now - pingSent >= PING_TIMEOUT) {
+				closeReason = 'no response from the server for ${Std.int(now - lastReceived)}s';
+				conn.close();
+			}
+		} else if (now - lastReceived >= keepalive) {
+			pingSent = now;
+			// any data received counts as answer
+			Ping.ping(stream, stream.domain);
+		}
 	}
 
 	/** Ends the stream (going offline first) and closes the connection **/
