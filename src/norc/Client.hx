@@ -8,6 +8,7 @@ import xmpp.Jid;
 import xmpp.Ping;
 import xmpp.Message;
 import xmpp.Presence;
+import xmpp.XML;
 import xmpp.Response;
 import xmpp.client.Roster;
 
@@ -37,6 +38,13 @@ class Client {
 	var session:Null<Session>;
 	var quitting = false;
 
+	/** Own presence, sent on login and with `/presence` **/
+	var show:Null<Show>;
+	var status:Null<String>;
+
+	/** Creates the capabilities element of the current session **/
+	var caps:Null<() -> XML>;
+
 	final commands:Commands;
 
 	/** Features of the client, each with its commands and part of the session **/
@@ -60,6 +68,12 @@ class Client {
 				description: "send a message (\\n for a newline)",
 				online: true,
 				run: args -> sendMessage(args[0], args[1].replace("\\n", "\n"))
+			},
+			{
+				name: "presence",
+				args: "[state] [status...]",
+				description: "show or set your presence: available, chat, away, xa (extended away), dnd (busy), with a status message",
+				run: args -> setPresence(args[0], args[1])
 			},
 			{
 				name: "roster",
@@ -142,7 +156,7 @@ class Client {
 				features.push(f);
 		}
 		// after all request handlers are registered: the features are part of the capabilities
-		final caps = EntityCapabilities.handleRequests(stream, {category: "client", type: "console", name: "norc"}, NODE, features);
+		caps = EntityCapabilities.handleRequests(stream, {category: "client", type: "console", name: "norc"}, NODE, features);
 		session.onSecured = features -> session.login(password, features);
 		session.onOnline = () -> {
 			attempt = 0;
@@ -155,9 +169,7 @@ class Client {
 				case Error(e):
 					Term.error('cannot load roster: ${e.condition}');
 			});
-			final presence = new Presence();
-			presence.properties.push(caps());
-			stream.send(presence);
+			sendPresence();
 		}
 		session.onError = (msg, retryable) -> {
 			if (retryable) {
@@ -264,6 +276,38 @@ class Client {
 		}
 		session.stream.send(new Message(to, body));
 	}
+
+	function setPresence(state:Null<String>, status:Null<String>) {
+		if (state == null) {
+			Term.info('presence: ${describePresence()}' + (online() ? '' : ' (not connected)'));
+			return;
+		}
+		switch state {
+			case "available", "online":
+				show = null;
+			case _:
+				final s = Show.fromString(state);
+				if (s == null) {
+					Term.error('unknown presence: $state (available, chat, away, xa, dnd)');
+					return;
+				}
+				show = s;
+		}
+		this.status = status;
+		if (online())
+			sendPresence();
+		Term.info('presence: ${describePresence()}' + (online() ? '' : ' (sent once connected)'));
+	}
+
+	function sendPresence() {
+		final presence = new Presence(show, status);
+		if (caps != null)
+			presence.properties.push(caps());
+		session.stream.send(presence);
+	}
+
+	function describePresence():String
+		return (show ?? "available") + (status != null ? ' ($status)' : '');
 
 	function printRoster() {
 		if (roster.length == 0)
