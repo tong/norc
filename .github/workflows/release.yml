@@ -54,8 +54,8 @@ jobs:
       - uses: msys2/setup-msys2@v2
         if: runner.os == 'Windows'
         with:
-          msystem: MINGW64
-          install: make mingw-w64-x86_64-gcc
+          msystem: UCRT64
+          install: make mingw-w64-ucrt-x86_64-gcc
           # haxe and haxelib are installed outside of MSYS2
           path-type: inherit
 

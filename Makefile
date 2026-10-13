@@ -30,7 +30,7 @@ norc.hl: build.hl.hxml $(SRC)
 #
 # Linux:   fully static with musl (glibc can't resolve hostnames in static binaries)
 # macOS:   links only system libraries and frameworks (macOS has no static libc)
-# Windows: MSYS2 MinGW64, links only system DLLs
+# Windows: MSYS2 (UCRT64), links only system DLLs
 
 UNAME := $(shell uname -s)
 STATIC_CFLAGS := -O2 -ffunction-sections -fdata-sections -DLIBHL_STATIC -I$(HASHLINK_SRC)/src
@@ -38,12 +38,12 @@ ifeq ($(UNAME),Darwin)
 STATIC_CC ?= clang
 STATIC_LDFLAGS := -Wl,-dead_strip
 STATIC_LIBS := -lm -lpthread -framework Security -framework CoreFoundation
-else ifneq ($(findstring MINGW,$(UNAME)),)
+else ifeq ($(OS),Windows_NT)
 EXE := .exe
 STATIC_CC ?= gcc
 STATIC_CFLAGS += -municode
 STATIC_LDFLAGS := -static -municode -Wl,--gc-sections
-STATIC_LIBS := -lws2_32 -lwsock32 -ldbghelp -lcrypt32 -lbcrypt -lm
+STATIC_LIBS := -lws2_32 -lwsock32 -ldbghelp -lcrypt32 -lbcrypt -lwinmm -lm
 else
 STATIC_CC ?= musl-gcc
 # musl has no backtrace(): stub execinfo.h
