@@ -71,8 +71,11 @@ class FileTransfers implements Module {
 	/**
 		`post` runs a callback on the main thread (callbacks of the sockets of transfers).
 	**/
-	public function new(downloadDir:String, post:(() -> Void)->Void, resources:String->Array<String>) {
+	final hooks:Hooks;
+
+	public function new(downloadDir:String, hooks:Hooks, post:(() -> Void)->Void, resources:String->Array<String>) {
 		this.downloadDir = downloadDir;
+		this.hooks = hooks;
 		this.resources = resources;
 		s5b = {network: new JingleS5BSysNetwork(post), proxies: []};
 	}
@@ -207,6 +210,7 @@ class FileTransfers implements Module {
 			try {
 				File.saveBytes(target, data);
 				info('#${t.id} saved $target');
+				hooks.run("file-received", [Jid.parseBare(t.session.peer), target], ["from" => t.session.peer, "path" => target]);
 			} catch (e)
 				Term.error('#${t.id} cannot write $target: $e');
 		});
@@ -287,6 +291,12 @@ class FileTransfers implements Module {
 					+ (reason.condition != JingleReason.cancel ? ' (${formatReason(reason)})' : ''));
 		}
 		info('#${t.id} ${session.peer} offers ${describe(file)}: /accept ${t.id} or /decline ${t.id}');
+		hooks.run("file-offer", [Jid.parseBare(session.peer), file.name ?? "", file.size != null ? Std.string(Std.int(file.size)) : ""], [
+			"from" => session.peer,
+			"file" => file.name ?? "",
+			"size" => file.size != null ? Std.string(Std.int(file.size)) : "",
+			"id" => Std.string(t.id)
+		]);
 	}
 
 	function offer(id:Null<Int>):Null<Transfer> {

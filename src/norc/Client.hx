@@ -45,6 +45,9 @@ class Client {
 
 	final commands:Commands;
 
+	/** External programs run on events (`<config dir>/hooks/on-<event>`) **/
+	final hooks:Hooks;
+
 	/** Features of the client, each with its commands and part of the session **/
 	final modules = new Array<Module>();
 	var attempt = 0;
@@ -60,6 +63,7 @@ class Client {
 	public function new(account:Account, password:String) {
 		this.account = account;
 		this.password = password;
+		hooks = new Hooks(Config.configDir() + "/hooks", account.name, () -> session?.stream.jid ?? "", f -> events.add(Call(f)));
 		commands = new Commands(online);
 		commands.registerAll([
 			{
@@ -92,7 +96,7 @@ class Client {
 		});
 		addModule(contacts);
 		addModule(new Discovery());
-		addModule(new FileTransfers(account.downloadDir ?? Config.downloadDir(), f -> events.add(Call(f)), bare -> [
+		addModule(new FileTransfers(account.downloadDir ?? Config.downloadDir(), hooks, f -> events.add(Call(f)), bare -> [
 			for (jid in presences.keys())
 				if (Jid.parseBare(jid) == bare) jid
 		]));
@@ -169,6 +173,7 @@ class Client {
 		session.onOnline = () -> {
 			attempt = 0;
 			Term.info('online as ${stream.jid}');
+			hooks.run("online", [stream.jid]);
 			for (m in modules)
 				m.online();
 			sendPresence();
@@ -197,6 +202,7 @@ class Client {
 				exit(0);
 			} else {
 				Term.error('disconnected' + (msg != null ? ': $msg' : ''));
+				hooks.run("disconnected", [msg ?? ""]);
 				retry();
 			}
 		}
@@ -230,6 +236,13 @@ class Client {
 		Term.println(prefix + lines[0]);
 		for (i in 1...lines.length)
 			Term.println(StringTools.lpad("", " ", timestamp(date).length + displayName(from).length + 4) + lines[i]);
+		hooks.run("message", [from, m.body], [
+			"from" => m.from ?? from,
+			"name" => displayName(from),
+			"body" => m.body,
+			"type" => m.type ?? "normal",
+			"delayed" => delay != null ? "1" : "0"
+		]);
 	}
 
 	function onPresence(p:Presence) {
@@ -248,15 +261,18 @@ class Client {
 				if (presences.get(p.from) == state)
 					return;
 				presences.set(p.from, state);
+				presenceHook(p.from, p.show ?? "available", p.status);
 				'$full is $state';
 			case unavailable:
 				// Ignore contacts which were not seen online (servers send these on login)
 				if (!presences.exists(p.from))
 					return;
 				presences.remove(p.from);
+				presenceHook(p.from, "offline", p.status);
 				'$full is offline$status';
 			case subscribe:
 				contacts.request(p.from);
+				hooks.run("subscribe", [Jid.parseBare(p.from)], ["from" => p.from, "name" => who]);
 				'$who wants to see your presence: /roster accept ${Jid.parseBare(p.from)} or /roster deny ${Jid.parseBare(p.from)}';
 			case subscribed: '$who allowed you to see their presence';
 			case unsubscribed: '$who removed your presence subscription';
@@ -327,6 +343,16 @@ class Client {
 
 	inline function exit(code:Int)
 		exitCode = code;
+
+	function presenceHook(from:String, state:String, status:Null<String>) {
+		final bare = Jid.parseBare(from);
+		hooks.run("presence", [bare, state, status ?? ""], [
+			"from" => from,
+			"name" => displayName(bare),
+			"state" => state,
+			"status" => status ?? ""
+		]);
+	}
 
 	inline function displayName(bare:String):String
 		return contacts.name(bare);
