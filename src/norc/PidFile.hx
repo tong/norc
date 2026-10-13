@@ -58,7 +58,8 @@ class PidFile {
 				if (bytes.get(i) == 0)
 					bytes.set(i, " ".code);
 			bytes.toString();
-		} catch (_) "";
+		} catch (_)
+			"";
 		return content.contains("norc");
 	}
 }

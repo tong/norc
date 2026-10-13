@@ -89,7 +89,7 @@ class Config {
 	public static function parsePort(value:String, ?source:String):Int {
 		final port = Std.parseInt(value);
 		if (port == null || port < 1 || port > 65535)
-			throw (source != null ? '$source: ' : '') + 'invalid port: $value';
+			throw(source != null ? '$source: ' : '') + 'invalid port: $value';
 		return port;
 	}
 

@@ -44,6 +44,7 @@ class Client {
 
 	/** Last printed presence of each available full jid **/
 	var presences = new Map<String, String>();
+
 	var exitCode:Null<Int>;
 
 	public function new(account:Account, password:String) {
@@ -96,9 +97,10 @@ class Client {
 				Term.error(msg);
 				conn = null;
 				retry();
-			case Data(str):
-				log(str, false);
-				stream.recv(str);
+			case Data(bytes):
+				if (debug)
+					log(bytes.toString(), false);
+				stream.recvBytes(bytes);
 			case TlsReady:
 				stream.start(login);
 			case TlsFailed(msg):

@@ -32,13 +32,20 @@ function main() {
 	}
 	while (i < args.length) {
 		switch args[i] {
-			case "-a", "--account": accountName = value();
-			case "-j", "--jid": jid = value();
-			case "--host": host = value();
-			case "--port": port = value();
-			case "--debug": debug = true;
-			case "--no-input": input = false;
-			case "--no-color": Term.colors = false;
+			case "-a", "--account":
+				accountName = value();
+			case "-j", "--jid":
+				jid = value();
+			case "--host":
+				host = value();
+			case "--port":
+				port = value();
+			case "--debug":
+				debug = true;
+			case "--no-input":
+				input = false;
+			case "--no-color":
+				Term.colors = false;
 			case "-h", "--help":
 				Sys.println(USAGE);
 				Sys.exit(0);
@@ -61,7 +68,8 @@ function main() {
 			}
 			Config.loadAccount(accountName);
 		}
-	} catch (e) exit(Std.string(e));
+	} catch (e)
+		exit(Std.string(e));
 	if (host != null)
 		account.host = host;
 	if (port != null)
