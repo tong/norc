@@ -71,6 +71,9 @@ class Client {
 	/** Time of the login, presences shortly after are the initial ones of the contacts **/
 	var onlineSince = 0.0;
 
+	/** The session was online (for the logout event) **/
+	var wasOnline = false;
+
 	var exitCode:Null<Int>;
 
 	public function new(account:Account, password:String) {
@@ -208,7 +211,8 @@ class Client {
 			attempt = 0;
 			Term.info('online as ${stream.jid}');
 			onlineSince = Sys.time();
-			emit("online", [stream.jid], ["jid" => stream.jid]);
+			wasOnline = true;
+			emit("login", [stream.jid], ["jid" => stream.jid]);
 			for (m in modules)
 				m.online();
 			sendPresence();
@@ -235,11 +239,12 @@ class Client {
 			for (m in modules)
 				m.detach();
 			if (quitting) {
-				exit(0);
-			} else {
+				logout("quit", false);
+			exit(0);
+				} else {
 				Term.error('disconnected' + (msg != null ? ': $msg' : ''));
-				emit("disconnected", [msg ?? ""], ["reason" => msg ?? ""]);
-				retry();
+				logout(msg ?? "", true);
+			retry();
 			}
 		}
 		session.open();
@@ -372,9 +377,18 @@ class Client {
 
 	function fatal(msg:String) {
 		Term.error(msg);
+		logout(msg, false);
 		quitting = true;
 		session?.abort();
 		exit(1);
+	}
+
+	/** An online session ended: the logout event (once per session) **/
+	function logout(reason:String, reconnect:Bool) {
+		if (!wasOnline)
+			return;
+		wasOnline = false;
+		emit("logout", [reason], ["reason" => reason, "reconnect" => reconnect ? "1" : "0"]);
 	}
 
 	function online():Bool

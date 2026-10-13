@@ -16,11 +16,11 @@ class Discovery implements Module {
 	var stream:Null<Stream>;
 
 	/** A contact name to its jid, other input unchanged **/
-final resolve:String->String;
+	final resolve:String->String;
 
-public function new(resolve:String->String) {
-this.resolve = resolve;
-}
+	public function new(resolve:String->String) {
+		this.resolve = resolve;
+	}
 
 	public function commands():Array<Commands.Command>
 		return [

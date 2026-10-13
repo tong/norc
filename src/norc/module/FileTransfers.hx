@@ -35,8 +35,8 @@ private typedef Transfer = {
 	/** Bytes transferred **/
 	var done:Int;
 
-/** Where status messages go: of the command which started or accepted the transfer **/
-var out:Output;
+	/** Where status messages go: of the command which started or accepted the transfer **/
+	var out:Output;
 }
 
 /**
@@ -76,19 +76,20 @@ class FileTransfers implements Module {
 	/** SOCKS5 bytestreams: network access and the proxies found (`discoverProxies`) **/
 	final s5b:JingleS5BConfig;
 
+	/** Emits an event (to hooks and API clients) **/
+	final emit:(event:String, args:Array<String>, values:Map<String, String>) -> Void;
+
+	/** The jid of a contact given by name or jid, `null` (with an error) if unknown **/
+	final resolve:(input:String, out:Output) -> Null<String>;
+
 	/**
 		`post` runs a callback on the main thread (callbacks of the sockets of transfers).
 	**/
-	final emit:(event:String, args:Array<String>, values:Map<String, String>) -> Void;
-
-/** The jid of a contact given by name or jid, `null` (with an error) if unknown **/
-final resolve:(input:String, out:Output) -> Null<String>;
-
 	public function new(downloadDir:String, emit:(event:String, args:Array<String>, values:Map<String, String>) -> Void,
-resolve:(input:String, out:Output) -> Null<String>, post:(() -> Void)->Void, resources:String->Array<String>) {
+			resolve:(input:String, out:Output) -> Null<String>, post:(() -> Void)->Void, resources:String->Array<String>) {
 		this.downloadDir = downloadDir;
 		this.emit = emit;
-this.resolve = resolve;
+		this.resolve = resolve;
 		this.resources = resources;
 		s5b = {network: new JingleS5BSysNetwork(post), proxies: []};
 	}
@@ -147,9 +148,9 @@ this.resolve = resolve;
 		Without a resource, the first available resource of the contact supporting file transfer is used.
 	**/
 	public function send(input:String, path:String, out:Output) {
-final jid = resolve(input, out);
-if (jid == null)
-return;
+		final jid = resolve(input, out);
+		if (jid == null)
+			return;
 		path = expandHome(path);
 		if (!FileSystem.exists(path) || FileSystem.isDirectory(path)) {
 			out.error('no such file: $path');
