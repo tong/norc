@@ -1,22 +1,16 @@
 package norc;
 
 import norc.Config.Account;
-import norc.Event;
 import sys.thread.Deque;
 import sys.thread.Thread;
 import xmpp.Jid;
 import xmpp.Message;
 import xmpp.Presence;
 import xmpp.Response;
-import xmpp.XML;
-import xmpp.client.Authentication;
 import xmpp.client.Roster;
-import xmpp.client.Stream;
 
 using StringTools;
 using xmpp.DelayedDelivery;
-using xmpp.StartTLS;
-using xmpp.client.Authentication;
 using xmpp.client.Roster;
 
 /**
@@ -35,9 +29,7 @@ class Client {
 	final password:String;
 	final events = new Deque<Event>();
 
-	var conn:Null<Connection>;
-	var stream:Null<Stream>;
-	var online = false;
+	var session:Null<Session>;
 	var quitting = false;
 	var attempt = 0;
 	var roster = new Array<RosterItem>();
@@ -78,52 +70,62 @@ class Client {
 	function handle(e:Event) {
 		switch e {
 			case Net(c, e):
-				if (c == conn)
-					handleNet(e);
+				if (session != null && session.owns(c))
+					session.handle(e);
 			case Line(line):
 				command(line);
 			case InputClosed:
 			case Reconnect:
-				if (conn == null && !quitting)
+				if (session == null && !quitting)
 					connect();
 		}
 	}
 
-	function handleNet(e:NetEvent) {
-		switch e {
-			case Connected:
-				startStream();
-			case ConnectFailed(msg):
-				Term.error(msg);
-				conn = null;
-				retry();
-			case Data(bytes):
-				if (debug)
-					log(bytes.toString(), false);
-				stream.recvBytes(bytes);
-			case TlsReady:
-				stream.start(login);
-			case TlsFailed(msg):
-				fatal('TLS handshake failed: $msg');
-			case Disconnected(msg):
-				conn = null;
-				stream = null;
-				online = false;
-				presences.clear();
-				if (quitting) {
-					exit(0);
-				} else {
-					Term.error('disconnected' + (msg != null ? ': $msg' : ''));
-					retry();
-				}
-		}
-	}
-
 	function connect() {
-		final host = account.host ?? account.jid.domain;
-		Term.info('connecting to $host:${account.port}');
-		conn = new Connection(events);
-		conn.open(host, account.port);
+		final session = new Session(events, account, debug);
+		this.session = session;
+		final stream = session.stream;
+		stream.onMessage = onMessage;
+		stream.onPresence = onPresence;
+		Roster.handleRequests(stream, (item, ver) -> rosterPush(item));
+		session.onSecured = features -> session.login(password, features);
+		session.onOnline = () -> {
+			attempt = 0;
+			Term.info('online as ${stream.jid}');
+			stream.loadRoster(res -> switch res {
+				case Result(payload):
+					roster = Roster.parseRoster(payload).items;
+				case Error(e):
+					Term.error('cannot load roster: ${e.condition}');
+			});
+			stream.send(new Presence());
+		}
+		session.onError = (msg, retryable) -> {
+			if (retryable) {
+				Term.error(msg);
+				this.session = null;
+				retry();
+			} else
+				fatal(msg);
+		}
+		session.onStreamError = condition -> {
+			// Another session took over this resource: reconnecting would take it back, endlessly
+			if (condition == "conflict")
+				fatal('another client logged in as ${account.jid.node}@${account.jid.domain}/${account.resource}');
+			else
+				Term.error('stream error: $condition');
+		}
+		session.onClosed = (?msg) -> {
+			this.session = null;
+			presences.clear();
+			if (quitting) {
+				exit(0);
+			} else {
+				Term.error('disconnected' + (msg != null ? ': $msg' : ''));
+				retry();
+			}
+		}
+		session.open();
 	}
 
 	function retry() {
@@ -135,72 +137,6 @@ class Client {
 		Thread.create(() -> {
 			Sys.sleep(delay);
 			events.add(Reconnect);
-		});
-	}
-
-	function startStream() {
-		final s = new Stream(account.jid.domain);
-		stream = s;
-		s.output = str -> {
-			log(str, true);
-			conn.send(str);
-		}
-		s.onMessage = onMessage;
-		s.onPresence = onPresence;
-		s.onEnd = () -> {
-			// The server closed the stream: close ours too
-			s.end();
-			conn?.close();
-		}
-		s.onNonza = xml -> {
-			if (xml.name == "stream:error") {
-				final condition = streamError(xml);
-				// Another session took over this resource: reconnecting would take it back, endlessly
-				if (condition == "conflict")
-					fatal('another client logged in as ${account.jid.node}@${account.jid.domain}/${account.resource}');
-				else
-					Term.error('stream error: $condition');
-			}
-			return false;
-		}
-		Roster.handleRequests(s, (item, ver) -> rosterPush(item));
-		s.start(features -> {
-			// Never authenticate without TLS
-			if (!StartTLS.isOffered(features)) {
-				fatal("server does not offer TLS");
-				return;
-			}
-			s.startTLS(ok -> {
-				if (ok)
-					conn.startTls(account.jid.domain);
-				else
-					fatal("server refused TLS");
-			});
-		});
-	}
-
-	function login(features:XML) {
-		// PLAIN is acceptable since the stream is secured with TLS
-		final mechanism = Authentication.selectMechanism(features, true);
-		if (mechanism == null) {
-			fatal('no supported authentication mechanism: ${Authentication.getMechanisms(features).join(", ")}');
-			return;
-		}
-		stream.authenticate(account.jid.node, account.resource, password, mechanism, (?error) -> {
-			if (error != null) {
-				fatal('login failed: ${error.condition}' + (error.text != null ? ' (${error.text})' : ''));
-				return;
-			}
-			online = true;
-			attempt = 0;
-			Term.info('online as ${stream.jid}');
-			stream.loadRoster(res -> switch res {
-				case Result(payload):
-					roster = Roster.parseRoster(payload).items;
-				case Error(e):
-					Term.error('cannot load roster: ${e.condition}');
-			});
-			stream.send(new Presence());
 		});
 	}
 
@@ -230,7 +166,7 @@ class Client {
 		final status = p.status != null ? ' (${p.status})' : '';
 		final msg = switch p.type {
 			case null:
-				if (p.from == stream.jid)
+				if (p.from == session?.stream.jid)
 					return;
 				final state = '${p.show ?? "available"}$status';
 				// Only print changes
@@ -284,11 +220,11 @@ class Client {
 					Term.error('invalid jid: $to');
 					return;
 				}
-				if (!online) {
+				if (session == null || !session.online) {
 					Term.error("not connected");
 					return;
 				}
-				stream.send(new Message(to, body));
+				session.stream.send(new Message(to, body));
 			case "roster":
 				if (roster.length == 0)
 					Term.info("roster is empty");
@@ -305,22 +241,16 @@ class Client {
 
 	function quit() {
 		quitting = true;
-		if (conn == null) {
+		if (session == null)
 			exit(0);
-			return;
-		}
-		if (stream != null) {
-			if (online)
-				stream.send(new Presence(null, null, null, unavailable));
-			stream.end();
-		}
-		conn.close();
+		else
+			session.close();
 	}
 
 	function fatal(msg:String) {
 		Term.error(msg);
 		quitting = true;
-		conn?.close();
+		session?.abort();
 		exit(1);
 	}
 
@@ -332,23 +262,6 @@ class Client {
 			if (item.jid == bare && item.name != null)
 				return item.name;
 		return bare;
-	}
-
-	function log(str:String, out:Bool) {
-		if (!debug)
-			return;
-		// Don't log credentials
-		if (out && str.startsWith("<auth "))
-			str = str.substr(0, str.indexOf(">") + 1) + "…</auth>";
-		final pretty = try xmpp.xml.Printer.print(str, true) catch (_) str;
-		Sys.stderr().writeString(Term.style(pretty.trim(), out ? 32 : 33) + "\n");
-	}
-
-	static function streamError(xml:XML):String {
-		for (e in xml.elements)
-			if (e.name != "text")
-				return e.name;
-		return "unknown";
 	}
 
 	static function timestamp(date:Date):String {

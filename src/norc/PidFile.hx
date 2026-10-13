@@ -21,16 +21,24 @@ class PidFile {
 		Throws if another instance is running.
 	**/
 	public static function acquire(dir:String):PidFile {
-		final path = '$dir/pid';
-		final own = ownPid();
-		if (FileSystem.exists(path)) {
-			final pid = Std.parseInt(File.getContent(path).trim());
-			if (pid != null && pid != own && isNorc(pid))
-				throw 'already running (pid $pid)';
-		}
+		final pid = running(dir);
+		if (pid != null)
+			throw 'already running (pid $pid)';
 		FileSystem.createDirectory(dir);
-		File.saveContent(path, '$own\n');
+		final path = '$dir/pid';
+		File.saveContent(path, '${ownPid()}\n');
 		return new PidFile(path);
+	}
+
+	/**
+		Returns the pid of the norc instance owning `dir`, or `null` if none is running.
+	**/
+	public static function running(dir:String):Null<Int> {
+		final path = '$dir/pid';
+		if (!FileSystem.exists(path))
+			return null;
+		final pid = Std.parseInt(File.getContent(path).trim());
+		return (pid != null && pid != ownPid() && isNorc(pid)) ? pid : null;
 	}
 
 	public function release() {

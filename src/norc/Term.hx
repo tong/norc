@@ -18,6 +18,23 @@ class Term {
 		return colors ? '\x1B[${code}m$str\x1B[0m' : str;
 
 	/**
+		Reads a line from stdin, `null` at the end of input.
+	**/
+	public static function readLine(prompt:String):Null<String> {
+		Sys.stderr().writeString(prompt);
+		Sys.stderr().flush();
+		return try Sys.stdin().readLine() catch (_:haxe.io.Eof) null;
+	}
+
+	/**
+		Asks a yes/no question, `false` unless answered with `y` or `yes`.
+	**/
+	public static function confirm(question:String):Bool {
+		final answer = readLine('$question [y/N] ');
+		return answer != null && ["y", "yes"].contains(answer.trim().toLowerCase());
+	}
+
+	/**
 		Reads a password from the terminal without echoing it.
 	**/
 	public static function readPassword(prompt:String):String {

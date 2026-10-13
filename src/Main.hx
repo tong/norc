@@ -1,9 +1,13 @@
+import norc.AccountCommand;
 import norc.Client;
 import norc.Config;
 import norc.PidFile;
 import norc.Term;
 
+using StringTools;
+
 private final USAGE = 'Usage: norc [options]
+       norc account <command> [options]   (norc account help)
 
 Options:
   -a, --account <name>   account to use (config: <config dir>/accounts/<name>)
@@ -24,6 +28,10 @@ function main() {
 	var port:Null<String> = null;
 	var debug = false;
 	var interactive = false;
+	var save = false;
+	var yes = false;
+	var purge = false;
+	final positional = new Array<String>();
 	var i = 0;
 	function value():String {
 		final opt = args[i];
@@ -49,13 +57,37 @@ function main() {
 				debug = true;
 			case "--no-color":
 				Term.colors = false;
+			case "--save":
+				save = true;
+			case "--yes":
+				yes = true;
+			case "--purge":
+				purge = true;
 			case "-h", "--help":
 				Sys.println(USAGE);
 				Sys.exit(0);
+			case arg if (arg.startsWith("-")):
+				exit('unknown option: $arg\n\n$USAGE');
 			case arg:
-				exit('unknown argument: $arg\n\n$USAGE');
+				positional.push(arg);
 		}
 		i++;
+	}
+	switch positional {
+		case []:
+		case ["account", _] | ["account", _, _] | ["account"]:
+			final port = port != null ? (try Config.parsePort(port) catch (e) exit(Std.string(e))) : null;
+			Sys.exit(AccountCommand.run(positional.slice(1), {
+				name: accountName,
+				host: host,
+				port: port,
+				debug: debug,
+				save: save,
+				yes: yes,
+				purge: purge
+			}));
+		case _:
+			exit('unknown command: ${positional.join(" ")}\n\n$USAGE');
 	}
 	final account = try {
 		if (jid != null) {

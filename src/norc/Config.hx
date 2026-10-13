@@ -48,8 +48,30 @@ class Config {
 		return names;
 	}
 
+	public static function accountPath(name:String):String
+		return accountsDir() + '/$name';
+
+	/**
+		Writes the config file of a new account; throws if it exists.
+	**/
+	public static function saveAccount(account:Account) {
+		final path = accountPath(account.name);
+		if (FileSystem.exists(path))
+			throw 'account config exists: $path';
+		final lines = ['jid = ${Jid.parseBare(account.jid)}'];
+		if (account.host != null)
+			lines.push('host = ${account.host}');
+		if (account.port != xmpp.client.Stream.PORT)
+			lines.push('port = ${account.port}');
+		if (account.resource != DEFAULT_RESOURCE)
+			lines.push('resource = ${account.resource}');
+		lines.push(account.passwordCmd != null ? 'password_cmd = ${account.passwordCmd}' : '# password_cmd = pass xmpp/${Jid.parseBare(account.jid)}');
+		FileSystem.createDirectory(accountsDir());
+		File.saveContent(path, lines.join("\n") + "\n");
+	}
+
 	public static function loadAccount(name:String):Account {
-		final path = accountsDir() + '/$name';
+		final path = accountPath(name);
 		if (!FileSystem.exists(path))
 			throw 'no such account: $name ($path)';
 		final values = parse(File.getContent(path), path);
