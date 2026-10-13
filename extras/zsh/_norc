@@ -39,6 +39,7 @@ _norc() {
 
 	_arguments -C $options \
 		'(-i --interactive)'{-i,--interactive}'[read commands from stdin]' \
+		'--api[socket interface for other programs]' \
 		'1: :->command' \
 		'*:: :->args' && ret=0
 

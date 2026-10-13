@@ -21,7 +21,7 @@ _norc_accounts() {
 _norc() {
 	local cur=${COMP_WORDS[COMP_CWORD]} prev=${COMP_WORDS[COMP_CWORD - 1]}
 	COMPREPLY=()
-	local options="-a --account -j --jid -c --config --host --port -i --interactive --xmpp-debug --no-color -h --help"
+	local options="-a --account -j --jid -c --config --host --port -i --interactive --api --xmpp-debug --no-color -h --help"
 
 	# values of options
 	case $prev in
