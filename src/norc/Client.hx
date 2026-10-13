@@ -70,6 +70,9 @@ class Client {
 				return;
 			}
 			events.add(Line(line));
+			// Stop reading: exit() waits for the lock of stdin, held while a read blocks
+			if (line.trim() == "/quit")
+				return;
 		}
 	}
 

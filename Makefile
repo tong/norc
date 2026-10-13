@@ -112,13 +112,15 @@ endif
 
 # --- Install (Linux): `make install`, `sudo make install`, `make install PREFIX=~/.local` ---------------
 #
-# Installs the single binary, and the zsh completion if zsh is the login shell ($SHELL; override with
-# ZSH_COMPLETION=yes or no). DESTDIR is prepended to all paths (packaging).
+# Installs the single binary, and the completion for the login shell ($SHELL) if it is zsh or bash
+# (override with ZSH_COMPLETION / BASH_COMPLETION = yes or no). DESTDIR is prepended to all paths (packaging).
 
 PREFIX ?= /usr/local
 BINDIR ?= $(PREFIX)/bin
 ZSH_COMPLETION_DIR ?= $(PREFIX)/share/zsh/site-functions
 ZSH_COMPLETION ?= auto
+BASH_COMPLETION_DIR ?= $(PREFIX)/share/bash-completion/completions
+BASH_COMPLETION ?= auto
 
 install: $(BIN)
 	install -Dm755 $(BIN) $(DESTDIR)$(BINDIR)/norc
@@ -126,10 +128,15 @@ install: $(BIN)
 		echo install -Dm644 extras/zsh/_norc $(DESTDIR)$(ZSH_COMPLETION_DIR)/_norc; \
 		install -Dm644 extras/zsh/_norc $(DESTDIR)$(ZSH_COMPLETION_DIR)/_norc; \
 	fi
+	@if [ "$(BASH_COMPLETION)" = yes ] || { [ "$(BASH_COMPLETION)" = auto ] && [ "$${SHELL##*/}" = bash ]; }; then \
+		echo install -Dm644 extras/bash/norc $(DESTDIR)$(BASH_COMPLETION_DIR)/norc; \
+		install -Dm644 extras/bash/norc $(DESTDIR)$(BASH_COMPLETION_DIR)/norc; \
+	fi
 
 uninstall:
 	rm -f $(DESTDIR)$(BINDIR)/norc
 	rm -f $(DESTDIR)$(ZSH_COMPLETION_DIR)/_norc
+	rm -f $(DESTDIR)$(BASH_COMPLETION_DIR)/norc
 
 clean:
 	rm -rf $(BUILD) out norc.hl $(BIN)
