@@ -79,12 +79,16 @@ class Api {
 
 	public function stop() {
 		if (file != null)
-			try FileSystem.deleteFile(file) catch (_) {};
+			try
+				FileSystem.deleteFile(file)
+			catch (_) {};
 		file = null;
 		for (c in clients.copy())
 			c.close();
 		if (server != null)
-			try server.close() catch (_) {};
+			try
+				server.close()
+			catch (_) {};
 		server = null;
 	}
 
@@ -211,8 +215,12 @@ private class ApiClient {
 			catch (_)
 				break;
 		}
-		try socket.shutdown(true, true) catch (_) {};
-		try socket.close() catch (_) {};
+		try
+			socket.shutdown(true, true)
+		catch (_) {};
+		try
+			socket.close()
+		catch (_) {};
 	}
 }
 

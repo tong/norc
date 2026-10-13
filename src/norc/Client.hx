@@ -103,7 +103,7 @@ class Client {
 				run: (args, out) -> quit()
 			}
 		]);
-		contacts = new Contacts(bare -> {
+		contacts = new Contacts(emit, bare -> {
 			// the presence of the first available resource
 			for (jid => state in presences)
 				if (Jid.parseBare(jid) == bare)
@@ -223,17 +223,20 @@ class Client {
 		session.onError = (msg, retryable) -> {
 			if (retryable) {
 				Term.error(msg);
+				errorEvent("connection", msg);
 				this.session = null;
 				retry();
 			} else
-				fatal(msg);
+				fatal("login", msg);
 		}
 		session.onStreamError = condition -> {
 			// Another session took over this resource: reconnecting would take it back, endlessly
 			if (condition == "conflict")
-				fatal('another client logged in as ${account.jid.node}@${account.jid.domain}/${account.resource}');
-			else
+				fatal("stream", 'another client logged in as ${account.jid.node}@${account.jid.domain}/${account.resource}');
+			else {
 				Term.error('stream error: $condition');
+				errorEvent("stream", condition);
+			}
 		}
 		session.onClosed = (?msg) -> {
 			this.session = null;
@@ -268,7 +271,9 @@ class Client {
 	function onMessage(m:Message) {
 		final from = m.from != null ? Jid.parseBare(m.from) : account.jid.domain;
 		if (m.type == error) {
-			Term.error('message error from $from');
+			final condition:Null<String> = m.error?.condition;
+			Term.error('message error from $from' + (condition != null ? ': $condition' : ''));
+			errorEvent("message", condition ?? "error", ["from" => m.from ?? from]);
 			return;
 		}
 		if (m.body == null)
@@ -318,9 +323,15 @@ class Client {
 				contacts.request(p.from);
 				emit("subscribe", [Jid.parseBare(p.from)], ["from" => p.from, "name" => who]);
 				'$who wants to see your presence: /roster accept ${Jid.parseBare(p.from)} or /roster deny ${Jid.parseBare(p.from)}';
-			case subscribed: '$who allowed you to see their presence';
-			case unsubscribed: '$who removed your presence subscription';
-			case unsubscribe: '$who unsubscribed from your presence';
+			case subscribed:
+				subscriptionEvent(p.from, "subscribed", who);
+				'$who allowed you to see their presence';
+			case unsubscribed:
+				subscriptionEvent(p.from, "unsubscribed", who);
+				'$who removed your presence subscription';
+			case unsubscribe:
+				subscriptionEvent(p.from, "unsubscribe", who);
+				'$who unsubscribed from your presence';
 			case error: 'presence error from $full';
 			case _: return;
 		}
@@ -378,13 +389,28 @@ class Client {
 			session.close();
 	}
 
-	function fatal(msg:String) {
+	function fatal(kind:String, msg:String) {
 		Term.error(msg);
+		errorEvent(kind, msg);
 		logout(msg, false);
 		quitting = true;
 		session?.abort();
 		exit(1);
 	}
+
+	/**
+		The error event (`kind`: `connection`, `stream`, `login`, `message`).
+		Not for failing hooks: a failing error hook would trigger itself.
+	**/
+	function errorEvent(kind:String, text:String, ?values:Map<String, String>) {
+		final v = values ?? new Map<String, String>();
+		v.set("kind", kind);
+		v.set("text", text);
+		emit("error", [kind, text], v);
+	}
+
+	function subscriptionEvent(from:String, type:String, name:String)
+		emit("subscription", [Jid.parseBare(from), type], ["from" => from, "name" => name, "type" => type]);
 
 	/** Output of a stanza filter hook: one well-formed element **/
 	static function validStanza(xml:String):Bool

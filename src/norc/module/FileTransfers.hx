@@ -186,9 +186,20 @@ class FileTransfers implements Module {
 			t.session = JingleFileTransfer.sendFile(jingle, peer, file, data, {s5b: s5b, onProgress: sent -> progress(t, sent)}, reason -> {
 				transfers.remove(t);
 				switch reason.condition {
-					case JingleReason.success: out.info('#${t.id} sent ${file.name} to $peer');
-					case JingleReason.decline: out.info('#${t.id} $peer declined ${file.name}');
-					case _: out.error('#${t.id} sending ${file.name} failed: ${formatReason(reason)}');
+					case JingleReason.success:
+						out.info('#${t.id} sent ${file.name} to $peer');
+						emit("file-sent", [Jid.parseBare(peer), path], [
+							"to" => peer,
+							"path" => path,
+							"file" => file.name,
+							"size" => Std.string(data.length)
+						]);
+					case JingleReason.decline:
+						out.info('#${t.id} $peer declined ${file.name}');
+						failed(t, "decline");
+					case _:
+						out.error('#${t.id} sending ${file.name} failed: ${formatReason(reason)}');
+						failed(t, formatReason(reason));
 				}
 			});
 			// sendFile starts sending once accepted
@@ -224,14 +235,17 @@ class FileTransfers implements Module {
 			transfers.remove(t);
 			if (reason.condition != JingleReason.success || data == null) {
 				out.error('#${t.id} receiving ${t.file.name ?? "file"} failed: ${formatReason(reason)}');
+				failed(t, formatReason(reason));
 				return;
 			}
 			try {
 				File.saveBytes(target, data);
 				out.info('#${t.id} saved $target');
 				emit("file-received", [Jid.parseBare(t.session.peer), target], ["from" => t.session.peer, "path" => target]);
-			} catch (e)
+			} catch (e) {
 				out.error('#${t.id} cannot write $target: $e');
+				failed(t, 'cannot write $target: $e');
+			}
 		});
 	}
 
@@ -285,7 +299,10 @@ class FileTransfers implements Module {
 	/** Ends all transfers (the session ended) **/
 	public function clear() {
 		for (t in transfers)
-			t.out.error('#${t.id} ${t.file.name ?? "file"}: transfer aborted');
+			if (t.state == Active) {
+				t.out.error('#${t.id} ${t.file.name ?? "file"}: transfer aborted');
+				failed(t, "aborted");
+			}
 		transfers.resize(0);
 	}
 
@@ -318,6 +335,15 @@ class FileTransfers implements Module {
 			"id" => Std.string(t.id)
 		]);
 	}
+
+	/** The file-failed event **/
+	function failed(t:Transfer, reason:String)
+		emit("file-failed", [Jid.parseBare(t.session.peer), t.file.name ?? "", reason], [
+			"peer" => t.session.peer,
+			"file" => t.file.name ?? "",
+			"reason" => reason,
+			"direction" => t.incoming ? "receive" : "send"
+		]);
 
 	function offer(id:Null<Int>, out:Output):Null<Transfer> {
 		final offers = transfers.filter(t -> t.state == Offered);

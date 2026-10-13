@@ -28,7 +28,11 @@ class Contacts implements Module {
 
 	var stream:Null<Stream>;
 
-	public function new(presence:String->Null<String>) {
+	/** Emits an event (to hooks and API clients) **/
+	final emit:(event:String, args:Array<String>, values:Map<String, String>) -> Void;
+
+	public function new(emit:(event:String, args:Array<String>, values:Map<String, String>) -> Void, presence:String->Null<String>) {
+		this.emit = emit;
 		this.presence = presence;
 	}
 
@@ -263,10 +267,21 @@ class Contacts implements Module {
 		out.info('$bare can not see your presence');
 	}
 
+	/** A roster push: the roster changed (also by another client of the account) **/
 	function push(item:RosterItem) {
+		final known = find(item.jid) != null;
+		final removed = (item.subscription : String) == "remove";
 		items = items.filter(i -> i.jid != item.jid);
-		if ((item.subscription : String) != "remove")
+		if (!removed)
 			items.push(item);
+		final action = removed ? "removed" : known ? "updated" : "added";
+		emit("roster", [item.jid, action], [
+			"jid_contact" => item.jid,
+			"name" => item.name ?? "",
+			"subscription" => removed ? "none" : (item.subscription ?? "none" : String),
+			"groups" => item.groups.join(","),
+			"action" => action
+		]);
 	}
 
 	function find(bare:String):Null<RosterItem> {
