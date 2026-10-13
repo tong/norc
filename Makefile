@@ -1,4 +1,5 @@
-HASHLINK_SRC ?= $(HOME)/src/hashlink
+# HashLink sources (git submodule), compiled into the single binary
+HASHLINK_SRC ?= lib/hashlink
 BUILD := build
 
 PCRE := $(addprefix include/pcre/pcre2_,auto_possess chartables compile config context convert \
@@ -17,17 +18,39 @@ SRC := $(shell find src -name '*.hx') norc.hxml
 norc.hl: build.hl.hxml $(SRC)
 	haxe build.hl.hxml
 
-# --- HashLink/C, fully static binary: ./norc ------------------------------------------------------------
+# --- HashLink/C, single binary: ./norc ---------------------------------------------------------------
 #
-# Everything is compiled with musl (glibc can't resolve hostnames in static binaries) from source:
-#   out/      the generated HashLink/C code
+# The generated HashLink/C code is compiled together with everything it needs from HashLink's sources:
 #   libhl     HashLink runtime
 #   ssl.hdll  with the mbedtls sources bundled with HashLink (its SSL_STATIC build)
-#   fmt.hdll  only `digest` is used; unused functions (png, jpeg, vorbis, …) are dropped by --gc-sections
+#   fmt.hdll  only `digest` is used: lib/hl/fmt.c (with mbedtls and HashLink's zlib)
+#
+# Linux:   fully static with musl (glibc can't resolve hostnames in static binaries)
+# macOS:   links only system libraries and frameworks (macOS has no static libc)
+# Windows: MSYS2 MinGW64, links only system DLLs
 
-MUSL_CC ?= musl-gcc
-STATIC := $(BUILD)/static
+UNAME := $(shell uname -s)
 STATIC_CFLAGS := -O2 -ffunction-sections -fdata-sections -DLIBHL_STATIC -I$(HASHLINK_SRC)/src
+ifeq ($(UNAME),Darwin)
+STATIC_CC ?= clang
+STATIC_LDFLAGS := -Wl,-dead_strip
+STATIC_LIBS := -lm -lpthread -framework Security -framework CoreFoundation
+else ifneq ($(findstring MINGW,$(UNAME)),)
+EXE := .exe
+STATIC_CC ?= gcc
+STATIC_CFLAGS += -municode
+STATIC_LDFLAGS := -static -municode -Wl,--gc-sections
+STATIC_LIBS := -lws2_32 -lwsock32 -ldbghelp -lcrypt32 -lbcrypt -lm
+else
+STATIC_CC ?= musl-gcc
+# musl has no backtrace(): stub execinfo.h
+STATIC_CFLAGS += -Ilib/musl
+STATIC_LDFLAGS := -static -Wl,--gc-sections
+STATIC_LIBS := -lm -lpthread
+endif
+
+STATIC := $(BUILD)/static
+BIN := norc$(EXE)
 
 LIBHL_OBJ := $(addprefix $(STATIC)/libhl/,$(addsuffix .o,$(LIBHL_SRC)))
 LIBHL_CFLAGS := -std=c11 -DPCRE2_CODE_UNIT_WIDTH=16 -DPCRE2_STATIC -DHAVE_CONFIG_H -I$(HASHLINK_SRC)/include/pcre
@@ -37,38 +60,55 @@ MBEDTLS_INC := -I$(HASHLINK_SRC)/libs/ssl -I$(HASHLINK_SRC)/include/mbedtls/incl
 MBEDTLS_SRC := $(patsubst $(HASHLINK_SRC)/%.c,%,$(wildcard $(HASHLINK_SRC)/include/mbedtls/library/*.c))
 SSL_OBJ := $(addprefix $(STATIC)/ssl/,$(addsuffix .o,libs/ssl/ssl $(MBEDTLS_SRC)))
 
-FMT_OBJ := $(addprefix $(STATIC)/fmt/,$(addsuffix .o,libs/fmt/fmt libs/fmt/sha1 include/zlib/crc32 include/zlib/adler32))
-# fmt.c includes png/jpeg/vorbis headers for functions that are never linked: take them from the system
-FMT_CFLAGS := -I$(HASHLINK_SRC)/libs/fmt -I$(HASHLINK_SRC)/include/zlib -I$(HASHLINK_SRC)/include/minimp3 -idirafter /usr/include
+ZLIB_OBJ := $(addprefix $(STATIC)/zlib/,$(addsuffix .o,include/zlib/crc32 include/zlib/adler32))
+FMT_OBJ := $(STATIC)/lib/hl/fmt.o $(ZLIB_OBJ)
 
-# Generated code: listed in out/objects.txt (written by out/Makefile, which haxe runs), which also
-# leaves out stale files of removed classes. Only known once out/ exists, so the link runs in a sub-make
-OUT_OBJ := $(addprefix $(STATIC)/out/,$(shell cat out/objects.txt 2>/dev/null))
+# Generated code: the files listed in out/hlc.json (out/ may contain stale files of removed classes).
+# Only known once out/ exists, so the link runs in a sub-make
+OUT_OBJ := $(addprefix $(STATIC)/out/,$(patsubst %.c,%.o,$(shell grep -o '"[^"]*\.c"' out/hlc.json 2>/dev/null | tr -d '"')))
 
 $(STATIC)/libhl/%.o: $(HASHLINK_SRC)/%.c
 	@mkdir -p $(dir $@)
-	$(MUSL_CC) $(STATIC_CFLAGS) $(LIBHL_CFLAGS) -c $< -o $@
+	$(STATIC_CC) $(STATIC_CFLAGS) $(LIBHL_CFLAGS) -c $< -o $@
 
 $(STATIC)/ssl/%.o: $(HASHLINK_SRC)/%.c
 	@mkdir -p $(dir $@)
-	$(MUSL_CC) $(STATIC_CFLAGS) $(MBEDTLS_INC) -c $< -o $@
+	$(STATIC_CC) $(STATIC_CFLAGS) $(MBEDTLS_INC) -c $< -o $@
 
-$(STATIC)/fmt/%.o: $(HASHLINK_SRC)/%.c
+$(STATIC)/zlib/%.o: $(HASHLINK_SRC)/%.c
 	@mkdir -p $(dir $@)
-	$(MUSL_CC) $(STATIC_CFLAGS) $(FMT_CFLAGS) -c $< -o $@
+	$(STATIC_CC) $(STATIC_CFLAGS) -c $< -o $@
+
+$(STATIC)/lib/hl/fmt.o: lib/hl/fmt.c
+	@mkdir -p $(dir $@)
+	$(STATIC_CC) $(STATIC_CFLAGS) $(MBEDTLS_INC) -I$(HASHLINK_SRC)/include/zlib -c $< -o $@
 
 $(STATIC)/out/%.o: out/%.c
 	@mkdir -p $(dir $@)
-	$(MUSL_CC) $(STATIC_CFLAGS) -std=c11 -DHL_MAKE -Iout -Ilib/musl $(MBEDTLS_INC) -c $< -o $@
+	$(STATIC_CC) $(STATIC_CFLAGS) -std=c11 -DHL_MAKE -Iout $(MBEDTLS_INC) -c $< -o $@
 
-$(STATIC)/norc: $(OUT_OBJ) $(SSL_OBJ) $(FMT_OBJ) $(LIBHL_OBJ)
-	$(MUSL_CC) -static -Wl,--gc-sections -o $@ $^ -lm -lpthread
+$(STATIC)/$(BIN): $(OUT_OBJ) $(SSL_OBJ) $(FMT_OBJ) $(LIBHL_OBJ)
+	$(STATIC_CC) $(STATIC_LDFLAGS) -o $@ $^ $(STATIC_LIBS)
 
-norc: build.hlc.hxml $(SRC)
+# haxe only rewrites generated files whose content changed: track the last run with a stamp
+$(STATIC)/hlc.stamp: build.hlc.hxml $(SRC)
 	haxe build.hlc.hxml
-	$(MAKE) $(STATIC)/norc
-	cp $(STATIC)/norc norc
-	strip norc
+	@mkdir -p $(dir $@)
+	@touch $@
+
+$(BIN): $(STATIC)/hlc.stamp | $(HASHLINK_SRC)/src/hl.h
+	$(MAKE) $(STATIC)/$(BIN)
+	cp $(STATIC)/$(BIN) $(BIN)
+	strip $(BIN)
+
+$(HASHLINK_SRC)/src/hl.h:
+	@echo "HashLink sources not found in $(HASHLINK_SRC): run 'git submodule update --init' (or set HASHLINK_SRC)" >&2
+	@exit 1
+
+ifneq ($(EXE),)
+.PHONY: norc
+norc: $(BIN)
+endif
 
 clean:
-	rm -rf $(BUILD) out norc.hl norc
+	rm -rf $(BUILD) out norc.hl $(BIN)

@@ -1,0 +1,4 @@
+[submodule "lib/hashlink"]
+	path = lib/hashlink
+	url = https://github.com/HaxeFoundation/hashlink
+	shallow = true
