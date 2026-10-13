@@ -8,7 +8,7 @@ PCRE := $(addprefix include/pcre/pcre2_,auto_possess chartables compile config c
 LIBHL_SRC := $(PCRE) src/gc $(addprefix src/std/,array buffer bytes cast date error debug file fun \
 	maps math obj random regexp socket string sys types ucs2 thread process track)
 
-.PHONY: all clean install uninstall
+.PHONY: all build clean install uninstall
 all: norc.hl
 
 # Rebuild when sources or build settings change
@@ -112,6 +112,9 @@ ifneq ($(EXE),)
 .PHONY: norc
 norc: $(BIN)
 endif
+
+# The single binary (same as `make norc`)
+build: $(BIN)
 
 # --- Install (Linux): `make install`, `sudo make install`, `make install PREFIX=~/.local` ---------------
 #

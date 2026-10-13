@@ -194,6 +194,9 @@ class Client {
 		this.session = session;
 		if (account.keepalive != null)
 			session.keepalive = account.keepalive;
+		// filter hooks: modify or drop stanzas
+		session.filterSend = xml -> hooks.filter("stanza-send", xml, validStanza);
+		session.filterRecv = xml -> hooks.filter("stanza-recv", xml, validStanza);
 		final stream = session.stream;
 		stream.onMessage = onMessage;
 		stream.onPresence = onPresence;
@@ -382,6 +385,13 @@ class Client {
 		session?.abort();
 		exit(1);
 	}
+
+	/** Output of a stanza filter hook: one well-formed element **/
+	static function validStanza(xml:String):Bool
+		return try {
+			final x = Xml.parse(xml);
+			[for (e in x.elements()) e].length == 1;
+		} catch (_) false;
 
 	/** An online session ended: the logout event (once per session) **/
 	function logout(reason:String, reconnect:Bool) {

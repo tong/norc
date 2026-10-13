@@ -73,6 +73,74 @@ class Hooks {
 			});
 	}
 
+	/** Seconds a filter hook may take, else the data is passed on unchanged **/
+	public static inline var FILTER_TIMEOUT = 5.0;
+
+	/**
+		Filter hooks: passes `data` through the hooks of `event` (stdin to stdout, chained in the order of their
+		names) and returns the result, `null` if a hook dropped it (empty output).
+		A hook failing (exit code, timeout, output rejected by `valid`) is reported and skipped.
+		Blocks until the hooks are done.
+	**/
+	public function filter(event:String, data:String, ?valid:String->Bool):Null<String> {
+		final hooks = find(event);
+		if (hooks.length == 0)
+			return data;
+		final env = ["event" => event, "account" => account, "jid" => jid()];
+		for (k => v in env)
+			Sys.putEnv('NORC_${k.toUpperCase()}', v);
+		var result:Null<String> = data;
+		for (name in hooks) {
+			final out = try runFilter('$dir/$name', result) catch (e) {
+				Term.error('hook $name: $e');
+				continue;
+			}
+			if (out.trim().length == 0) {
+				result = null;
+				break;
+			}
+			if (valid != null && !valid(out.trim())) {
+				Term.error('hook $name: invalid output, ignored: ${out.trim().substr(0, 80)}');
+				continue;
+			}
+			result = out.trim();
+		}
+		for (k in env.keys())
+			Sys.putEnv('NORC_${k.toUpperCase()}', null);
+		return result;
+	}
+
+	/** Runs a filter hook: `input` on stdin, returns stdout; throws on failure or timeout **/
+	static function runFilter(path:String, input:String):String {
+		final proc = new Process(path, []);
+		final done = new sys.thread.Lock();
+		var out = "";
+		var err = "";
+		var code = -1;
+		Thread.create(() -> {
+			try {
+				proc.stdin.writeString(input);
+				proc.stdin.close();
+			} catch (_) {}
+			err = try proc.stderr.readAll().toString() catch (_) "";
+			done.release();
+		});
+		Thread.create(() -> {
+			out = try proc.stdout.readAll().toString() catch (_) "";
+			code = proc.exitCode();
+			done.release();
+		});
+		if (!done.wait(FILTER_TIMEOUT) || !done.wait(FILTER_TIMEOUT)) {
+			proc.kill();
+			proc.close();
+			throw 'timeout after ${FILTER_TIMEOUT}s';
+		}
+		proc.close();
+		if (code != 0)
+			throw 'failed ($code)' + (err.trim().length > 0 ? ': ${err.trim().split("\n")[0]}' : '');
+		return out;
+	}
+
 	/**
 		The hooks of `event`, sorted by name: executables named `on-<event>`, or starting with `on-<event>.`
 		(e.g. `on-message.notify`, `on-message.log`). Files without execute permission are skipped.

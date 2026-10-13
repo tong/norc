@@ -41,6 +41,14 @@ class Session {
 	/** Why the session closed the connection itself, passed to `onClosed` **/
 	var closeReason:Null<String>;
 
+	/**
+		Filters of the stanzas (`message`, `presence`, `iq`) sent and received after the login:
+		return the stanza to use, or `null` to drop it.
+	**/
+	public var filterSend:Null<String->Null<String>>;
+
+	public var filterRecv:Null<String->Null<String>>;
+
 	/** The stream is secured with TLS: `login`, or use it unauthenticated (e.g. to register) **/
 	public dynamic function onSecured(features:XML) {}
 
@@ -66,6 +74,12 @@ class Session {
 		conn = new Connection(events);
 		stream = new Stream(account.jid.domain);
 		stream.output = str -> {
+			if (online && filterSend != null && isStanza(str)) {
+				final filtered = filterSend(str);
+				if (filtered == null)
+					return;
+				str = filtered;
+			}
 			log(str, true);
 			conn.send(str);
 		}
@@ -141,6 +155,17 @@ class Session {
 				return;
 			}
 			online = true;
+			// received stanzas pass the filter (complete units, after the login)
+			final input = stream.input;
+			stream.input = str -> {
+				if (filterRecv != null && isStanza(str)) {
+					final filtered = filterRecv(str);
+					if (filtered == null)
+						return;
+					str = filtered;
+				}
+				input(str);
+			}
 			onOnline();
 		});
 	}
@@ -192,6 +217,9 @@ class Session {
 		final pretty = try xmpp.xml.Printer.print(str, true) catch (_) str;
 		Term.println(Term.style(pretty.trim(), out ? 32 : 33), true);
 	}
+
+	static function isStanza(str:String):Bool
+		return str.startsWith("<message") || str.startsWith("<presence") || str.startsWith("<iq");
 
 	static function streamError(xml:XML):String {
 		for (e in xml.elements)
