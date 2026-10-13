@@ -1,0 +1,6 @@
+build/
+out/
+*.hl
+/norc
+/norc-static
+/PLAN.md

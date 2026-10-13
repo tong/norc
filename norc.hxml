@@ -1,0 +1,3 @@
+-p src
+--main Main
+--library hxmpp

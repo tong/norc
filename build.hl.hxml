@@ -1,0 +1,4 @@
+norc.hxml
+-hl norc.hl
+--dce full
+-D analyzer-optimize
