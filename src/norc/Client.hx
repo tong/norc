@@ -281,7 +281,8 @@ class Client {
 	function connect() {
 		final session = new Session(events, account, debug, resumable);
 		this.session = session;
-		session.manageStream();
+		if (account.streamManagement != false)
+			session.manageStream();
 		if (account.keepalive != null)
 			session.keepalive = account.keepalive;
 		// filter hooks: modify or drop stanzas

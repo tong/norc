@@ -56,6 +56,13 @@
 # Accept attention requests (/buzz) of contacts: they ring the terminal bell.
 # attention = 1
 
+# --- Connection ---
+
+# Stream management (XEP-0198): the server acknowledges stanzas, and after a disconnection (e.g. a network
+# change) the session is resumed without losing messages. The server keeps a dropped session for a while
+# (Prosody: 10 minutes), so a killed norc stays online for contacts until then (/quit ends it at once).
+# stream_management = 1
+
 # --- Socket interface for other programs (also: --api) ---
 
 # norc listens on 127.0.0.1 and writes the port and a token to <state dir>/api

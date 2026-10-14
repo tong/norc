@@ -43,6 +43,9 @@ typedef Account = {
 	/** Answer entity time requests (reveals the time zone) **/
 	var ?entityTime:Bool;
 
+	/** Stream management (acknowledgements, resuming the session after a disconnection), `true` if not set **/
+	var ?streamManagement:Bool;
+
 	/** Receive attention requests (`/buzz`), `true` if not set **/
 	var ?attention:Bool;
 
@@ -65,6 +68,7 @@ typedef Account = {
 	`chat_states` (`0`: don't send chat states),
 	`entity_time` (`1`: answer time requests, revealing your time zone),
 	`attention` (`0`: ignore attention requests),
+	`stream_management` (`0`: no acknowledgements and resumption of the session),
 	`prompt` (of the input line, in `"` to keep spaces at the start or end).
 
 	The runtime state of an account (pid file) is in `$XDG_STATE_HOME/norc/<name>/` (Windows: `%LOCALAPPDATA%\norc\<name>\`).
@@ -139,6 +143,7 @@ class Config {
 			{key: "chat_states", value: bool(account.chatStates)},
 			{key: "entity_time", value: bool(account.entityTime)},
 			{key: "attention", value: bool(account.attention)},
+			{key: "stream_management", value: bool(account.streamManagement)},
 			{key: "prompt", value: account.prompt != null ? '"${account.prompt}"' : null}
 		];
 	}
@@ -293,6 +298,8 @@ class Config {
 					account.downloadDir = expandHome(value);
 				case "api":
 					account.api = parseBool(value, key, source);
+				case "stream_management":
+					account.streamManagement = parseBool(value, key, source);
 				case "attention":
 					account.attention = parseBool(value, key, source);
 				case "entity_time":
