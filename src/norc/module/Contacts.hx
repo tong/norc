@@ -20,6 +20,9 @@ class Contacts implements Module {
 	/** The roster, as last received from the server (kept while disconnected) **/
 	public var items(default, null) = new Array<RosterItem>();
 
+	/** Nicknames published by contacts (bare jid), their names if the roster has none **/
+	public final nicknames = new Map<String, String>();
+
 	/** Contacts asking to see the own presence **/
 	final requests = new Array<String>();
 
@@ -117,10 +120,10 @@ class Contacts implements Module {
 		requests.resize(0);
 	}
 
-	/** The name of a contact, or the jid **/
+	/** The name of a contact: the name in the roster, else its nickname, else the jid **/
 	public function name(bare:String):String {
 		final item = find(bare);
-		return (item != null && item.name != null && item.name.length > 0) ? item.name : bare;
+		return (item != null && item.name != null && item.name.length > 0) ? item.name : nicknames.get(bare) ?? bare;
 	}
 
 	/**

@@ -9,6 +9,7 @@ import norc.module.Contacts;
 import norc.module.Discovery;
 import norc.module.FileTransfers;
 import norc.module.Messages;
+import norc.module.Profile;
 import norc.module.Receipts;
 import norc.module.Upload;
 import sys.FileSystem;
@@ -160,6 +161,7 @@ class Client {
 		addModule(new Carbons(messages, account.carbons != false));
 		addModule(new Receipts(messages, emit, contacts.name, contacts.seesPresence));
 		addModule(new ChatStates(messages, emit, contacts.resolve, contacts.name, account.chatStates != false));
+		addModule(new Profile(messages, emit, contacts.resolveOptional, contacts.name, contacts.nicknames));
 		addModule(new Blocking(contacts.resolveOptional));
 		addModule(new Discovery(contacts.resolveOptional, resourcesOf, account.lastActivity == true ? () -> Std.int(Sys.time() - lastInput) : null));
 		addModule(new FileTransfers(account.downloadDir ?? Config.downloadDir(), emit, contacts.resolve, f -> events.add(Call(f)), resourcesOf));
