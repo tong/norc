@@ -41,15 +41,7 @@ class Hooks {
 		final hooks = find(event);
 		if (hooks.length == 0)
 			return;
-		final env = values?.copy() ?? new Map<String, String>();
-		env.set("event", event);
-		env.set("account", account);
-		env.set("jid", jid());
-		// The environment is set for the started processes only: hooks are only started on the main thread
-		final names = [for (k => v in env) 'NORC_${k.toUpperCase()}'];
-		for (k => v in env)
-			Sys.putEnv('NORC_${k.toUpperCase()}', v ?? "");
-		final started = [
+		final started = withEnv(event, values, () -> [
 			for (name in hooks) {
 				final proc = try start('$dir/$name', args) catch (e) {
 					Term.error('hook $name: $e');
@@ -58,12 +50,10 @@ class Hooks {
 				if (proc != null)
 					{name: name, proc: proc};
 			}
-		];
-		for (n in names)
-			Sys.putEnv(n, null);
+		]);
 		for (h in started)
+			// read the output (the hook would block on a full pipe), report failures
 			Thread.create(() -> {
-				// read the output (the hook would block on a full pipe), report failures
 				final err = try h.proc.stderr.readAll().toString() catch (_) "";
 				try h.proc.stdout.readAll() catch (_) {}
 				final code = h.proc.exitCode();
@@ -86,33 +76,53 @@ class Hooks {
 		final hooks = find(event);
 		if (hooks.length == 0)
 			return data;
-		final env = ["event" => event, "account" => account, "jid" => jid()];
+		return withEnv(event, null, () -> {
+			var result:Null<String> = data;
+			for (name in hooks) {
+				final out = try runFilter('$dir/$name', result).trim() catch (e) {
+					Term.error('hook $name: $e');
+					continue;
+				}
+				if (out.length == 0) {
+					result = null;
+					break;
+				}
+				if (valid != null && !valid(out)) {
+					Term.error('hook $name: invalid output, ignored: ${out.substr(0, 80)}');
+					continue;
+				}
+				result = out;
+			}
+			result;
+		});
+	}
+
+	/**
+		Runs `f` with the `NORC_*` variables of `event` and `values` set, inherited by the processes it starts.
+		Only on the main thread: the environment is shared by all threads.
+	**/
+	function withEnv<T>(event:String, values:Null<Map<String, String>>, f:() -> T):T {
+		final env = values?.copy() ?? new Map<String, String>();
+		env.set("event", event);
+		env.set("account", account);
+		env.set("jid", jid());
 		for (k => v in env)
-			Sys.putEnv('NORC_${k.toUpperCase()}', v);
-		var result:Null<String> = data;
-		for (name in hooks) {
-			final out = try runFilter('$dir/$name', result) catch (e) {
-				Term.error('hook $name: $e');
-				continue;
-			}
-			if (out.trim().length == 0) {
-				result = null;
-				break;
-			}
-			if (valid != null && !valid(out.trim())) {
-				Term.error('hook $name: invalid output, ignored: ${out.trim().substr(0, 80)}');
-				continue;
-			}
-			result = out.trim();
+			Sys.putEnv('NORC_${k.toUpperCase()}', v ?? "");
+		final result = try f() catch (e) {
+			unset(env);
+			throw e;
 		}
-		for (k in env.keys())
-			Sys.putEnv('NORC_${k.toUpperCase()}', null);
+		unset(env);
 		return result;
 	}
 
+	static function unset(env:Map<String, String>)
+		for (k in env.keys())
+			Sys.putEnv('NORC_${k.toUpperCase()}', null);
+
 	/** Runs a filter hook: `input` on stdin, returns stdout; throws on failure or timeout **/
 	static function runFilter(path:String, input:String):String {
-		final proc = new Process(path, []);
+		final proc = start(path, [], false);
 		final done = new sys.thread.Lock();
 		var out = "";
 		var err = "";
@@ -163,10 +173,11 @@ class Hooks {
 		return hooks;
 	}
 
-	static function start(path:String, args:Array<String>):Process {
-		final proc = (Sys.systemName() == "Windows" && ~/\.(bat|cmd)$/i.match(path)) ? new Process("cmd", ["/c", path].concat(args)) : new Process(path,
-			args);
-		proc.stdin.close();
+	/** Starts a hook (batch files with `cmd` on Windows), with stdin closed unless `input` **/
+	static function start(path:String, args:Array<String>, input = false):Process {
+		final proc = (Sys.systemName() == "Windows" && ~/\.(bat|cmd)$/i.match(path)) ? new Process("cmd", ["/c", path].concat(args)) : new Process(path, args);
+		if (!input)
+			proc.stdin.close();
 		return proc;
 	}
 }

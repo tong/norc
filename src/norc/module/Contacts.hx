@@ -29,9 +29,9 @@ class Contacts implements Module {
 	var stream:Null<Stream>;
 
 	/** Emits an event (to hooks and API clients) **/
-	final emit:(event:String, args:Array<String>, values:Map<String, String>) -> Void;
+	final emit:Emit;
 
-	public function new(emit:(event:String, args:Array<String>, values:Map<String, String>) -> Void, presence:String->Null<String>) {
+	public function new(emit:Emit, presence:String->Null<String>) {
 		this.emit = emit;
 		this.presence = presence;
 	}

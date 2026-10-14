@@ -58,13 +58,15 @@ class Client {
 
 	/** Features of the client, each with its commands and part of the session **/
 	final modules = new Array<Module>();
+
+	/** Failed connection attempts since the last login, for the reconnect delay **/
 	var attempt = 0;
 
 	/** Roster and presence subscriptions **/
 	final contacts:Contacts;
 
 	/** Last printed presence of each available full jid **/
-	var presences = new Map<String, String>();
+	final presences = new Map<String, String>();
 
 	/** State (`available`, `away`, …) of each available full jid, for the presence hook **/
 	final states = new Map<String, String>();
@@ -123,10 +125,7 @@ class Client {
 		addModule(contacts);
 		addModule(new Blocking(contacts.resolveOptional));
 		addModule(new Discovery(contacts.resolveOptional, resourcesOf, account.lastActivity == true ? () -> Std.int(Sys.time() - lastInput) : null));
-		addModule(new FileTransfers(account.downloadDir ?? Config.downloadDir(), emit, contacts.resolve, f -> events.add(Call(f)), bare -> [
-			for (jid in presences.keys())
-				if (Jid.parseBare(jid) == bare) jid
-		]));
+		addModule(new FileTransfers(account.downloadDir ?? Config.downloadDir(), emit, contacts.resolve, f -> events.add(Call(f)), resourcesOf));
 	}
 
 	public function addModule(module:Module) {
@@ -145,9 +144,9 @@ class Client {
 		});
 		if (account.api == true) {
 			final api = new Api((line, out) -> {
-			lastInput = Sys.time();
-			commands.run(line, out, false);
-		}, f -> events.add(Call(f)));
+				lastInput = Sys.time();
+				return commands.run(line, out, false);
+			}, f -> events.add(Call(f)));
 			try {
 				final host = account.apiHost ?? "127.0.0.1";
 				api.start(Config.stateDir(account.name), host, account.apiPort ?? 0);
@@ -261,11 +260,11 @@ class Client {
 				m.detach();
 			if (quitting) {
 				logout("quit", false);
-			exit(0);
-				} else {
+				exit(0);
+			} else {
 				Term.error('disconnected' + (msg != null ? ': $msg' : ''));
 				logout(msg ?? "", true);
-			retry();
+				retry();
 			}
 		}
 		session.open();
@@ -295,14 +294,17 @@ class Client {
 			return;
 		final delay = m.delay();
 		final date = delay?.date ?? Date.now();
+		final name = displayName(from);
+		final time = timestamp(date);
 		final lines = m.body.split("\n");
-		final prefix = '${timestamp(date)} ' + Term.style('<${displayName(from)}>', 36) + ' ';
-		Term.println(prefix + lines[0]);
+		Term.println('$time ' + Term.style('<$name>', 36) + ' ' + lines[0]);
+		// continuation lines aligned with the first
+		final indent = "".lpad(" ", time.length + name.length + 4);
 		for (i in 1...lines.length)
-			Term.println(StringTools.lpad("", " ", timestamp(date).length + displayName(from).length + 4) + lines[i]);
+			Term.println(indent + lines[i]);
 		emit("message", [from, m.body], [
 			"from" => m.from ?? from,
-			"name" => displayName(from),
+			"name" => name,
 			"body" => m.body,
 			"type" => m.type ?? "normal",
 			"delayed" => delay != null ? "1" : "0"
@@ -356,7 +358,7 @@ class Client {
 	function sendMessage(input:String, body:String, out:Output) {
 		final to = contacts.resolve(input, out);
 		if (to == null)
-		return;
+			return;
 		if (!Jid.isValid(to)) {
 			out.error('invalid jid: $to');
 			return;
@@ -465,10 +467,7 @@ class Client {
 	inline function exit(code:Int)
 		exitCode = code;
 
-	/**
-		An event: runs its hook and sends it to the API clients.
-		`args` are the arguments of the hook, `values` its environment variables and the values of the API event.
-	**/
+	/** See `Module.Emit` **/
 	function emit(event:String, args:Array<String>, values:Map<String, String>) {
 		hooks.run(event, args, values);
 		api?.event(event, values);

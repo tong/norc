@@ -13,7 +13,9 @@ import xmpp.XML;
 import xmpp.client.Stream;
 
 /**
-	Service discovery (XEP-0030): `/disco info` and `/disco items`.
+	Information about other entities: service discovery (XEP-0030, `/disco info`, `/disco items`),
+	software version (XEP-0092, `/software`) and last activity (XEP-0012, `/lastactivity`).
+	Answers software version requests, and last activity requests if enabled (`last_activity`).
 **/
 class Discovery implements Module {
 	var stream:Null<Stream>;

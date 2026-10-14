@@ -23,3 +23,9 @@ interface Module {
 	/** The stream ended (disconnected or quit) **/
 	function detach():Void;
 }
+
+/**
+	Emits an event: runs its hooks and sends it to the API clients.
+	`args` are the arguments of the hooks, `values` their environment variables and the values of the API event.
+**/
+typedef Emit = (event:String, args:Array<String>, values:Map<String, String>) -> Void;

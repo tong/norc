@@ -28,6 +28,10 @@ private enum TransferState {
 private typedef Transfer = {
 	var id:Int;
 	var session:JingleSession;
+
+	/** Full jid of the other side **/
+	var peer:String;
+
 	var file:JingleFile;
 	var incoming:Bool;
 	var state:TransferState;
@@ -77,7 +81,7 @@ class FileTransfers implements Module {
 	final s5b:JingleS5BConfig;
 
 	/** Emits an event (to hooks and API clients) **/
-	final emit:(event:String, args:Array<String>, values:Map<String, String>) -> Void;
+	final emit:Emit;
 
 	/** The jid of a contact given by name or jid, `null` (with an error) if unknown **/
 	final resolve:(input:String, out:Output) -> Null<String>;
@@ -85,8 +89,8 @@ class FileTransfers implements Module {
 	/**
 		`post` runs a callback on the main thread (callbacks of the sockets of transfers).
 	**/
-	public function new(downloadDir:String, emit:(event:String, args:Array<String>, values:Map<String, String>) -> Void,
-			resolve:(input:String, out:Output) -> Null<String>, post:(() -> Void)->Void, resources:String->Array<String>) {
+	public function new(downloadDir:String, emit:Emit, resolve:(input:String, out:Output) -> Null<String>, post:(() -> Void)->Void,
+			resources:String->Array<String>) {
 		this.downloadDir = downloadDir;
 		this.emit = emit;
 		this.resolve = resolve;
@@ -178,9 +182,10 @@ class FileTransfers implements Module {
 				session: null,
 				file: file,
 				incoming: false,
+				peer: peer,
 				state: Active,
 				done: 0,
-			out: out
+				out: out
 			};
 			out.info('#${t.id} offering ${describe(file)} to $peer');
 			t.session = JingleFileTransfer.sendFile(jingle, peer, file, data, {s5b: s5b, onProgress: sent -> progress(t, sent)}, reason -> {
@@ -241,7 +246,7 @@ class FileTransfers implements Module {
 			try {
 				File.saveBytes(target, data);
 				out.info('#${t.id} saved $target');
-				emit("file-received", [Jid.parseBare(t.session.peer), target], ["from" => t.session.peer, "path" => target]);
+				emit("file-received", [Jid.parseBare(t.peer), target], ["from" => t.peer, "path" => target]);
 			} catch (e) {
 				out.error('#${t.id} cannot write $target: $e');
 				failed(t, 'cannot write $target: $e');
@@ -269,7 +274,7 @@ class FileTransfers implements Module {
 				case Active: (t.incoming ? "receiving from" : "sending to");
 			}
 			final percent = (t.state == Active && t.file.size != null && t.file.size > 0) ? ' ${Std.int(t.done / t.file.size * 100)}%' : '';
-			out.print('  #${t.id} ${describe(t.file)} $state ${t.session.peer}$percent');
+			out.print('  #${t.id} ${describe(t.file)} $state ${t.peer}$percent');
 		}
 	}
 
@@ -316,10 +321,11 @@ class FileTransfers implements Module {
 			id: nextId++,
 			session: session,
 			file: file,
+			peer: session.peer,
 			incoming: true,
 			state: Offered,
 			done: 0,
-		out: TermOutput.instance
+			out: TermOutput.instance
 		};
 		transfers.push(t);
 		session.onTerminate = reason -> {
@@ -338,8 +344,8 @@ class FileTransfers implements Module {
 
 	/** The file-failed event **/
 	function failed(t:Transfer, reason:String)
-		emit("file-failed", [Jid.parseBare(t.session.peer), t.file.name ?? "", reason], [
-			"peer" => t.session.peer,
+		emit("file-failed", [Jid.parseBare(t.peer), t.file.name ?? "", reason], [
+			"peer" => t.peer,
 			"file" => t.file.name ?? "",
 			"reason" => reason,
 			"direction" => t.incoming ? "receive" : "send"
@@ -431,8 +437,6 @@ class FileTransfers implements Module {
 		if (now > before && bytes < size)
 			t.out.info('#${t.id} ${now * 25}%');
 	}
-
-	
 
 	static function describe(file:JingleFile):String
 		return (file.name ?? "a file") + (file.size != null ? ' (${formatSize(file.size)})' : '');

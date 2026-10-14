@@ -167,13 +167,10 @@ or the only configured one.';
 
 	function unregister(jid:Null<String>):Int {
 		final account = resolve(jid);
-		final lock = try PidFile.acquire(Config.stateDir(account.name)) catch (e) throw '${account.name}: $e, stop it first';
-		try {
+		final code = locked(account, () -> {
 			final bare = Jid.parseBare(account.jid);
-			if (!options.yes && !Term.confirm('Delete the account $bare on the server? This can not be undone.')) {
-				lock.release();
+			if (!options.yes && !Term.confirm('Delete the account $bare on the server? This can not be undone.'))
 				return 1;
-			}
 			final password = readPassword(account, "Password");
 			var removed = false;
 			final session = connect(account);
@@ -189,21 +186,17 @@ or the only configured one.';
 			// The server closes the stream after removing the account
 			session.onStreamError = condition -> if (!removed) Term.error('stream error: $condition');
 			session.onClosed = (?msg) -> finish(removed ? 0 : 1, removed ? null : 'disconnected' + (msg != null ? ': $msg' : ''));
-			final code = loop(session);
-			lock.release();
-			if (code == 0 && options.purge)
-				purge(account);
-			return code;
-		} catch (e) {
-			lock.release();
-			throw e;
-		}
+			return loop(session);
+		});
+		// after the lock is released: purge removes the state directory
+		if (code == 0 && options.purge)
+			purge(account);
+		return code;
 	}
 
 	function passwd(jid:Null<String>):Int {
 		final account = resolve(jid);
-		final lock = try PidFile.acquire(Config.stateDir(account.name)) catch (e) throw '${account.name}: $e, stop it first';
-		try {
+		return locked(account, () -> {
 			final password = readPassword(account, "Current password");
 			final newPassword = readNewPassword("New password");
 			var changed = false;
@@ -220,9 +213,17 @@ or the only configured one.';
 					finish(1, 'password change failed: ${formError(e)}');
 			});
 			session.onClosed = (?msg) -> finish(changed ? 0 : 1, changed ? null : 'disconnected' + (msg != null ? ': $msg' : ''));
-			final code = loop(session);
+			return loop(session);
+		});
+	}
+
+	/** Runs `f` holding the pid file of `account`: it must not be in use by a running norc **/
+	static function locked(account:Account, f:() -> Int):Int {
+		final lock = try PidFile.acquire(Config.stateDir(account.name)) catch (e) throw '${account.name}: $e, stop it first';
+		return try {
+			final code = f();
 			lock.release();
-			return code;
+			code;
 		} catch (e) {
 			lock.release();
 			throw e;
