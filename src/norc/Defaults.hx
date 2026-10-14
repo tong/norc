@@ -13,11 +13,11 @@ import sys.io.File;
 using StringTools;
 
 /**
-	The default config (`config/` of the sources: `conf` and the example hooks), embedded in the binary and written
-	to the config directory when norc runs the first time (`install`).
+	The default config (`config/` of the sources: `conf`, the example hooks and scripts), embedded in the binary and
+	written to the config directory when norc runs the first time (`install`).
 
 	The example accounts are not installed (norc would use the only configured account), and the hooks are
-	disabled (not executable): they are enabled with `chmod +x`.
+	disabled (not executable): they are enabled with `chmod +x`. The scripts are executable, they only run when started.
 **/
 #if !macro
 @:build(norc.Defaults.embed())
@@ -40,22 +40,26 @@ class Defaults {
 			final path = '$dir/$name';
 			FileSystem.createDirectory(haxe.io.Path.directory(path));
 			File.saveBytes(path, haxe.Resource.getBytes(PREFIX + name));
+			if (name.startsWith("scripts/") && Sys.systemName() != "Windows")
+				Sys.command("chmod", ["755", path]);
 		}
 		return names;
 	}
 	#end
 
 	#if macro
-	/** Embeds `config/conf` and `config/hooks/*` as resources `config/…` **/
+	/** Embeds `config/conf`, `config/hooks/*` and `config/scripts/*` as resources `config/…` **/
 	public static function embed():Array<Field> {
 		final src = haxe.io.Path.directory(Context.getPosInfos(Context.currentPos()).file);
 		final dir = haxe.io.Path.normalize('$src/../../config');
 		final files = ["conf"];
-		final hooks = '$dir/hooks';
-		if (FileSystem.exists(hooks))
-			for (f in FileSystem.readDirectory(hooks))
-				if (!f.startsWith(".") && !FileSystem.isDirectory('$hooks/$f'))
-					files.push('hooks/$f');
+		for (sub in ["hooks", "scripts"]) {
+			final d = '$dir/$sub';
+			if (FileSystem.exists(d))
+				for (f in FileSystem.readDirectory(d))
+					if (!f.startsWith(".") && !FileSystem.isDirectory('$d/$f'))
+						files.push('$sub/$f');
+		}
 		for (f in files) {
 			final path = '$dir/$f';
 			if (!FileSystem.exists(path))

@@ -1,0 +1,78 @@
+#!/bin/bash
+#
+# norc script: publish the music you are listening to (/tune, XEP-0118), from any MPRIS player
+# (mpv, Spotify, Firefox, …) via playerctl.
+#
+# Talks to a running norc through its socket interface: enable it with `api = 1` in the config (or --api).
+# Run it next to norc, e.g. in the background or as a user service:
+#
+#   ~/.config/norc/scripts/tune-mpris [account] [player]
+#
+#   account  the account of the norc to use (its name in accounts/), default: the default account
+#   player   only this player (see `playerctl -l`), default: any
+#
+# A playing track is published with artist, title, album and length; paused or stopped clears the tune.
+# Changes while norc is not running are skipped (published with the next change).
+
+account=$1
+player=$2
+state="${XDG_STATE_HOME:-$HOME/.local/state}/norc"
+
+if [ -z "$account" ]; then
+	# the only running norc with the api
+	files=("$state"/*/api)
+	[ -e "${files[0]}" ] || { echo "tune-mpris: no norc with the api is running (api = 1), or give the account" >&2; exit 1; }
+	[ "${#files[@]}" -le 1 ] || { echo "tune-mpris: several norc running, give the account" >&2; exit 1; }
+	account=$(basename "$(dirname "${files[0]}")")
+fi
+
+# a JSON string
+json() {
+	local s=${1//\\/\\\\}
+	s=${s//\"/\\\"}
+	printf '"%s"' "$s"
+}
+
+# a quoted /tune value: \ and " escaped
+quote() {
+	local s=${1//\\/\\\\}
+	printf '"%s"' "${s//\"/\\\"}"
+}
+
+# runs the command line $1 in norc, prints its errors; fails if norc is not running
+send() {
+	local api="$state/$account/api" host port token reply
+	[ -r "$api" ] || return 1
+	host=$(sed -n 's/^host = //p' "$api")
+	port=$(sed -n 's/^port = //p' "$api")
+	token=$(sed -n 's/^token = //p' "$api")
+	exec 3<>"/dev/tcp/$host/$port" 2>/dev/null || return 1
+	printf '{"auth":"%s"}\n{"cmd":%s}\n' "$token" "$(json "$1")" >&3
+	# the replies until the command is done
+	while read -r -t 10 reply <&3; do
+		case $reply in
+		*'"type":"error"'*) echo "tune-mpris: $reply" >&2 ;;
+		*'"type":"done"'*) break ;;
+		esac
+	done
+	exec 3<&-
+}
+
+last=
+playerctl ${player:+--player="$player"} --follow metadata \
+	--format $'{{status}}\x1f{{artist}}\x1f{{title}}\x1f{{album}}\x1f{{mpris:length}}' |
+	# a separator which is no whitespace: empty fields are kept
+	while IFS=$'\x1f' read -r status artist title album length; do
+		if [ "$status" = Playing ] && [ -n "$title" ]; then
+			tune="title=$(quote "$title")"
+			[ -n "$artist" ] && tune="$tune artist=$(quote "$artist")"
+			[ -n "$album" ] && tune="$tune source=$(quote "$album")"
+			# microseconds
+			[ -n "$length" ] && [ "$length" -gt 0 ] 2>/dev/null && tune="$tune length=$((length / 1000000))"
+		else
+			tune=-
+		fi
+		# playerctl repeats unchanged metadata, e.g. on seeking
+		[ "$tune" = "$last" ] && continue
+		send "tune $tune" && last=$tune
+	done

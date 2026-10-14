@@ -88,7 +88,10 @@ class Tunes implements Module {
 		});
 	}
 
-	/** `artist - title`, or `key=value` fields (values in quotes may contain spaces); throws a message if invalid **/
+	/**
+		`artist - title`, or `key=value` fields (values in quotes may contain spaces, `\"` and `\\`);
+		throws a message if invalid
+	**/
 	static function parse(input:String):Tune {
 		final tune:Tune = {};
 		if (!~/^[a-z]+=/.match(input)) {
@@ -101,13 +104,15 @@ class Tunes implements Module {
 			}
 			return tune;
 		}
-		final re = ~/^([a-z]+)=("([^"]*)"|(\S*))\s*/;
+		// a value in quotes may contain \" and \\
+		final re = ~/^([a-z]+)=("((?:[^"\\]|\\.)*)"|(\S*))\s*/;
 		var rest = input;
 		while (rest.length > 0) {
 			if (!re.match(rest))
 				throw 'invalid field: ${rest.split(" ")[0]} (key=value)';
 			final key = re.matched(1);
-			final value = re.matched(3) ?? re.matched(4);
+			final quoted = re.matched(3);
+			final value = (quoted != null) ? ~/\\(.)/g.replace(quoted, "$1") : re.matched(4);
 			if (!FIELDS.contains(key))
 				throw 'unknown field: $key (${FIELDS.join(", ")})';
 			switch key {
