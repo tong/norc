@@ -12,6 +12,7 @@ import norc.module.Messages;
 import norc.module.Moods;
 import norc.module.Profile;
 import norc.module.Receipts;
+import norc.module.Tunes;
 import norc.module.Upload;
 import sys.FileSystem;
 import sys.thread.Deque;
@@ -164,6 +165,7 @@ class Client {
 		addModule(new ChatStates(messages, emit, contacts.resolve, contacts.name, account.chatStates != false));
 		addModule(new Profile(messages, emit, contacts.resolveOptional, contacts.name, contacts.nicknames));
 		addModule(new Moods(messages, emit, contacts.name));
+		addModule(new Tunes(messages, emit, contacts.name));
 		addModule(new Blocking(contacts.resolveOptional));
 		addModule(new Discovery(contacts.resolveOptional, resourcesOf, account.lastActivity == true ? () -> Std.int(Sys.time() - lastInput) : null));
 		addModule(new FileTransfers(account.downloadDir ?? Config.downloadDir(), emit, contacts.resolve, f -> events.add(Call(f)), resourcesOf));
