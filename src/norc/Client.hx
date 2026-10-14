@@ -8,6 +8,7 @@ import norc.module.Contacts;
 import norc.module.Discovery;
 import norc.module.FileTransfers;
 import norc.module.Messages;
+import norc.module.Upload;
 import sys.FileSystem;
 import sys.thread.Deque;
 import sys.thread.Lock;
@@ -149,6 +150,7 @@ class Client {
 		addModule(new Blocking(contacts.resolveOptional));
 		addModule(new Discovery(contacts.resolveOptional, resourcesOf, account.lastActivity == true ? () -> Std.int(Sys.time() - lastInput) : null));
 		addModule(new FileTransfers(account.downloadDir ?? Config.downloadDir(), emit, contacts.resolve, f -> events.add(Call(f)), resourcesOf));
+		addModule(new Upload(messages, contacts.resolve, f -> events.add(Call(f))));
 	}
 
 	public function addModule(module:Module) {

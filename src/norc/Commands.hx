@@ -96,8 +96,23 @@ class Commands {
 
 	/**
 		Registers `command`; throws if its name or an alias is taken or the arguments are invalid.
+		A group of subcommands (without `run` and arguments) with the name of a registered group adds its subcommands
+		to it (e.g. `/file upload` of another module).
 	**/
 	public function register(command:Command) {
+		final existing = entries.get(command.name);
+		if (existing != null && isGroup(existing.command) && isGroup(command)) {
+			for (sub in command.subcommands) {
+				final e = createEntry(sub, '${existing.path} ${sub.name}');
+				for (name in [sub.name].concat(sub.aliases ?? [])) {
+					if (existing.subs.exists(name))
+						throw 'command ${existing.path} $name already registered';
+					existing.subs.set(name, e);
+				}
+				existing.command.subcommands.push(sub);
+			}
+			return;
+		}
 		final entry = createEntry(command, '/${command.name}');
 		for (name in [command.name].concat(command.aliases ?? [])) {
 			if (entries.exists(name))
@@ -106,6 +121,9 @@ class Commands {
 		}
 		names.push(command.name);
 	}
+
+	static function isGroup(command:Command):Bool
+		return command.run == null && command.args == null && command.subcommands != null;
 
 	static function createEntry(command:Command, path:String):Entry {
 		final entry:Entry = {

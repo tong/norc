@@ -83,10 +83,13 @@ class Messages implements Module {
 	public function detach()
 		stream = null;
 
-	/** Sends a chat message with `body` to `to` (a jid), returns it **/
-	public function send(to:String, body:String):Message {
+	/** Sends a chat message with `body` to `to` (a jid), with additional `elements`; returns it **/
+	public function send(to:String, body:String, ?elements:Array<xmpp.XML>):Message {
 		final m = new Message(to, body);
 		m.id = xmpp.Stream.makeRandomId();
+		if (elements != null)
+			for (e in elements)
+				m.properties.push(e);
 		for (f in outgoing)
 			f(m);
 		stream.send(m);
