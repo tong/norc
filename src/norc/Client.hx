@@ -47,6 +47,9 @@ class Client {
 	var session:Null<Session>;
 	var quitting = false;
 
+	/** The disconnected session, if the next one can resume it (stream management) **/
+	var resumable:Null<Session>;
+
 	/** Own presence, sent on login and with `/presence` **/
 	var show:Null<Show>;
 	var status:Null<String>;
@@ -128,6 +131,12 @@ class Client {
 						run: (args, out) -> saveConfig(out)
 					}
 				]
+			},
+			{
+				name: "reconnect",
+				description: "close the connection and reconnect (resuming the session if possible), e.g. after a network change",
+				online: true,
+				run: (args, out) -> session.drop("reconnect")
 			},
 			{
 				name: "quit",
@@ -247,8 +256,9 @@ class Client {
 	}
 
 	function connect() {
-		final session = new Session(events, account, debug);
+		final session = new Session(events, account, debug, resumable);
 		this.session = session;
+		session.manageStream();
 		if (account.keepalive != null)
 			session.keepalive = account.keepalive;
 		// filter hooks: modify or drop stanzas
@@ -269,10 +279,20 @@ class Client {
 		session.onSecured = features -> session.login(password, features);
 		session.onOnline = () -> {
 			attempt = 0;
+			resumable = null;
+			wasOnline = true;
+			if (session.resumed) {
+				// the server kept the roster, presences and subscriptions
+				Term.info('online as ${stream.jid} (resumed)');
+				emit("login", [stream.jid], {jid: stream.jid, resumed: true});
+				return;
+			}
 			Term.info('online as ${stream.jid}');
 			onlineSince = Sys.time();
-			wasOnline = true;
-			emit("login", [stream.jid], {jid: stream.jid});
+			// the presences kept for resuming are sent again by the server
+			presences.clear();
+			states.clear();
+			emit("login", [stream.jid], {jid: stream.jid, resumed: false});
 			for (m in modules)
 				m.online();
 			sendPresence();
@@ -282,6 +302,8 @@ class Client {
 				Term.error(msg);
 				errorEvent("connection", msg);
 				this.session = null;
+				if (session.resumable())
+					resumable = session;
 				retry();
 			} else
 				fatal("login", msg);
@@ -297,8 +319,12 @@ class Client {
 		}
 		session.onClosed = (?msg) -> {
 			this.session = null;
-			presences.clear();
-			states.clear();
+			resumable = (!quitting && session.resumable()) ? session : null;
+			// kept if the session is resumed
+			if (resumable == null) {
+				presences.clear();
+				states.clear();
+			}
 			for (m in modules)
 				m.detach();
 			if (quitting) {
@@ -480,6 +506,7 @@ class Client {
 		errorEvent(kind, msg);
 		logout(msg, false);
 		quitting = true;
+		resumable = null;
 		session?.abort();
 		exit(1);
 	}

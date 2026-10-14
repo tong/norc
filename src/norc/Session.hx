@@ -5,6 +5,7 @@ import norc.Event;
 import sys.thread.Deque;
 import xmpp.Ping;
 import xmpp.Presence;
+import xmpp.StreamManagement;
 import xmpp.XML;
 import xmpp.client.Authentication;
 import xmpp.client.Stream;
@@ -19,10 +20,17 @@ using xmpp.client.Authentication;
 	Network events are posted to the owner's event queue; the owner passes those of this session
 	(`owns`) to `handle` on its main thread.
 	A session is not reused: create a new one to reconnect, or to log in after registering an account.
+	With stream management (`manageStream`), a new session can resume the previous one after a disconnection.
 **/
 class Session {
 	public final stream:Stream;
 	public var online(default, null) = false;
+
+	/** Stream management (acknowledgements and resumption, XEP-0198), if enabled with `manageStream` **/
+	public var sm(default, null):Null<StreamManagement>;
+
+	/** Online by resuming the previous session: the server kept the roster, presences and pending stanzas **/
+	public var resumed(default, null) = false;
 
 	final account:Account;
 	final conn:Connection;
@@ -69,11 +77,15 @@ class Session {
 	/** The connection was closed (by `close`, the server or a network error) **/
 	public dynamic function onClosed(?msg:String) {}
 
-	public function new(events:Deque<Event>, account:Account, debug = false) {
+	/**
+		With `previous` (a disconnected session with a resumable stream, see `resumable`) the new session resumes it.
+	**/
+	public function new(events:Deque<Event>, account:Account, debug = false, ?previous:Session) {
 		this.account = account;
 		this.debug = debug;
 		conn = new Connection(events);
-		stream = new Stream(account.jid.domain);
+		stream = previous?.stream ?? new Stream(account.jid.domain);
+		sm = previous?.sm;
 		stream.output = str -> {
 			if (online && filterSend != null && isStanza(str)) {
 				final filtered = filterSend(str);
@@ -95,6 +107,15 @@ class Session {
 			return false;
 		}
 	}
+
+	/** Enables stream management after the login (if the server offers it): stanzas are acknowledged, the session can be resumed **/
+	public function manageStream()
+		if (sm == null)
+			sm = new StreamManagement(stream);
+
+	/** The session can be resumed by a new one (see `new`) **/
+	public function resumable():Bool
+		return sm?.id != null;
 
 	public function open() {
 		final host = account.host ?? account.jid.domain;
@@ -150,25 +171,69 @@ class Session {
 			fail('no supported authentication mechanism: ${Authentication.getMechanisms(features).join(", ")}');
 			return;
 		}
+		if (resumable()) {
+			resume(password, mechanism);
+			return;
+		}
 		stream.authenticate(account.jid.node, account.resource, password, mechanism, (?error) -> {
 			if (error != null) {
 				fail('login failed: ${error.condition}' + (error.text != null ? ' (${error.text})' : ''));
 				return;
 			}
-			online = true;
-			// received stanzas pass the filter (complete units, after the login)
-			final input = stream.input;
-			stream.input = str -> {
-				if (filterRecv != null && isStanza(str)) {
-					final filtered = filterRecv(str);
-					if (filtered == null)
-						return;
-					str = filtered;
-				}
-				input(str);
-			}
-			onOnline();
+			enableStreamManagement();
+			goOnline();
 		});
+	}
+
+	/**
+		Authenticates and resumes the previous session; if it can not be resumed (e.g. expired), binds the resource
+		for a new session and resends the messages the server did not acknowledge.
+	**/
+	function resume(password:String, mechanism:sasl.Mechanism) {
+		Authentication.saslAuthentication(stream, account.jid.node, password, mechanism, (?error, _) -> {
+			if (error != null) {
+				fail('login failed: ${error.condition}' + (error.text != null ? ' (${error.text})' : ''));
+				return;
+			}
+			sm.resume((?error, ?unacked) -> {
+				if (error == null) {
+					resumed = true;
+					goOnline();
+					return;
+				}
+				Authentication.bindResource(stream, account.resource, (?error, _) -> {
+					if (error != null) {
+						fail('resource binding failed: ${error.condition}');
+						return;
+					}
+					enableStreamManagement();
+					goOnline();
+					for (stanza in unacked ?? [])
+						if (stanza.name == "message")
+							stream.send(stanza);
+				});
+			});
+		});
+	}
+
+	function enableStreamManagement()
+		if (sm != null && StreamManagement.isOffered(stream.serverFeatures))
+			sm.enable(true, null, (?error) -> if (error != null) Term.info('stream management not available: ${error.condition}'));
+
+	function goOnline() {
+		online = true;
+		// received stanzas pass the filter (complete units, after the login)
+		final input = stream.input;
+		stream.input = str -> {
+			if (filterRecv != null && isStanza(str)) {
+				final filtered = filterRecv(str);
+				if (filtered == null)
+					return;
+				str = filtered;
+			}
+			input(str);
+		}
+		onOnline();
 	}
 
 	/**
@@ -202,6 +267,12 @@ class Session {
 	/** Closes the connection without ending the stream **/
 	public function abort()
 		conn.close();
+
+	/** Closes the connection without ending the stream, e.g. to reconnect and resume the session **/
+	public function drop(reason:String) {
+		closeReason = reason;
+		conn.close();
+	}
 
 	function fail(msg:String) {
 		failed = true;
