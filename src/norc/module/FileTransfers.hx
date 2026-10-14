@@ -101,30 +101,36 @@ class FileTransfers implements Module {
 	public function commands():Array<Commands.Command>
 		return [
 			{
-				name: "send",
-				args: "<jid> <path...>",
-				description: "send a file to a jid or contact name (without resource: to a client supporting file transfer)",
-				online: true,
-				run: (args, out) -> send(args[0], args[1], out)
-			},
-			{
-				name: "accept",
-				args: "[#id] [path...]",
-				description: "accept a file offer, save it to path (a file or directory) or the download directory",
-				online: true,
-				run: (args, out) -> accept(args[0] != null ? Std.parseInt(args[0]) : null, args[1], out)
-			},
-			{
-				name: "decline",
-				args: "[#id]",
-				description: "decline a file offer",
-				online: true,
-				run: (args, out) -> decline(args[0] != null ? Std.parseInt(args[0]) : null, out)
-			},
-			{
-				name: "files",
-				description: "list file offers and transfers",
-				run: (args, out) -> list(out)
+				name: "file",
+				description: "send and receive files",
+				subcommands: [
+					{
+						name: "send",
+						args: "<jid> <path...>",
+						description: "send a file to a jid or contact name (without resource: to a client supporting file transfer)",
+						online: true,
+						run: (args, out) -> send(args[0], args[1], out)
+					},
+					{
+						name: "accept",
+						args: "[#id] [path...]",
+						description: "accept a file offer, save it to path (a file or directory) or the download directory",
+						online: true,
+						run: (args, out) -> accept(args[0] != null ? Std.parseInt(args[0]) : null, args[1], out)
+					},
+					{
+						name: "decline",
+						args: "[#id]",
+						description: "decline a file offer",
+						online: true,
+						run: (args, out) -> decline(args[0] != null ? Std.parseInt(args[0]) : null, out)
+					},
+					{
+						name: "transfers",
+						description: "list pending file offers and active transfers",
+						run: (args, out) -> list(out)
+					}
+				]
 			}
 		];
 
@@ -148,7 +154,7 @@ class FileTransfers implements Module {
 	}
 
 	/**
-		`/send <jid> <path>`: offers the file at `path` to `jid`.
+		`/file send <jid> <path>`: offers the file at `path` to `jid`.
 		Without a resource, the first available resource of the contact supporting file transfer is used.
 	**/
 	public function send(input:String, path:String, out:Output) {
@@ -225,7 +231,7 @@ class FileTransfers implements Module {
 	}
 
 	/**
-		`/accept [id] [path]`: accepts a file offer (the only one, if `id` is not given) and saves the file
+		`/file accept [id] [path]`: accepts a file offer (the only one, if `id` is not given) and saves the file
 		to `path` (a file or directory), or the download directory.
 	**/
 	public function accept(?id:Int, ?path:String, out:Output) {
@@ -261,7 +267,7 @@ class FileTransfers implements Module {
 		});
 	}
 
-	/** `/decline [id]`: declines a file offer **/
+	/** `/file decline [id]`: declines a file offer **/
 	public function decline(?id:Int, out:Output) {
 		final t = offer(id, out);
 		if (t == null)
@@ -271,7 +277,7 @@ class FileTransfers implements Module {
 		out.info('#${t.id} declined ${t.file.name ?? "file"}');
 	}
 
-	/** `/files`: lists offers and running transfers **/
+	/** `/file transfers`: lists offers and running transfers **/
 	public function list(out:Output) {
 		final data = [
 			for (t in transfers)
@@ -354,7 +360,7 @@ class FileTransfers implements Module {
 				t.out.info('#${t.id} ${session.peer} cancelled the offer of ${file.name ?? "a file"}'
 					+ (reason.condition != JingleReason.cancel ? ' (${formatReason(reason)})' : ''));
 		}
-		Term.info('#${t.id} ${session.peer} offers ${describe(file)}: /accept ${t.id} or /decline ${t.id}');
+		Term.info('#${t.id} ${session.peer} offers ${describe(file)}: /file accept ${t.id} or /file decline ${t.id}');
 		emit("file-offer", [Jid.parseBare(session.peer), file.name ?? "", file.size != null ? Std.string(Std.int(file.size)) : ""], {
 			from: session.peer,
 			file: file.name,

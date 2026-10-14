@@ -5,7 +5,7 @@ import norc.Output;
 using StringTools;
 
 /**
-	A command, e.g. `/send <jid> <path...>`.
+	A command, e.g. `/msg <jid> <text...>`.
 **/
 typedef Command = {
 	var name:String;

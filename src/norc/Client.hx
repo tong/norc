@@ -103,6 +103,12 @@ class Client {
 				run: (args, out) -> setPresence(args[0], args[1], out)
 			},
 			{
+				name: "status",
+				args: "[text...]",
+				description: "show or set your status message, keeping the presence state (- clears it)",
+				run: (args, out) -> setStatus(args[0], out)
+			},
+			{
 				name: "xmpp-debug",
 				args: "[state]",
 				description: "print the XMPP stream: on (default) or off",
@@ -396,6 +402,17 @@ class Client {
 				show = s;
 		}
 		this.status = status;
+		if (online())
+			sendPresence();
+		presenceData(out, () -> out.info('presence: ${describePresence()}' + (online() ? '' : ' (sent once connected)')));
+	}
+
+	function setStatus(text:Null<String>, out:Output) {
+		if (text == null) {
+			out.data({status: status, online: online()}, () -> out.info('status: ${status ?? "-"}' + (online() ? '' : ' (not connected)')));
+			return;
+		}
+		status = (text == "-") ? null : text;
 		if (online())
 			sendPresence();
 		presenceData(out, () -> out.info('presence: ${describePresence()}' + (online() ? '' : ' (sent once connected)')));
