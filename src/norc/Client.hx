@@ -4,6 +4,7 @@ import norc.Config.Account;
 import norc.Output;
 import norc.module.AdHoc;
 import norc.module.Blocking;
+import norc.module.Buzz;
 import norc.module.Carbons;
 import norc.module.ChatStates;
 import norc.module.Corrections;
@@ -174,6 +175,7 @@ class Client {
 		addModule(new AdHoc(contacts.resolveOptional));
 		addModule(new Pings(contacts.resolveOptional, resourcesOf));
 		addModule(new Corrections(messages));
+		addModule(new Buzz(messages, emit, contacts.resolve, contacts.name, contacts.contains, account.attention != false));
 		addModule(new Blocking(contacts.resolveOptional));
 		addModule(new Discovery(contacts.resolveOptional, resourcesOf, account.lastActivity == true ? () -> Std.int(Sys.time() - lastInput) : null));
 		addModule(new FileTransfers(account.downloadDir ?? Config.downloadDir(), emit, contacts.resolve, f -> events.add(Call(f)), resourcesOf));

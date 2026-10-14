@@ -145,6 +145,10 @@ class Contacts implements Module {
 		return (matches.length == 1) ? matches[0] : input;
 	}
 
+	/** The bare jid is in the roster **/
+	public function contains(bare:String):Bool
+		return find(bare) != null;
+
 	/** The contact (bare jid) may see the own presence (subscription `from` or `both`) **/
 	public function seesPresence(bare:String):Bool {
 		final item = find(bare);
