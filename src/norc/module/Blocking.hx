@@ -88,29 +88,43 @@ class Blocking implements Module {
 		stream = null;
 
 	function list(out:Output) {
-		Block.getBlocklist(stream, res -> switch res {
-			case Result(payload):
-				blocked = (payload == null) ? [] : Block.getItems(payload);
-				if (blocked.length == 0)
-					out.info("no blocked jids");
-				for (jid in blocked)
-					out.print('  $jid');
-			case Error(e):
-				out.error('cannot load the block list: ${errorText(e)}');
+		final done = out.wait();
+		Block.getBlocklist(stream, res -> {
+			switch res {
+				case Result(payload):
+					blocked = (payload == null) ? [] : Block.getItems(payload);
+					out.data({blocked: blocked.copy()}, () -> {
+						if (blocked.length == 0)
+							out.info("no blocked jids");
+						for (jid in blocked)
+							out.print('  $jid');
+					});
+				case Error(e):
+					out.error('cannot load the block list: ${errorText(e)}');
+			}
+			done();
 		});
 	}
 
 	function block(jid:String, out:Output) {
-		Block.block(stream, [jid], res -> switch res {
-			case Result(_): out.info('blocked $jid');
-			case Error(e): out.error('cannot block $jid: ${errorText(e)}');
+		final done = out.wait();
+		Block.block(stream, [jid], res -> {
+			switch res {
+				case Result(_): out.info('blocked $jid');
+				case Error(e): out.error('cannot block $jid: ${errorText(e)}');
+			}
+			done();
 		});
 	}
 
 	function unblock(jid:Null<String>, out:Output) {
-		Block.unblock(stream, jid != null ? [jid] : null, res -> switch res {
-			case Result(_): out.info(jid != null ? 'unblocked $jid' : 'unblocked all');
-			case Error(e): out.error('cannot unblock ${jid ?? "all"}: ${errorText(e)}');
+		final done = out.wait();
+		Block.unblock(stream, jid != null ? [jid] : null, res -> {
+			switch res {
+				case Result(_): out.info(jid != null ? 'unblocked $jid' : 'unblocked all');
+				case Error(e): out.error('cannot unblock ${jid ?? "all"}: ${errorText(e)}');
+			}
+			done();
 		});
 	}
 

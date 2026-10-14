@@ -92,51 +92,87 @@ class Discovery implements Module {
 
 	function info(?jid:String, ?node:String, out:Output) {
 		final target = describe(jid, node);
-		ServiceDiscovery.discoInfo(stream, jid, node, res -> switch res {
-			case Result(payload):
-				if (payload == null) {
-					out.info('$target: no information');
-					return;
-				}
-				final info = ServiceDiscovery.parseInfo(payload);
-				out.print(Term.style(target, 1));
-				if (info.identities.length > 0) {
-					out.print("  identities:");
-					for (i in info.identities)
-						out.print('    ${i.category}/${i.type}' + (i.name != null ? '  ${i.name}' : '') + (i.lang != null ? Term.style(' [${i.lang}]', 2) : ''));
-				}
-				if (info.features.length > 0) {
-					out.print("  features:");
-					final features = info.features.copy();
+		final done = out.wait();
+		ServiceDiscovery.discoInfo(stream, jid, node, res -> {
+			switch res {
+				case Result(payload):
+					final info = (payload == null) ? null : ServiceDiscovery.parseInfo(payload);
+					final features = (info == null) ? [] : info.features.copy();
 					features.sort(Reflect.compare);
-					for (f in features)
-						out.print('    $f');
-				}
-				for (form in info.forms) {
-					out.print('  ${form.formType ?? "form"}:');
-					for (field in form.fields)
-						if (field.variable != null && field.variable != xmpp.DataForm.FORM_TYPE)
-							out.print('    ${field.label ?? field.variable}: ${(field.values ?? []).join(", ")}');
-				}
-			case Error(e):
-				out.error('$target: ${errorText(e)}');
+					final data = {
+						jid: jid ?? stream.domain,
+						node: node,
+						identities: (info == null) ? [] : [
+							for (i in info.identities)
+								{category: i.category, type: i.type, name: i.name, lang: i.lang}
+						],
+						features: features,
+						forms: (info == null) ? [] : [
+							for (form in info.forms)
+								{
+									type: form.formType,
+									fields: [
+										for (f in form.fields)
+											if (f.variable != null && f.variable != xmpp.DataForm.FORM_TYPE)
+												{name: f.variable, label: f.label, values: f.values ?? []}
+									]
+								}
+						]
+					};
+					out.data(data, () -> {
+						if (info == null) {
+							out.info('$target: no information');
+							return;
+						}
+						out.print(Term.style(target, 1));
+						if (data.identities.length > 0) {
+							out.print("  identities:");
+							for (i in data.identities)
+								out.print('    ${i.category}/${i.type}' + (i.name != null ? '  ${i.name}' : '')
+									+ (i.lang != null ? Term.style(' [${i.lang}]', 2) : ''));
+						}
+						if (features.length > 0) {
+							out.print("  features:");
+							for (f in features)
+								out.print('    $f');
+						}
+						for (form in data.forms) {
+							out.print('  ${form.type ?? "form"}:');
+							for (field in form.fields)
+								out.print('    ${field.label ?? field.name}: ${field.values.join(", ")}');
+						}
+					});
+				case Error(e):
+					out.error('$target: ${errorText(e)}');
+			}
+			done();
 		});
 	}
 
 	function items(?jid:String, ?node:String, out:Output) {
 		final target = describe(jid, node);
-		ServiceDiscovery.discoItems(stream, jid, node, res -> switch res {
-			case Result(payload):
-				final items = (payload == null) ? [] : ServiceDiscovery.parseItems(payload);
-				if (items.length == 0) {
-					out.info('$target: no items');
-					return;
-				}
-				out.print(Term.style(target, 1));
-				for (item in items)
-					out.print('  ${item.jid}' + (item.node != null ? Term.style(' node=${item.node}', 2) : '') + (item.name != null ? '  ${item.name}' : ''));
-			case Error(e):
-				out.error('$target: ${errorText(e)}');
+		final done = out.wait();
+		ServiceDiscovery.discoItems(stream, jid, node, res -> {
+			switch res {
+				case Result(payload):
+					final items = (payload == null) ? [] : [
+						for (item in ServiceDiscovery.parseItems(payload))
+							{jid: item.jid, node: item.node, name: item.name}
+					];
+					out.data({jid: jid ?? stream.domain, node: node, items: items}, () -> {
+						if (items.length == 0) {
+							out.info('$target: no items');
+							return;
+						}
+						out.print(Term.style(target, 1));
+						for (item in items)
+							out.print('  ${item.jid}' + (item.node != null ? Term.style(' node=${item.node}', 2) : '')
+								+ (item.name != null ? '  ${item.name}' : ''));
+					});
+				case Error(e):
+					out.error('$target: ${errorText(e)}');
+			}
+			done();
 		});
 	}
 
@@ -148,18 +184,25 @@ class Discovery implements Module {
 		final jid = resolve(input);
 		final online = (Jid.parseResource(jid) == null) ? resources(jid) : [];
 		final targets = (online.length > 0) ? online : [jid];
-		for (target in targets)
-			SoftwareVersion.getSoftwareVersion(stream, target, res -> switch res {
-				case Result(payload):
-					final info = SoftwareVersion.parse(payload);
-					if (info.name == null && info.version == null && info.os == null)
-						out.info('$target: no software information');
-					else
-						out.print('$target: ' + [info.name, info.version].filter(v -> v != null).join(" ")
-							+ (info.os != null ? Term.style(' (${info.os})', 2) : ''));
-				case Error(e):
-					out.error('$target: ${errorText(e)}');
+		for (target in targets) {
+			final done = out.wait();
+			SoftwareVersion.getSoftwareVersion(stream, target, res -> {
+				switch res {
+					case Result(payload):
+						final info = SoftwareVersion.parse(payload);
+						out.data({jid: target, name: info.name, version: info.version, os: info.os}, () -> {
+							if (info.name == null && info.version == null && info.os == null)
+								out.info('$target: no software information');
+							else
+								out.print('$target: ' + [info.name, info.version].filter(v -> v != null).join(" ")
+									+ (info.os != null ? Term.style(' (${info.os})', 2) : ''));
+						});
+					case Error(e):
+						out.error('$target: ${errorText(e)}');
+				}
+				done();
 			});
+		}
 	}
 
 	/**
@@ -168,24 +211,30 @@ class Discovery implements Module {
 	**/
 	function lastActivity(jid:Null<String>, out:Output) {
 		final target = jid ?? stream.domain;
-		LastActivity.getLastActivity(stream, target, res -> switch res {
-			case Result(payload):
-				final last = (payload == null) ? null : LastActivity.parse(payload);
-				if (last == null) {
-					out.info('$target: no last activity');
-					return;
-				}
-				final time = formatDuration(last.seconds);
-				final text = if (Jid.parseNode(target) == null) {
-					'up for $time';
-				} else if (Jid.parseResource(target) == null) {
-					last.seconds == 0 ? 'online' : 'last seen $time ago';
-				} else {
-					'idle for $time';
-				}
-				out.print('$target: $text' + (last.status != null ? ' (${last.status})' : ''));
-			case Error(e):
-				out.error('$target: ${errorText(e)}');
+		final done = out.wait();
+		LastActivity.getLastActivity(stream, target, res -> {
+			switch res {
+				case Result(payload):
+					final last = (payload == null) ? null : LastActivity.parse(payload);
+					if (last == null) {
+						out.info('$target: no last activity');
+					} else {
+						// what the seconds mean depends on the entity
+						final kind = if (Jid.parseNode(target) == null) "uptime" else if (Jid.parseResource(target) == null) "offline" else "idle";
+						out.data({jid: target, kind: kind, seconds: last.seconds, status: last.status}, () -> {
+							final time = formatDuration(last.seconds);
+							final text = switch kind {
+								case "uptime": 'up for $time';
+								case "offline": last.seconds == 0 ? 'online' : 'last seen $time ago';
+								case _: 'idle for $time';
+							}
+							out.print('$target: $text' + (last.status != null ? ' (${last.status})' : ''));
+						});
+					}
+				case Error(e):
+					out.error('$target: ${errorText(e)}');
+			}
+			done();
 		});
 	}
 

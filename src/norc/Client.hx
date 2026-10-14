@@ -156,9 +156,9 @@ class Client {
 			events.add(Call(() -> session?.tick()));
 		});
 		if (account.api == true) {
-			final api = new Api((line, out) -> {
+			final api = new Api((line, args, out) -> {
 				lastInput = Sys.time();
-				return commands.run(line, out, false);
+				return (args == null) ? commands.run(line, out, false) : commands.call(line, args, out);
 			}, f -> events.add(Call(f)));
 			try {
 				final host = account.apiHost ?? "127.0.0.1";
@@ -242,7 +242,7 @@ class Client {
 			Term.info('online as ${stream.jid}');
 			onlineSince = Sys.time();
 			wasOnline = true;
-			emit("login", [stream.jid], ["jid" => stream.jid]);
+			emit("login", [stream.jid], {jid: stream.jid});
 			for (m in modules)
 				m.online();
 			sendPresence();
@@ -300,7 +300,7 @@ class Client {
 		if (m.type == error) {
 			final condition:Null<String> = m.error?.condition;
 			Term.error('message error from $from' + (condition != null ? ': $condition' : ''));
-			errorEvent("message", condition ?? "error", ["from" => m.from ?? from]);
+			errorEvent("message", condition ?? "error", {from: m.from ?? from});
 			return;
 		}
 		if (m.body == null)
@@ -315,13 +315,13 @@ class Client {
 		final indent = "".lpad(" ", time.length + name.length + 4);
 		for (i in 1...lines.length)
 			Term.println(indent + lines[i]);
-		emit("message", [from, m.body], [
-			"from" => m.from ?? from,
-			"name" => name,
-			"body" => m.body,
-			"type" => m.type ?? "normal",
-			"delayed" => delay != null ? "1" : "0"
-		]);
+		emit("message", [from, m.body], {
+			from: m.from ?? from,
+			name: name,
+			body: m.body,
+			type: m.type ?? "normal",
+			delayed: delay != null
+		});
 	}
 
 	function onPresence(p:Presence) {
@@ -351,7 +351,7 @@ class Client {
 				'$full is offline$status';
 			case subscribe:
 				contacts.request(p.from);
-				emit("subscribe", [Jid.parseBare(p.from)], ["from" => p.from, "name" => who]);
+				emit("subscribe", [Jid.parseBare(p.from)], {from: p.from, name: who});
 				'$who wants to see your presence: /roster accept ${Jid.parseBare(p.from)} or /roster deny ${Jid.parseBare(p.from)}';
 			case subscribed:
 				subscriptionEvent(p.from, "subscribed", who);
@@ -381,7 +381,7 @@ class Client {
 
 	function setPresence(state:Null<String>, status:Null<String>, out:Output) {
 		if (state == null) {
-			out.info('presence: ${describePresence()}' + (online() ? '' : ' (not connected)'));
+			presenceData(out, () -> out.info('presence: ${describePresence()}' + (online() ? '' : ' (not connected)')));
 			return;
 		}
 		switch state {
@@ -398,8 +398,11 @@ class Client {
 		this.status = status;
 		if (online())
 			sendPresence();
-		out.info('presence: ${describePresence()}' + (online() ? '' : ' (sent once connected)'));
+		presenceData(out, () -> out.info('presence: ${describePresence()}' + (online() ? '' : ' (sent once connected)')));
 	}
+
+	function presenceData(out:Output, show:() -> Void)
+		out.data({state: (this.show : Null<String>) ?? "available", status: status, online: online()}, show);
 
 	function sendPresence() {
 		final presence = new Presence(show, status);
@@ -413,18 +416,24 @@ class Client {
 
 	function showConfig(out:Output) {
 		final path = Config.accountPath(account.name);
+		final exists = FileSystem.exists(path);
 		final unsaved = try Config.unsaved(account) catch (e) {
 			out.error(Std.string(e));
 			[];
 		}
-		out.print('account ${account.name}' + Term.style(FileSystem.exists(path) ? ' ($path)' : ' (no config file: /config save creates $path)', 2));
 		final values = Config.values(account);
-		var width = 0;
+		final map:haxe.DynamicAccess<Null<String>> = {};
 		for (v in values)
-			if (v.key.length > width)
-				width = v.key.length;
-		for (v in values)
-			out.print('  ${v.key.rpad(" ", width + 2)}' + (v.value ?? Term.style("-", 2)) + (unsaved.contains(v.key) ? Term.style(" *", 33) : ""));
+			map.set(v.key, v.value);
+		out.data({account: account.name, path: path, exists: exists, values: map, unsaved: unsaved}, () -> {
+			out.print('account ${account.name}' + Term.style(exists ? ' ($path)' : ' (no config file: /config save creates $path)', 2));
+			var width = 0;
+			for (v in values)
+				if (v.key.length > width)
+					width = v.key.length;
+			for (v in values)
+				out.print('  ${v.key.rpad(" ", width + 2)}' + (v.value ?? Term.style("-", 2)) + (unsaved.contains(v.key) ? Term.style(" *", 33) : ""));
+		});
 	}
 
 	function saveConfig(out:Output) {
@@ -465,15 +474,15 @@ class Client {
 		The error event (`kind`: `connection`, `stream`, `login`, `message`).
 		Not for failing hooks: a failing error hook would trigger itself.
 	**/
-	function errorEvent(kind:String, text:String, ?values:Map<String, String>) {
-		final v = values ?? new Map<String, String>();
+	function errorEvent(kind:String, text:String, ?values:haxe.DynamicAccess<Dynamic>) {
+		final v = values ?? {};
 		v.set("kind", kind);
 		v.set("text", text);
 		emit("error", [kind, text], v);
 	}
 
 	function subscriptionEvent(from:String, type:String, name:String)
-		emit("subscription", [Jid.parseBare(from), type], ["from" => from, "name" => name, "type" => type]);
+		emit("subscription", [Jid.parseBare(from), type], {from: from, name: name, type: type});
 
 	/** Output of a stanza filter hook: one well-formed element **/
 	static function validStanza(xml:String):Bool
@@ -487,7 +496,7 @@ class Client {
 		if (!wasOnline)
 			return;
 		wasOnline = false;
-		emit("logout", [reason], ["reason" => reason, "reconnect" => reconnect ? "1" : "0"]);
+		emit("logout", [reason], {reason: reason, reconnect: reconnect});
 	}
 
 	function setDebug(state:Null<String>, out:Output) {
@@ -514,7 +523,7 @@ class Client {
 		exitCode = code;
 
 	/** See `Module.Emit` **/
-	function emit(event:String, args:Array<String>, values:Map<String, String>) {
+	function emit(event:String, args:Array<String>, values:haxe.DynamicAccess<Dynamic>) {
 		hooks.run(event, args, values);
 		api?.event(event, values);
 	}
@@ -531,16 +540,16 @@ class Client {
 		for (jid in states.keys())
 			if (Jid.parseBare(jid) == bare)
 				resources++;
-		emit("presence", [bare, state, status ?? ""], [
-			"from" => from,
-			"name" => displayName(bare),
-			"state" => state,
-			"status" => status ?? "",
-			"previous" => previous,
-			"resources" => Std.string(resources),
+		emit("presence", [bare, state, status ?? ""], {
+			from: from,
+			name: displayName(bare),
+			state: state,
+			status: status,
+			previous: previous,
+			resources: resources,
 			// the server sends the presences of all available contacts after the login
-			"initial" => (Sys.time() - onlineSince < 5) ? "1" : "0"
-		]);
+			initial: Sys.time() - onlineSince < 5
+		});
 	}
 
 	inline function displayName(bare:String):String

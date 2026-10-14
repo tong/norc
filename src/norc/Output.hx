@@ -12,6 +12,18 @@ interface Output {
 	function info(text:String):Void;
 
 	function error(text:String):Void;
+
+	/**
+		A result as data (an object of JSON values): API clients receive `value`, the terminal shows it with `show`
+		(which prints to this output).
+	**/
+	function data(value:Dynamic, show:() -> Void):Void;
+
+	/**
+		The command answers later (e.g. a response of the server): returns the function to call when it is done.
+		API requests are complete when all of these have been called.
+	**/
+	function wait():() -> Void;
 }
 
 /** Output to the terminal **/
@@ -28,4 +40,10 @@ class TermOutput implements Output {
 
 	public function error(text:String)
 		Term.error(text);
+
+	public function data(value:Dynamic, show:() -> Void)
+		show();
+
+	public function wait():() -> Void
+		return () -> {};
 }

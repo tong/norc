@@ -26,6 +26,7 @@ interface Module {
 
 /**
 	Emits an event: runs its hooks and sends it to the API clients.
-	`args` are the arguments of the hooks, `values` their environment variables and the values of the API event.
+	`args` are the arguments of the hooks, `values` the data of the API event (JSON values) and the environment
+	variables of the hooks (as strings, booleans as `1` or `0`).
 **/
-typedef Emit = (event:String, args:Array<String>, values:Map<String, String>) -> Void;
+typedef Emit = (event:String, args:Array<String>, values:haxe.DynamicAccess<Dynamic>) -> Void;

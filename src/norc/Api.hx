@@ -1,6 +1,6 @@
 package norc;
 
-import haxe.io.Bytes;
+import haxe.Json;
 import sys.FileSystem;
 import sys.io.File;
 import sys.net.Host;
@@ -11,33 +11,35 @@ import sys.thread.Thread;
 using StringTools;
 
 /**
-	Socket interface for other programs: a TCP server (on `127.0.0.1` by default), one line per request and reply.
+	Socket interface for other programs: a TCP server (on `127.0.0.1` by default), one JSON object per line.
 
 	The address and a random token are written to `<state dir>/api` (`host = …`, `port = …`, `token = …`, readable only
-	by the user).
-	A client authenticates with `auth <token>`, then sends commands as in the REPL (the `/` is optional),
-	optionally prefixed with `@<id>` to tag the replies.
+	by the user). A client authenticates first, then sends requests:
 
-	Replies and events are lines of a type and `key=value` pairs (values with spaces, quotes or `\` are quoted, with
-	`\"`, `\\`, `\n`, `\r`, `\t` escapes):
+		→ {"auth":"4f3a…"}
+		← {"type":"auth","ok":true}
+		→ {"id":1,"cmd":"roster"}
+		← {"type":"data","id":1,"data":{"contacts":[{"jid":"alice@example.org","name":"Alice",…}]}}
+		← {"type":"done","id":1,"ok":true}
+		→ {"id":2,"cmd":"msg","args":["alice","hi there"]}
+		← {"type":"done","id":2,"ok":true}
+		← {"type":"event","event":"message","data":{"from":"alice@example.org/phone","body":"hello","delayed":false,…}}
 
-		→ auth 4f3a…
-		← ok
-		→ @1 roster
-		← out id=1 text="Alice <alice@example.org> [both]"
-		← ok id=1
-		→ @2 msg nobody hi
-		← error id=2 text="invalid jid: nobody"
-		← message from=alice@example.org/phone name=Alice body="hi there" type=chat delayed=0
+	Requests: `cmd` is a command (e.g. `roster add`) with its arguments in `args` (one per parameter, a parameter
+	taking the rest of the line gets the remaining ones), or without `args` a command line as in the REPL (`/` optional).
+	`id` (any JSON value) is copied into the replies of the request.
+	For use by hand (e.g. with socat), plain lines work too: `auth <token>`, then command lines, optionally prefixed
+	with `@<id> `.
 
-	Each request is answered with `ok` or `error` once it ran; its output comes before (`out`, `info`), output of
-	asynchronous results (e.g. responses of the server) after, with the same id.
-	Events (the same as for hooks) are sent to all authenticated clients.
+	Replies: `out`, `info` and `error` (`text`) as on the terminal, `data` (`data`): a result as data, instead of
+	its text. Last `done` (`ok`: `false` if an error was reported), once the command finished, including responses
+	of the server it waits for (or `TIMEOUT`). Later replies with the id are notifications (e.g. of a file transfer).
+	Events (the same as for hooks, with typed values) are sent to all authenticated clients.
 **/
 @:allow(norc)
 class Api {
 	final post:(() -> Void)->Void;
-	final dispatch:(line:String, out:Output) -> Bool;
+	final dispatch:(cmd:String, args:Null<Array<Null<String>>>, out:Output) -> Bool;
 	final clients = new Array<ApiClient>();
 
 	var server:Null<Socket>;
@@ -45,10 +47,10 @@ class Api {
 	var token = "";
 
 	/**
-		`dispatch` runs a command line (`/` optional), returns `false` if it could not run.
-		`post` runs a callback on the main thread.
+		`dispatch` runs command `cmd` with `args`, or the command line `cmd` (`/` optional) if `args` is `null`;
+		returns `false` if it could not run. `post` runs a callback on the main thread.
 	**/
-	public function new(dispatch:(line:String, out:Output) -> Bool, post:(() -> Void)->Void) {
+	public function new(dispatch:(cmd:String, args:Null<Array<Null<String>>>, out:Output) -> Bool, post:(() -> Void)->Void) {
 		this.dispatch = dispatch;
 		this.post = post;
 	}
@@ -93,61 +95,73 @@ class Api {
 	}
 
 	/** Sends an event to all authenticated clients **/
-	public function event(name:String, values:Map<String, String>) {
-		final keys = [for (k in values.keys()) k];
-		keys.sort(Reflect.compare);
-		final line = format(name, [for (k in keys) {key: k, value: values.get(k)}]);
+	public function event(name:String, values:Dynamic) {
+		final line = Json.stringify({type: "event", event: name, data: values});
 		for (c in clients)
 			if (c.authenticated)
 				c.send(line);
 	}
 
 	function receive(client:ApiClient, line:String) {
+		line = line.trim();
+		if (line.length == 0)
+			return;
+		final request:Dynamic = if (line.startsWith("{")) {
+			try Json.parse(line) catch (e) {
+				client.send(Json.stringify({type: "error", text: 'invalid request: $e'}));
+				return;
+			}
+		} else textRequest(line);
 		if (!client.authenticated) {
-			if (line.startsWith("auth ") && equals(line.substr(5).trim(), token)) {
+			// typed Dynamic: inferred from the use, the value would be cast before it is checked
+			final token:Dynamic = Reflect.field(request, "auth");
+			if (Std.isOfType(token, String) && equals(token, this.token)) {
 				client.authenticated = true;
-				client.send("ok");
+				client.send(Json.stringify({type: "auth", ok: true}));
 			} else {
-				client.send(format("error", [{key: "text", value: "not authorized"}]));
+				client.send(Json.stringify({type: "auth", ok: false, text: "not authorized"}));
 				client.close();
 			}
 			return;
 		}
-		var id:Null<String> = null;
+		final out = new RequestOutput(client, Reflect.field(request, "id"), post);
+		final cmd:Dynamic = Reflect.field(request, "cmd");
+		final args:Dynamic = Reflect.field(request, "args");
+		if (!Std.isOfType(cmd, String)) {
+			out.error("invalid request: cmd (a string) missing");
+			out.ran(false);
+			return;
+		}
+		if (args != null && !Std.isOfType(args, Array)) {
+			out.error("invalid request: args must be an array");
+			out.ran(false);
+			return;
+		}
+		final list:Null<Array<Null<String>>> = (args == null) ? null : [
+			for (a in (args : Array<Dynamic>))
+				(a == null) ? null : Std.isOfType(a, String) ? a : Json.stringify(a)
+		];
+		final ran = try dispatch(cmd, list, out) catch (e) {
+			// a bug in a command must not end the client
+			out.error('internal error: $e');
+			false;
+		}
+		out.ran(ran);
+	}
+
+	/** A plain line: `auth <token>`, or a command line, optionally prefixed with `@<id> ` **/
+	static function textRequest(line:String):Dynamic {
+		if (line.startsWith("auth "))
+			return {auth: line.substr(5).trim()};
 		if (line.startsWith("@")) {
 			final i = line.indexOf(" ");
-			id = line.substring(1, i == -1 ? line.length : i);
-			line = (i == -1) ? "" : line.substr(i + 1);
+			return {id: line.substring(1, i == -1 ? line.length : i), cmd: (i == -1) ? "" : line.substr(i + 1)};
 		}
-		final out = new RequestOutput(client, id);
-		final ran = dispatch(line, out);
-		out.done = true;
-		// the result: an error already sent, or ok
-		if (ran && !out.failed)
-			client.send(format("ok", id != null ? [{key: "id", value: id}] : []));
-		else if (!out.failed)
-			client.send(format("error", (id != null ? [{key: "id", value: id}] : []).concat([{key: "text", value: "failed"}])));
+		return {cmd: line};
 	}
 
 	function remove(client:ApiClient)
 		clients.remove(client);
-
-	/** A line: `type key=value …` **/
-	public static function format(type:String, values:Array<{key:String, value:String}>):String {
-		final b = new StringBuf();
-		b.add(type);
-		for (v in values) {
-			b.add(' ${v.key}=');
-			b.add(quote(v.value ?? ""));
-		}
-		return b.toString();
-	}
-
-	static function quote(value:String):String {
-		if (value.length > 0 && !~/[\s"\\=]/.match(value))
-			return value;
-		return '"' + value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t") + '"';
-	}
 
 	/** Compares in constant time (the token) **/
 	static function equals(a:String, b:String):Bool {
@@ -224,37 +238,90 @@ private class ApiClient {
 	}
 }
 
-/** Output of a request: lines tagged with its id **/
+/** Output of a request: replies tagged with its id, `done` once the command and what it waits for finished **/
 private class RequestOutput implements Output {
-	/** An error was sent while the command ran (it is the result) **/
-	public var failed = false;
-
-	/** The command returned: later output is asynchronous **/
-	public var done = false;
+	/** Seconds to wait for asynchronous results (`wait`) **/
+	static inline var TIMEOUT = 60.0;
 
 	final client:ApiClient;
-	final id:Null<String>;
+	final id:Dynamic;
+	final post:(() -> Void)->Void;
 
-	public function new(client:ApiClient, id:Null<String>) {
+	/** An error was reported **/
+	var failed = false;
+
+	/** The command returned **/
+	var returned = false;
+
+	/** Asynchronous results waited for **/
+	var pending = 0;
+
+	/** `done` was sent **/
+	var finished = false;
+
+	public function new(client:ApiClient, id:Dynamic, post:(() -> Void)->Void) {
 		this.client = client;
 		this.id = id;
+		this.post = post;
 	}
 
 	public function print(text:String)
-		send("out", text);
+		send({type: "out", text: plain(text)});
 
 	public function info(text:String)
-		send("info", text);
+		send({type: "info", text: plain(text)});
 
 	public function error(text:String) {
-		if (!done)
+		if (!finished)
 			failed = true;
-		send("error", text);
+		send({type: "error", text: plain(text)});
 	}
 
-	function send(type:String, text:String) {
-		// without colors
-		text = ~/\x1B\[[0-9;]*m/g.replace(text, "");
-		client.send(Api.format(type, (id != null ? [{key: "id", value: id}] : []).concat([{key: "text", value: text}])));
+	public function data(value:Dynamic, show:() -> Void)
+		send({type: "data", data: value});
+
+	public function wait():() -> Void {
+		pending++;
+		var called = false;
+		function finish() {
+			if (called)
+				return;
+			called = true;
+			pending--;
+			check();
+		}
+		Thread.create(() -> {
+			Sys.sleep(TIMEOUT);
+			post(() -> if (!called) {
+				error('no response within ${TIMEOUT}s');
+				finish();
+			});
+		});
+		return finish;
 	}
+
+	/** The command returned, `false` if it could not run **/
+	public function ran(ok:Bool) {
+		returned = true;
+		if (!ok)
+			failed = true;
+		check();
+	}
+
+	function check() {
+		if (returned && pending == 0 && !finished) {
+			finished = true;
+			send({type: "done", ok: !failed});
+		}
+	}
+
+	function send(reply:haxe.DynamicAccess<Dynamic>) {
+		if (id != null)
+			reply.set("id", id);
+		client.send(Json.stringify(reply));
+	}
+
+	/** Without colors **/
+	static function plain(text:String):String
+		return ~/\x1B\[[0-9;]*m/g.replace(text, "");
 }

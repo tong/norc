@@ -169,22 +169,32 @@ class Contacts implements Module {
 	}
 
 	function list(out:Output) {
-		if (items.length == 0) {
-			out.info("roster is empty");
-			return;
-		}
 		final sorted = items.copy();
 		sorted.sort((a, b) -> Reflect.compare(name(a.jid).toLowerCase(), name(b.jid).toLowerCase()));
-		for (item in sorted) {
-			final state = presence(item.jid);
-			final details = [(item.subscription ?? none : String)];
-			if (item.ask == "subscribe")
-				details.push("asked");
-			if (item.groups.length > 0)
-				details.push(item.groups.join(", "));
-			out.print('  ' + (item.name != null && item.name.length > 0 ? '${item.name} <${item.jid}>' : item.jid)
-				+ (state != null ? Term.style(' $state', 32) : '') + Term.style(' [${details.join("; ")}]', 2));
-		}
+		final contacts = [
+			for (item in sorted)
+				{
+					jid: item.jid,
+					name: (item.name != null && item.name.length > 0) ? item.name : null,
+					subscription: (item.subscription ?? none : String),
+					asked: item.ask == "subscribe",
+					groups: item.groups,
+					presence: presence(item.jid)
+				}
+		];
+		out.data({contacts: contacts}, () -> {
+			if (contacts.length == 0)
+				out.info("roster is empty");
+			for (c in contacts) {
+				final details = [c.subscription];
+				if (c.asked)
+					details.push("asked");
+				if (c.groups.length > 0)
+					details.push(c.groups.join(", "));
+				out.print('  ' + (c.name != null ? '${c.name} <${c.jid}>' : c.jid) + (c.presence != null ? Term.style(' ${c.presence}', 32) : '')
+					+ Term.style(' [${details.join("; ")}]', 2));
+			}
+		});
 	}
 
 	function add(jid:String, ?name:String, out:Output) {
@@ -192,12 +202,16 @@ class Contacts implements Module {
 			return;
 		final bare = Jid.parseBare(jid);
 		final groups = find(bare)?.groups ?? [];
-		stream.addRosterItem(bare, name, groups, res -> switch res {
-			case Result(_):
-				stream.subscribePresence(bare);
-				out.info('added $bare, asked to see their presence');
-			case Error(e):
-				out.error('cannot add $bare: ${e.condition}');
+		final done = out.wait();
+		stream.addRosterItem(bare, name, groups, res -> {
+			switch res {
+				case Result(_):
+					stream.subscribePresence(bare);
+					out.info('added $bare, asked to see their presence');
+				case Error(e):
+					out.error('cannot add $bare: ${e.condition}');
+			}
+			done();
 		});
 	}
 
@@ -210,9 +224,13 @@ class Contacts implements Module {
 			out.error('$bare is not in the roster');
 			return;
 		}
-		stream.removeRosterItem(bare, res -> switch res {
-			case Result(_): out.info('removed $bare');
-			case Error(e): out.error('cannot remove $bare: ${e.condition}');
+		final done = out.wait();
+		stream.removeRosterItem(bare, res -> {
+			switch res {
+				case Result(_): out.info('removed $bare');
+				case Error(e): out.error('cannot remove $bare: ${e.condition}');
+			}
+			done();
 		});
 	}
 
@@ -229,18 +247,23 @@ class Contacts implements Module {
 		}
 		final item:RosterItem = {jid: bare, name: current.name, groups: current.groups.copy()};
 		change(item);
-		stream.addRosterItem(bare, item.name, item.groups, res -> switch res {
-			case Result(_): out.info('updated $bare');
-			case Error(e): out.error('cannot update $bare: ${e.condition}');
+		final done = out.wait();
+		stream.addRosterItem(bare, item.name, item.groups, res -> {
+			switch res {
+				case Result(_): out.info('updated $bare');
+				case Error(e): out.error('cannot update $bare: ${e.condition}');
+			}
+			done();
 		});
 	}
 
-	function listRequests(out:Output) {
-		if (requests.length == 0)
-			out.info("no subscription requests");
-		for (jid in requests)
-			out.print('  $jid');
-	}
+	function listRequests(out:Output)
+		out.data({requests: requests.copy()}, () -> {
+			if (requests.length == 0)
+				out.info("no subscription requests");
+			for (jid in requests)
+				out.print('  $jid');
+		});
 
 	function accept(input:String, out:Output) {
 		final jid = resolve(input, out);
@@ -275,13 +298,13 @@ class Contacts implements Module {
 		if (!removed)
 			items.push(item);
 		final action = removed ? "removed" : known ? "updated" : "added";
-		emit("roster", [item.jid, action], [
-			"jid_contact" => item.jid,
-			"name" => item.name ?? "",
-			"subscription" => removed ? "none" : (item.subscription ?? "none" : String),
-			"groups" => item.groups.join(","),
-			"action" => action
-		]);
+		emit("roster", [item.jid, action], {
+			jid_contact: item.jid,
+			name: item.name,
+			subscription: removed ? "none" : (item.subscription ?? "none" : String),
+			groups: item.groups.join(","),
+			action: action
+		});
 	}
 
 	function find(bare:String):Null<RosterItem> {

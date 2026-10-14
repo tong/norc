@@ -37,11 +37,16 @@ class Hooks {
 		Runs the hook of `event` (if it exists) with `args`, `values` as environment variables.
 		Called on the main thread.
 	**/
-	public function run(event:String, args:Array<String>, ?values:Map<String, String>) {
+	public function run(event:String, args:Array<String>, ?values:haxe.DynamicAccess<Dynamic>) {
 		final hooks = find(event);
 		if (hooks.length == 0)
 			return;
-		final started = withEnv(event, values, () -> [
+		final env = new Map<String, String>();
+		if (values != null)
+			for (k => v in values)
+				// matching a Dynamic against true would cast it to Bool
+				env.set(k, (v == null) ? "" : Std.isOfType(v, Bool) ? ((v : Bool) ? "1" : "0") : Std.string(v));
+		final started = withEnv(event, env, () -> [
 			for (name in hooks) {
 				final proc = try start('$dir/$name', args) catch (e) {
 					Term.error('hook $name: $e');

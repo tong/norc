@@ -156,26 +156,55 @@ class Commands {
 			out.error('unknown command: /${(i == -1) ? line : line.substr(0, i)} (/help for the commands)');
 			return false;
 		}
-		final entry = resolved.entry;
+		return execute(resolved.entry, resolved.args, null, out);
+	}
+
+	/**
+		Runs `command` (e.g. `roster add`, without `/`) with the arguments `args`, one per parameter, a parameter taking
+		the rest of the line gets the remaining ones joined with spaces. The first arguments can select subcommands.
+		Returns `false` if the command could not run.
+	**/
+	public function call(command:String, args:Array<Null<String>>, ?out:Output):Bool {
+		out ??= TermOutput.instance;
+		final resolved = resolve(command.trim().startsWith("/") ? command.trim().substr(1) : command.trim());
+		if (resolved == null) {
+			out.error('unknown command: /$command (/help for the commands)');
+			return false;
+		}
+		var entry = resolved.entry;
+		args = args.copy();
+		if (resolved.args.length > 0) {
+			out.error('${entry.path}: unknown subcommand: ${resolved.args.split(" ")[0]}');
+			return false;
+		}
+		while (args.length > 0 && args[0] != null && entry.subs.exists(args[0]))
+			entry = entry.subs.get(args.shift());
+		return execute(entry, "", args, out);
+	}
+
+	/** Runs `entry` with its arguments as a line (`input`), or as a list (`list`) **/
+	function execute(entry:Entry, input:String, list:Null<Array<Null<String>>>, out:Output):Bool {
 		final command = entry.command;
+		final hasArgs = list != null ? list.length > 0 : input.length > 0;
+		final first = list != null ? list[0] : input.split(" ")[0];
 		if (command.run == null) {
 			// a command with subcommands only
-			if (resolved.args.length > 0) {
-				out.error('${entry.path}: unknown subcommand: ${resolved.args.split(" ")[0]}');
+			if (hasArgs) {
+				out.error('${entry.path}: unknown subcommand: $first');
 				return false;
 			}
 			help(entry.path, out);
 			return true;
 		}
-		if (entry.params.length == 0 && command.subcommands != null && resolved.args.length > 0) {
-			out.error('${entry.path}: unknown subcommand: ${resolved.args.split(" ")[0]} (/help ${entry.path.substr(1)})');
+		if (entry.params.length == 0 && command.subcommands != null && hasArgs) {
+			out.error('${entry.path}: unknown subcommand: $first (/help ${entry.path.substr(1)})');
 			return false;
 		}
 		if (command.online == true && !isOnline()) {
 			out.error('${entry.path}: not connected');
 			return false;
 		}
-		final args = try parseArgs(entry.params, resolved.args) catch (e:String) {
+		final args = try (list != null ? mapArgs(entry.params, list) : parseArgs(entry.params, input)) catch (e:String) {
 			out.error('${entry.path}: $e, usage: ${usage(entry)}'
 				+ (entry.command.subcommands != null ? ' (/help ${entry.path.substr(1)} for its subcommands)' : ''));
 			return false;
@@ -215,14 +244,16 @@ class Commands {
 			}
 			final e = resolved.entry;
 			final c = e.command;
-			if (c.run != null)
-				out.print('  ${usage(e)}\n    ${c.description}');
-			else
-				out.print('  ${e.path}: ${c.description}');
-			if (c.aliases != null)
-				out.print('    aliases: ${c.aliases.join(", ")}');
-			if (c.subcommands != null)
-				printTable([for (sub in c.subcommands) e.subs.get(sub.name)], out);
+			out.data({commands: [describe(e)].concat(c.subcommands != null ? [for (sub in c.subcommands) describe(e.subs.get(sub.name))] : [])}, () -> {
+				if (c.run != null)
+					out.print('  ${usage(e)}\n    ${c.description}');
+				else
+					out.print('  ${e.path}: ${c.description}');
+				if (c.aliases != null)
+					out.print('    aliases: ${c.aliases.join(", ")}');
+				if (c.subcommands != null)
+					printTable([for (sub in c.subcommands) e.subs.get(sub.name)], out);
+			});
 			return;
 		}
 		final sorted = names.copy();
@@ -236,8 +267,17 @@ class Commands {
 				for (sub in e.command.subcommands)
 					list.push(e.subs.get(sub.name));
 		}
-		printTable(list, out);
+		out.data({commands: [for (e in list) describe(e)]}, () -> printTable(list, out));
 	}
+
+	static function describe(e:Entry)
+		return {
+			command: e.path.substr(1),
+			args: e.command.args,
+			description: e.command.description,
+			aliases: e.command.aliases ?? [],
+			online: e.command.online == true
+		};
 
 	static function printTable(list:Array<Entry>, out:Output) {
 		final lines = [for (e in list) usage(e)];
@@ -273,6 +313,42 @@ class Commands {
 			params.push(param);
 		}
 		return params;
+	}
+
+	/** Assigns the arguments of a list to `params`; throws a message if arguments are missing or invalid **/
+	static function mapArgs(params:Array<Param>, list:Array<Null<String>>):Array<Null<String>> {
+		final args = new Array<Null<String>>();
+		var i = 0;
+		for (p in params) {
+			var v = (i < list.length) ? list[i] : null;
+			if (p.rest) {
+				final rest = [for (j in i...list.length) if (list[j] != null) list[j]].join(" ");
+				i = list.length;
+				if (rest.length == 0 && !p.optional)
+					throw 'missing ${p.name}';
+				args.push(rest.length > 0 ? rest : null);
+				continue;
+			}
+			if (v != null && p.integer) {
+				final n = v.startsWith("#") ? v.substr(1) : v;
+				if (Std.parseInt(n) == null) {
+					if (!p.optional)
+						throw '${p.name} must be a number';
+					// an optional number left out: the argument is for the next parameter
+					args.push(null);
+					continue;
+				}
+				v = n;
+			}
+			if (v == null && !p.optional)
+				throw 'missing ${p.name}';
+			args.push(v);
+			i++;
+		}
+		for (j in i...list.length)
+			if (list[j] != null)
+				throw 'too many arguments';
+		return args;
 	}
 
 	/** Splits `input` by `params`; throws a message if arguments are missing or invalid **/

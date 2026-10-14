@@ -165,56 +165,63 @@ class FileTransfers implements Module {
 			out.error('file too large: ${formatSize(stat.size)} (max ${formatSize(MAX_SIZE)})');
 			return;
 		}
+		// done once offered (or failed): a receiver is looked for first
+		final done = out.wait();
 		findReceiver(jid, out, peer -> {
-			if (peer == null)
-				return;
-			final data = try File.getBytes(path) catch (e) {
-				out.error('cannot read $path: $e');
-				return;
-			}
-			final file:JingleFile = {
-				name: Path.withoutDirectory(path),
-				size: data.length,
-				date: xmpp.DelayedDelivery.formatStamp(stat.mtime)
-			};
-			final t:Transfer = {
-				id: nextId++,
-				session: null,
-				file: file,
-				incoming: false,
-				peer: peer,
-				state: Active,
-				done: 0,
-				out: out
-			};
-			out.info('#${t.id} offering ${describe(file)} to $peer');
-			t.session = JingleFileTransfer.sendFile(jingle, peer, file, data, {s5b: s5b, onProgress: sent -> progress(t, sent)}, reason -> {
-				transfers.remove(t);
-				switch reason.condition {
-					case JingleReason.success:
-						out.info('#${t.id} sent ${file.name} to $peer');
-						emit("file-sent", [Jid.parseBare(peer), path], [
-							"to" => peer,
-							"path" => path,
-							"file" => file.name,
-							"size" => Std.string(data.length)
-						]);
-					case JingleReason.decline:
-						out.info('#${t.id} $peer declined ${file.name}');
-						failed(t, "decline");
-					case _:
-						out.error('#${t.id} sending ${file.name} failed: ${formatReason(reason)}');
-						failed(t, formatReason(reason));
-				}
-			});
-			// sendFile starts sending once accepted
-			final startSending = t.session.onAccept;
-			t.session.onAccept = contents -> {
-				out.info('#${t.id} $peer accepted ${file.name}');
-				startSending(contents);
-			}
-			transfers.push(t);
+			if (peer != null)
+				offerFile(peer, path, stat, out);
+			done();
 		});
+	}
+
+	/** Offers the file at `path` to `peer` (a full jid) **/
+	function offerFile(peer:String, path:String, stat:sys.FileStat, out:Output) {
+		final data = try File.getBytes(path) catch (e) {
+			out.error('cannot read $path: $e');
+			return;
+		}
+		final file:JingleFile = {
+			name: Path.withoutDirectory(path),
+			size: data.length,
+			date: xmpp.DelayedDelivery.formatStamp(stat.mtime)
+		};
+		final t:Transfer = {
+			id: nextId++,
+			session: null,
+			file: file,
+			incoming: false,
+			peer: peer,
+			state: Active,
+			done: 0,
+			out: out
+		};
+		out.data({id: t.id, to: peer, file: file.name, size: file.size}, () -> out.info('#${t.id} offering ${describe(file)} to $peer'));
+		t.session = JingleFileTransfer.sendFile(jingle, peer, file, data, {s5b: s5b, onProgress: sent -> progress(t, sent)}, reason -> {
+			transfers.remove(t);
+			switch reason.condition {
+				case JingleReason.success:
+					out.info('#${t.id} sent ${file.name} to $peer');
+					emit("file-sent", [Jid.parseBare(peer), path], {
+						to: peer,
+						path: path,
+						file: file.name,
+						size: data.length
+					});
+				case JingleReason.decline:
+					out.info('#${t.id} $peer declined ${file.name}');
+					failed(t, "decline");
+				case _:
+					out.error('#${t.id} sending ${file.name} failed: ${formatReason(reason)}');
+					failed(t, formatReason(reason));
+			}
+		});
+		// sendFile starts sending once accepted
+		final startSending = t.session.onAccept;
+		t.session.onAccept = contents -> {
+			out.info('#${t.id} $peer accepted ${file.name}');
+			startSending(contents);
+		}
+		transfers.push(t);
 	}
 
 	/**
@@ -235,7 +242,7 @@ class FileTransfers implements Module {
 		}
 		t.state = Active;
 		t.out = out;
-		out.info('#${t.id} receiving ${t.file.name ?? "file"} → $target');
+		out.data({id: t.id, path: target}, () -> out.info('#${t.id} receiving ${t.file.name ?? "file"} → $target'));
 		JingleFileTransfer.receiveFile(t.session, {s5b: s5b, onProgress: received -> progress(t, received)}, (reason, data) -> {
 			transfers.remove(t);
 			if (reason.condition != JingleReason.success || data == null) {
@@ -246,7 +253,7 @@ class FileTransfers implements Module {
 			try {
 				File.saveBytes(target, data);
 				out.info('#${t.id} saved $target');
-				emit("file-received", [Jid.parseBare(t.peer), target], ["from" => t.peer, "path" => target]);
+				emit("file-received", [Jid.parseBare(t.peer), target], {from: t.peer, path: target});
 			} catch (e) {
 				out.error('#${t.id} cannot write $target: $e');
 				failed(t, 'cannot write $target: $e');
@@ -266,16 +273,30 @@ class FileTransfers implements Module {
 
 	/** `/files`: lists offers and running transfers **/
 	public function list(out:Output) {
-		if (transfers.length == 0)
-			out.info("no file transfers");
-		for (t in transfers) {
-			final state = switch t.state {
-				case Offered: "offered by";
-				case Active: (t.incoming ? "receiving from" : "sending to");
+		final data = [
+			for (t in transfers)
+				{
+					id: t.id,
+					file: t.file.name,
+					size: t.file.size,
+					peer: t.peer,
+					direction: t.incoming ? "receive" : "send",
+					state: (t.state == Offered) ? "offered" : "active",
+					bytes: t.done
+				}
+		];
+		out.data({transfers: data}, () -> {
+			if (transfers.length == 0)
+				out.info("no file transfers");
+			for (t in transfers) {
+				final state = switch t.state {
+					case Offered: "offered by";
+					case Active: (t.incoming ? "receiving from" : "sending to");
+				}
+				final percent = (t.state == Active && t.file.size != null && t.file.size > 0) ? ' ${Std.int(t.done / t.file.size * 100)}%' : '';
+				out.print('  #${t.id} ${describe(t.file)} $state ${t.peer}$percent');
 			}
-			final percent = (t.state == Active && t.file.size != null && t.file.size > 0) ? ' ${Std.int(t.done / t.file.size * 100)}%' : '';
-			out.print('  #${t.id} ${describe(t.file)} $state ${t.peer}$percent');
-		}
+		});
 	}
 
 	/**
@@ -334,22 +355,22 @@ class FileTransfers implements Module {
 					+ (reason.condition != JingleReason.cancel ? ' (${formatReason(reason)})' : ''));
 		}
 		Term.info('#${t.id} ${session.peer} offers ${describe(file)}: /accept ${t.id} or /decline ${t.id}');
-		emit("file-offer", [Jid.parseBare(session.peer), file.name ?? "", file.size != null ? Std.string(Std.int(file.size)) : ""], [
-			"from" => session.peer,
-			"file" => file.name ?? "",
-			"size" => file.size != null ? Std.string(Std.int(file.size)) : "",
-			"id" => Std.string(t.id)
-		]);
+		emit("file-offer", [Jid.parseBare(session.peer), file.name ?? "", file.size != null ? Std.string(Std.int(file.size)) : ""], {
+			from: session.peer,
+			file: file.name,
+			size: file.size,
+			id: t.id
+		});
 	}
 
 	/** The file-failed event **/
 	function failed(t:Transfer, reason:String)
-		emit("file-failed", [Jid.parseBare(t.peer), t.file.name ?? "", reason], [
-			"peer" => t.peer,
-			"file" => t.file.name ?? "",
-			"reason" => reason,
-			"direction" => t.incoming ? "receive" : "send"
-		]);
+		emit("file-failed", [Jid.parseBare(t.peer), t.file.name ?? "", reason], {
+			peer: t.peer,
+			file: t.file.name,
+			reason: reason,
+			direction: t.incoming ? "receive" : "send"
+		});
 
 	function offer(id:Null<Int>, out:Output):Null<Transfer> {
 		final offers = transfers.filter(t -> t.state == Offered);
