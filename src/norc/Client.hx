@@ -8,6 +8,7 @@ import norc.module.Discovery;
 import norc.module.FileTransfers;
 import sys.FileSystem;
 import sys.thread.Deque;
+import sys.thread.Lock;
 import sys.thread.Thread;
 import xmpp.EntityCapabilities;
 import xmpp.Jid;
@@ -100,7 +101,8 @@ class Client {
 				name: "presence",
 				args: "[state] [status...]",
 				description: "show or set your presence: available, chat, away, xa (extended away), dnd (busy), with a status message",
-				run: (args, out) -> setPresence(args[0], args[1], out)
+				run: (args, out) -> setPresence(args[0], args[1], out),
+				complete: ["state" => _ -> ["available", "chat", "away", "xa", "dnd"]]
 			},
 			{
 				name: "status",
@@ -112,7 +114,8 @@ class Client {
 				name: "xmpp-debug",
 				args: "[state]",
 				description: "print the XMPP stream: on (default) or off",
-				run: (args, out) -> setDebug(args[0], out)
+				run: (args, out) -> setDebug(args[0], out),
+				complete: ["state" => _ -> ["on", "off"]]
 			},
 			{
 				name: "config",
@@ -142,6 +145,7 @@ class Client {
 			return null;
 		});
 		addModule(contacts);
+		commands.completers.set("jid", _ -> contacts.completions());
 		addModule(new Blocking(contacts.resolveOptional));
 		addModule(new Discovery(contacts.resolveOptional, resourcesOf, account.lastActivity == true ? () -> Std.int(Sys.time() - lastInput) : null));
 		addModule(new FileTransfers(account.downloadDir ?? Config.downloadDir(), emit, contacts.resolve, f -> events.add(Call(f)), resourcesOf));
@@ -179,6 +183,8 @@ class Client {
 		}
 		final editor = interactive ? LineEditor.start() : null;
 		Term.editor = editor;
+		if (editor != null)
+			editor.complete = complete;
 		connect();
 		if (interactive)
 			Thread.create(() -> readStdin(editor));
@@ -188,6 +194,18 @@ class Client {
 		Term.editor = null;
 		editor?.stop();
 		return exitCode;
+	}
+
+	/** Completes the input of the editor (on the input thread): on the main thread, as the commands use its state **/
+	function complete(before:String):Null<{word:String, candidates:Array<String>}> {
+		var result = null;
+		final lock = new Lock();
+		events.add(Call(() -> {
+			result = commands.complete(before);
+			lock.release();
+		}));
+		// nothing if the main thread is busy
+		return lock.wait(1) ? result : null;
 	}
 
 	function readStdin(editor:Null<LineEditor>) {

@@ -11,7 +11,7 @@ using StringTools;
 	The terminal is switched to non-canonical mode without echo and signals (`stty`): keys are handled here,
 	Ctrl-C included. Only on Unix terminals (`start` returns `null` otherwise); call `stop` to restore the terminal.
 
-	Keys: ←/→, Home/End, Backspace/Delete, ↑/↓ history, Ctrl-A/E (start/end), Ctrl-U/K (delete to start/end),
+	Keys: Tab (complete), ←/→, Home/End, Backspace/Delete, ↑/↓ history, Ctrl-A/E (start/end), Ctrl-U/K (delete to start/end),
 	Ctrl-W (delete word), Ctrl-L (clear screen), Ctrl-C (clear the line, quit on an empty line), Ctrl-D (quit on an empty line).
 **/
 class LineEditor {
@@ -43,6 +43,12 @@ class LineEditor {
 
 	/** Reading a line (the prompt is shown) **/
 	var active = false;
+
+	/**
+		Completes the input up to the cursor: returns the text being completed (its end) and the candidates
+		replacing it, see `Commands.complete`. Called on the input thread, without holding the editor's lock.
+	**/
+	public var complete:Null<(before:String) -> Null<{word:String, candidates:Array<String>}>>;
 
 	/**
 		Switches the terminal to the editor's mode; returns `null` if stdin is no terminal or on Windows.
@@ -158,6 +164,8 @@ class LineEditor {
 					start--;
 				line.splice(start, cursor - start);
 				cursor = start;
+			case 9: // tab
+				completeWord();
 			case 12: // ctrl-l
 				write("\x1B[2J\x1B[H");
 			case 27: // escape sequence
@@ -197,6 +205,44 @@ class LineEditor {
 			case ["~".code, "3"]: if (cursor < line.length) line.splice(cursor, 1);
 			case _:
 		}
+	}
+
+	/**
+		Replaces the word before the cursor with the only candidate, or with the start all candidates share;
+		lists the candidates if the word can not be extended.
+	**/
+	function completeWord() {
+		final f = complete;
+		if (f == null)
+			return;
+		final before = line.slice(0, cursor).join("");
+		// other output can be printed meanwhile, only this thread changes the line
+		mutex.release();
+		final c = try f(before) catch (_) null;
+		mutex.acquire();
+		if (c == null || c.candidates.length == 0 || !before.endsWith(c.word))
+			return;
+		final candidates = c.candidates;
+		final insert = if (candidates.length == 1) {
+			candidates[0] + (candidates[0].endsWith("/") ? "" : " ");
+		} else {
+			var common = candidates[0];
+			for (v in candidates)
+				while (!v.startsWith(common))
+					common = common.substr(0, common.length - 1);
+			(common.length > c.word.length) ? common : null;
+		}
+		if (insert == null) {
+			// without the start of the word up to the last directory or word, e.g. `/` of a command
+			final cut = Std.int(Math.max(c.word.lastIndexOf("/"), c.word.lastIndexOf(" "))) + 1;
+			write("\r\x1B[K" + [for (v in candidates) v.substr(cut)].join("  ") + "\n");
+			return;
+		}
+		final n = splitChars(c.word).length;
+		line.splice(cursor - n, n);
+		cursor -= n;
+		for (char in splitChars(insert))
+			line.insert(cursor++, char);
 	}
 
 	/** Moves through the history: -1 older, 1 newer **/

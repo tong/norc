@@ -116,14 +116,16 @@ class FileTransfers implements Module {
 						args: "[#id] [path...]",
 						description: "accept a file offer, save it to path (a file or directory) or the download directory",
 						online: true,
-						run: (args, out) -> accept(args[0] != null ? Std.parseInt(args[0]) : null, args[1], out)
+						run: (args, out) -> accept(args[0] != null ? Std.parseInt(args[0]) : null, args[1], out),
+						complete: ["id" => _ -> offerIds()]
 					},
 					{
 						name: "decline",
 						args: "[#id]",
 						description: "decline a file offer",
 						online: true,
-						run: (args, out) -> decline(args[0] != null ? Std.parseInt(args[0]) : null, out)
+						run: (args, out) -> decline(args[0] != null ? Std.parseInt(args[0]) : null, out),
+						complete: ["id" => _ -> offerIds()]
 					},
 					{
 						name: "transfers",
@@ -276,6 +278,10 @@ class FileTransfers implements Module {
 		t.session.terminate(JingleReason.decline);
 		out.info('#${t.id} declined ${t.file.name ?? "file"}');
 	}
+
+	/** Numbers of the file offers, to complete input **/
+	function offerIds():Array<String>
+		return [for (t in transfers) if (t.state == Offered) '${t.id}'];
 
 	/** `/file transfers`: lists offers and running transfers **/
 	public function list(out:Output) {

@@ -142,6 +142,17 @@ class Contacts implements Module {
 		return (matches.length == 1) ? matches[0] : input;
 	}
 
+	/** Jids and names (without spaces) of the contacts and of pending subscription requests, to complete input **/
+	public function completions():Array<String> {
+		final list = requests.copy();
+		for (item in items) {
+			list.push(item.jid);
+			if (item.name != null && item.name.length > 0 && !item.name.contains(" "))
+				list.push(item.name);
+		}
+		return list;
+	}
+
 	/** The jids matching `input` (see `resolve`) **/
 	function lookup(input:String):Array<String> {
 		if (input.contains("@"))

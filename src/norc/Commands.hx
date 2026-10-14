@@ -1,6 +1,7 @@
 package norc;
 
 import norc.Output;
+import sys.FileSystem;
 
 using StringTools;
 
@@ -37,7 +38,16 @@ typedef Command = {
 		the output (also later, e.g. for responses of the server).
 	**/
 	var ?run:(args:Array<Null<String>>, out:Output) -> Void;
+
+	/** Completions of arguments by name, in addition to (or instead of) those of `Commands.completers` **/
+	var ?complete:Map<String, Completion>;
 }
+
+/**
+	Candidates for the argument being typed (`arg`, the rest of the line for an argument taking it): values replacing
+	it, those not starting with `arg` are left out. A value ending with `/` is not complete (e.g. a directory).
+**/
+typedef Completion = (arg:String) -> Array<String>;
 
 private typedef Param = {
 	var name:String;
@@ -69,14 +79,19 @@ class Commands {
 	/** Returns `true` if connected (for commands requiring a connection) **/
 	final isOnline:() -> Bool;
 
+	/** Completions of arguments by name for all commands (e.g. `jid`), unless a command has its own **/
+	public final completers = new Map<String, Completion>();
+
 	public function new(isOnline:() -> Bool) {
 		this.isOnline = isOnline;
 		register({
 			name: "help",
 			args: "[command...]",
 			description: "list the commands, or show the usage of one",
-			run: (args, out) -> help(args[0], out)
+			run: (args, out) -> help(args[0], out),
+			complete: ["command" => completeCommand]
 		});
+		completers.set("path", completePath);
 	}
 
 	/**
@@ -211,6 +226,118 @@ class Commands {
 		}
 		command.run(args, out);
 		return true;
+	}
+
+	/**
+		Completes the end of `before` (the input up to the cursor): the command, a subcommand or an argument.
+		Returns the text being completed (the end of `before`) and the sorted candidates replacing it,
+		`null` if there is nothing to complete.
+	**/
+	public function complete(before:String):Null<{word:String, candidates:Array<String>}> {
+		if (!before.startsWith("/"))
+			return null;
+		final text = before.substr(1);
+		var i = text.indexOf(" ");
+		if (i == -1)
+			return result(before, [for (name in entries.keys()) '/$name']);
+		var entry = entries.get(text.substr(0, i));
+		var args = text.substr(i + 1).ltrim();
+		while (entry != null && entry.command.subcommands != null) {
+			i = args.indexOf(" ");
+			if (i == -1) {
+				// a subcommand, or the first argument of the command
+				final c = result(args, [for (name in entry.subs.keys()) name]);
+				final a = completeArgs(entry, args);
+				if (a != null)
+					for (v in a.candidates)
+						c.candidates.push(v);
+				c.candidates.sort(Reflect.compare);
+				return c;
+			}
+			final sub = entry.subs.get(args.substr(0, i));
+			if (sub == null)
+				break;
+			entry = sub;
+			args = args.substr(i + 1).ltrim();
+		}
+		return (entry == null) ? null : completeArgs(entry, args);
+	}
+
+	/** Completes the argument at the end of `args` (the arguments of `entry`) **/
+	function completeArgs(entry:Entry, args:String):Null<{word:String, candidates:Array<String>}> {
+		// start of each word, the last one is being typed (empty after a space)
+		final starts = new Array<Int>();
+		var i = 0;
+		while (i < args.length) {
+			starts.push(i);
+			while (i < args.length && args.charCodeAt(i) != " ".code)
+				i++;
+			while (i < args.length && args.charCodeAt(i) == " ".code)
+				i++;
+		}
+		if (starts.length == 0 || args.endsWith(" "))
+			starts.push(args.length);
+		final params = entry.params;
+		var w = 0;
+		for (p in 0...params.length) {
+			final param = params[p];
+			if (w == starts.length - 1 || param.rest) {
+				final arg = args.substr(starts[w]);
+				final candidates = completeParam(entry, param, arg);
+				// an optional number can be left out: or the next argument
+				if (param.integer && param.optional && p + 1 < params.length)
+					for (v in completeParam(entry, params[p + 1], arg))
+						candidates.push(v);
+				return result(arg, candidates);
+			}
+			final word = args.substring(starts[w], starts[w + 1]).rtrim();
+			if (param.integer && param.optional && Std.parseInt(word.startsWith("#") ? word.substr(1) : word) == null)
+				continue;
+			w++;
+		}
+		return null;
+	}
+
+	function completeParam(entry:Entry, param:Param, arg:String):Array<String> {
+		final f = entry.command.complete?.get(param.name) ?? completers.get(param.name);
+		return (f == null) ? [] : f(arg);
+	}
+
+	/** The candidates starting with `word` (ignoring case), sorted and without duplicates **/
+	static function result(word:String, candidates:Array<String>) {
+		final lower = word.toLowerCase();
+		final matches = new Array<String>();
+		for (c in candidates)
+			if (c.toLowerCase().startsWith(lower) && !matches.contains(c))
+				matches.push(c);
+		matches.sort(Reflect.compare);
+		return {word: word, candidates: matches};
+	}
+
+	/** A command for `/help`, e.g. `roster add` **/
+	function completeCommand(arg:String):Array<String> {
+		final line = '/$arg';
+		final c = complete(line);
+		if (c == null)
+			return [];
+		final prefix = line.substr(0, line.length - c.word.length);
+		return [for (v in c.candidates) (prefix + v).substr(1)];
+	}
+
+	/** Files and directories (`~/` is the home directory), hidden ones if `arg` starts their name with `.` **/
+	public static function completePath(arg:String):Array<String> {
+		if (arg == "~")
+			return ["~/"];
+		final i = arg.lastIndexOf("/");
+		final dir = arg.substr(0, i + 1);
+		final path = (dir.length == 0) ? "." : Config.expandHome(dir);
+		final hidden = arg.substr(i + 1).startsWith(".");
+		final names = try FileSystem.readDirectory(path) catch (_) [];
+		return [
+			for (name in names)
+				if (hidden || !name.startsWith("."))
+					dir + name + (FileSystem.isDirectory(haxe.io.Path.join([path, name])) ? "/" : "")
+		];
 	}
 
 	/**
