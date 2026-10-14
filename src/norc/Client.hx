@@ -181,7 +181,7 @@ class Client {
 			} catch (e)
 				Term.error('cannot start the api: $e');
 		}
-		final editor = interactive ? LineEditor.start() : null;
+		final editor = interactive ? LineEditor.start(account.prompt) : null;
 		Term.editor = editor;
 		if (editor != null)
 			editor.complete = complete;

@@ -33,6 +33,9 @@ typedef Account = {
 
 	/** Port of the socket interface, a free port if not set **/
 	var ?apiPort:Int;
+
+	/** Prompt of the input line (`-i`), `> ` if not set **/
+	var ?prompt:String;
 }
 
 /**
@@ -45,7 +48,8 @@ typedef Account = {
 	Keys: `jid`, `host`, `port`, `resource`, `password_cmd`, `download_dir` (`~/` is the home directory),
 	`keepalive` (seconds without data before pinging the server, `0` to disable),
 	`api` (`1`: socket interface for other programs), `api_host`, `api_port`,
-	`last_activity` (`1`: answer last activity requests with the idle time).
+	`last_activity` (`1`: answer last activity requests with the idle time),
+	`prompt` (of the input line, in `"` to keep spaces at the start or end).
 
 	The runtime state of an account (pid file) is in `$XDG_STATE_HOME/norc/<name>/` (Windows: `%LOCALAPPDATA%\norc\<name>\`).
 **/
@@ -114,7 +118,8 @@ class Config {
 			{key: "api", value: bool(account.api)},
 			{key: "api_host", value: account.apiHost},
 			{key: "api_port", value: str(account.apiPort)},
-			{key: "last_activity", value: bool(account.lastActivity)}
+			{key: "last_activity", value: bool(account.lastActivity)},
+			{key: "prompt", value: account.prompt != null ? '"${account.prompt}"' : null}
 		];
 	}
 
@@ -274,6 +279,9 @@ class Config {
 					account.apiHost = value;
 				case "api_port":
 					account.apiPort = parsePort(value, source);
+				case "prompt":
+					// quoted to keep spaces
+					account.prompt = (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) ? value.substr(1, value.length - 2) : value;
 				case "keepalive":
 					final v = Std.parseFloat(value);
 					if (Math.isNaN(v) || v < 0)
