@@ -36,6 +36,9 @@ class Session {
 	final conn:Connection;
 	/** Print the XMPP stream (passwords hidden) **/
 	public var debug:Bool;
+
+	/** The host and port connected to, once connected **/
+	public var address(default, null):Null<{host:String, port:Int}>;
 	var failed = false;
 
 	/** Seconds without received data before pinging the server, `0` to disable (call `tick` regularly) **/
@@ -118,9 +121,10 @@ class Session {
 		return sm?.id != null;
 
 	public function open() {
+		// without host: the hosts of the SRV records of the domain
 		final host = account.host ?? account.jid.domain;
-		Term.info('connecting to $host:${account.port}');
-		conn.open(host, account.port);
+		Term.info('connecting to $host' + (account.host != null ? ':${account.port}' : ''));
+		conn.open(host, account.port, account.host == null);
 	}
 
 	public inline function owns(c:Connection):Bool
@@ -128,7 +132,8 @@ class Session {
 
 	public function handle(e:NetEvent) {
 		switch e {
-			case Connected:
+			case Connected(host, port):
+				address = {host: host, port: port};
 				stream.start(features -> {
 					// Never authenticate (or register) without TLS
 					if (!StartTLS.isOffered(features)) {

@@ -22,6 +22,9 @@ private enum Command {
 	changes are posted back as `Event.Net`.
 **/
 class Connection {
+	/** Seconds to wait for a connection to a host **/
+	static inline var CONNECT_TIMEOUT = 10.0;
+
 	/** How long to wait for data before checking for commands (seconds) **/
 	static inline var POLL_INTERVAL = 0.02;
 
@@ -32,8 +35,16 @@ class Connection {
 		this.events = events;
 	}
 
-	public function open(host:String, port:Int) {
-		Thread.create(() -> run(host, port));
+	/**
+		Connects to `host:port`; with `srv`, to the hosts of the SRV records of the domain `host`
+		(`_xmpp-client._tcp`) in their order, and `host:port` if there are none.
+	**/
+	public function open(host:String, port:Int, srv = false) {
+		Thread.create(() -> {
+			final records = srv ? Dns.srv('_xmpp-client._tcp.$host') : [];
+			final targets = (records.length > 0) ? [for (r in records) {host: r.target, port: r.port}] : [{host: host, port: port}];
+			run(targets);
+		});
 	}
 
 	public function send(str:String)
@@ -50,20 +61,35 @@ class Connection {
 	inline function post(e:NetEvent)
 		events.add(Net(this, e));
 
-	function run(hostname:String, port:Int) {
-		final host = try new Host(hostname) catch (e) {
-			post(ConnectFailed('cannot resolve $hostname'));
-			return;
+	/** Connects to the first reachable target, then sends and receives until closed **/
+	function run(targets:Array<{host:String, port:Int}>) {
+		var socket:Null<Socket> = null;
+		var host:Null<Host> = null;
+		final errors = [];
+		for (t in targets) {
+			final h = try new Host(t.host) catch (e) {
+				errors.push('cannot resolve ${t.host}');
+				continue;
+			}
+			final s = new Socket();
+			try {
+				s.setTimeout(CONNECT_TIMEOUT);
+				s.connect(h, t.port);
+			} catch (e) {
+				s.close();
+				errors.push('cannot connect to ${t.host}:${t.port}: $e');
+				continue;
+			}
+			socket = s;
+			host = h;
+			post(Connected(t.host, t.port));
+			break;
 		}
-		var socket = new Socket();
-		try
-			socket.connect(host, port)
-		catch (e) {
-			post(ConnectFailed('cannot connect to $hostname:$port: $e'));
+		if (socket == null) {
+			post(ConnectFailed(errors.join(", ")));
 			return;
 		}
 		socket.setBlocking(false);
-		post(Connected);
 		final buf = Bytes.alloc(16384);
 		while (true) {
 			var cmd:Null<Command>;

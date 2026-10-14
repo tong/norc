@@ -22,7 +22,8 @@ enum Event {
 }
 
 enum NetEvent {
-	Connected;
+	/** Connected to `host:port` (e.g. the target of an SRV record) **/
+	Connected(host:String, port:Int);
 	ConnectFailed(error:String);
 
 	/** Received raw data, possibly ending within a UTF-8 sequence **/
