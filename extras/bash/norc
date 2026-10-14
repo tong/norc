@@ -4,7 +4,8 @@
 #   mkdir -p ~/.local/share/bash-completion/completions && cp extras/bash/norc ~/.local/share/bash-completion/completions/
 # or source it in ~/.bashrc.
 
-# Configured accounts: the files in <config dir>/accounts (config dir from -c/--config)
+# Configured accounts: the files in <config dir>/accounts, and the directories with a conf
+# (config dir from -c/--config)
 _norc_accounts() {
 	local dir="${XDG_CONFIG_HOME:-$HOME/.config}/norc" i
 	for ((i = 1; i < ${#COMP_WORDS[@]} - 1; i++)); do
@@ -14,14 +15,14 @@ _norc_accounts() {
 	done
 	local f
 	for f in "$dir"/accounts/*; do
-		[[ -f $f ]] && printf '%s\n' "${f##*/}"
+		[[ -f $f || -f $f/conf ]] && printf '%s\n' "${f##*/}"
 	done
 }
 
 _norc() {
 	local cur=${COMP_WORDS[COMP_CWORD]} prev=${COMP_WORDS[COMP_CWORD - 1]}
 	COMPREPLY=()
-	local options="-a --account -j --jid -c --config --host --port -i --interactive --api --xmpp-debug --no-color -h --help"
+	local options="-a --account -j --jid -c --config --host --port --resource -i --interactive --api --stdin --xmpp-debug --no-color -v --version -h --help"
 
 	# values of options
 	case $prev in
@@ -39,7 +40,7 @@ _norc() {
 		COMPREPLY=($(compgen -A hostname -- "$cur"))
 		return
 		;;
-	-j | --jid | --port)
+	-j | --jid | --port | --resource | --timeout)
 		return
 		;;
 	esac
@@ -49,7 +50,7 @@ _norc() {
 	for ((i = 1; i < COMP_CWORD; i++)); do
 		word=${COMP_WORDS[i]}
 		case $word in
-		-a | --account | -j | --jid | -c | --config | --host | --port) ((i++)) ;;
+		-a | --account | -j | --jid | -c | --config | --host | --port | --resource | --timeout) ((i++)) ;;
 		-*) ;;
 		*)
 			if [[ -z $command ]]; then
@@ -67,7 +68,17 @@ _norc() {
 		if [[ $cur == -* ]]; then
 			COMPREPLY=($(compgen -W "$options" -- "$cur"))
 		else
-			COMPREPLY=($(compgen -W "account" -- "$cur"))
+			COMPREPLY=($(compgen -W "account check" -- "$cur"))
+		fi
+		return
+	fi
+
+	# norc check <domain...>: its options, or server domains
+	if [[ $command == check ]]; then
+		if [[ $cur == -* ]]; then
+			COMPREPLY=($(compgen -W "--json --timeout --port --xmpp-debug --no-color -c --config" -- "$cur"))
+		else
+			COMPREPLY=($(compgen -A hostname -- "$cur"))
 		fi
 		return
 	fi

@@ -6,7 +6,8 @@
 #   mkdir -p ~/.zsh/completions && cp extras/zsh/_norc ~/.zsh/completions/
 #   # in ~/.zshrc, before compinit: fpath=(~/.zsh/completions $fpath)
 
-# Configured accounts: the files in <config dir>/accounts (config dir from -c/--config)
+# Configured accounts: the files in <config dir>/accounts, and the directories with a conf
+# (config dir from -c/--config)
 _norc_accounts() {
 	local dir i
 	for (( i = 1; i < ${#words}; i++ )); do
@@ -17,7 +18,7 @@ _norc_accounts() {
 	done
 	dir=${dir:-${XDG_CONFIG_HOME:-$HOME/.config}/norc}
 	local -a accounts
-	accounts=( $dir/accounts/*(N.:t) )
+	accounts=( $dir/accounts/*(N.:t) $dir/accounts/*/conf(N.:h:t) )
 	_describe -t accounts 'account' accounts
 }
 
@@ -32,25 +33,40 @@ _norc() {
 		'(-c --config)'{-c+,--config=}'[config directory]:directory:_directories'
 		'--host=[server host]:host:_hosts'
 		'--port=[server port]:port: '
+		'--resource=[resource of the jid]:resource: '
 		'--xmpp-debug[print the XMPP stream]'
 		'--no-color[disable colored output]'
+		'(- *)'{-v,--version}'[show the version]'
 		'(- *)'{-h,--help}'[show help]'
 	)
 
 	_arguments -C $options \
-		'(-i --interactive)'{-i,--interactive}'[read commands from stdin]' \
+		'(-i --interactive --stdin)'{-i,--interactive}'[read commands from stdin]' \
 		'--api[socket interface for other programs]' \
+		'(-i --interactive)--stdin[the api over stdin and stdout (JSON lines), other output to stderr]' \
 		'1: :->command' \
 		'*:: :->args' && ret=0
 
 	case $state in
 		command)
 			local -a commands
-			commands=('account:manage accounts')
+			commands=(
+				'account:manage accounts'
+				'check:what servers offer before the login, e.g. registration'
+			)
 			_describe -t commands 'command' commands && ret=0
 			;;
 		args)
 			case $line[1] in
+				check)
+					_arguments \
+						'--json[one JSON object per server and line]' \
+						'--timeout=[seconds per server]:seconds: ' \
+						'--port=[server port]:port: ' \
+						'--xmpp-debug[print the XMPP stream]' \
+						'--no-color[disable colored output]' \
+						'*:domain:_hosts' && ret=0
+					;;
 				account)
 					if (( CURRENT == 2 )); then
 						local -a subcommands

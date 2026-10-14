@@ -9,13 +9,19 @@ LIBHL_SRC := $(PCRE) src/gc $(addprefix src/std/,array buffer bytes cast date er
 	maps math obj random regexp socket string sys types ucs2 thread process track)
 
 .PHONY: all build from-c clean install uninstall
-all: norc.hl
+all: build
 
 # Rebuild when sources or build settings change
 SRC := $(shell find src -name '*.hx') norc.hxml
 # and when the haxelibs change (e.g. git/dev libraries)
 LIB_SRC := $(foreach lib,hxmpp sasl,$(shell haxelib libpath $(lib) 2>/dev/null))
 SRC += $(shell find $(addsuffix src,$(LIB_SRC)) -name '*.hx' 2>/dev/null)
+# and when the git version changes (norc.Version): build/version is rewritten only if it differs
+GIT_VERSION := $(shell git describe --tags --always --dirty 2>/dev/null)
+$(shell mkdir -p $(BUILD) && [ "$$(cat $(BUILD)/version 2>/dev/null)" = "$(GIT_VERSION)" ] || echo "$(GIT_VERSION)" > $(BUILD)/version)
+SRC += $(BUILD)/version
+# and when the default config changes (embedded, norc.Defaults)
+SRC += $(shell find config -type f 2>/dev/null)
 
 # HashLink bytecode
 norc.hl: build.hl.hxml $(SRC)
