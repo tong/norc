@@ -98,6 +98,16 @@ function main() {
 		}
 		i++;
 	}
+	// the first start: write the default config (conf, example hooks)
+	if (positional[0] != "check") {
+		final dir = Config.configDir();
+		final installed = try norc.Defaults.install(dir) catch (e) {
+			Term.error('cannot create $dir: $e');
+			[];
+		}
+		if (installed.length > 0)
+			Term.info('created $dir with the default config: conf, and example hooks in hooks/ (disabled, enable them with chmod +x)');
+	}
 	switch positional {
 		case []:
 		case ["account", _] | ["account", _, _] | ["account"]:

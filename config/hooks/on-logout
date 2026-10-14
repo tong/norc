@@ -1,0 +1,19 @@
+#!/bin/sh
+#
+# norc hook: write the offline state to a file, e.g. for a status bar (see on-login)
+#
+# Run on the logout event, when the session ended (quit, or disconnected).
+# Enable it with `chmod +x on-logout`. Several hooks per event: on-logout.<anything> (e.g. on-logout.log).
+#
+# Arguments: reason
+# NORC_REASON     quit, or the error
+# NORC_RECONNECT  1 if norc reconnects, 0 if it exits
+# Always set: NORC_EVENT NORC_ACCOUNT (the account name) NORC_JID (your jid)
+
+dir="${XDG_RUNTIME_DIR:-/tmp}/norc"
+mkdir -p "$dir"
+if [ "$NORC_RECONNECT" = 1 ]; then
+	echo reconnecting > "$dir/$NORC_ACCOUNT"
+else
+	rm -f "$dir/$NORC_ACCOUNT"
+fi

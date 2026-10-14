@@ -1,0 +1,18 @@
+#!/bin/sh
+#
+# norc hook: notification of the music contacts are listening to
+#
+# Run on the tune event, when a contact published a tune (also after the login).
+# Enable it with `chmod +x on-tune`. Several hooks per event: on-tune.<anything> (e.g. on-tune.log).
+#
+# Arguments: from (bare jid) artist title (empty: stopped)
+# NORC_FROM    bare jid
+# NORC_NAME    name of the contact
+# NORC_ARTIST  NORC_TITLE  NORC_SOURCE (album)  NORC_TRACK
+# NORC_LENGTH  seconds
+# NORC_URI     link to the song
+# Always set: NORC_EVENT NORC_ACCOUNT (the account name) NORC_JID (your jid)
+
+[ -n "$NORC_TITLE" ] || exit 0
+command -v notify-send >/dev/null || exit 0
+exec notify-send --app-name=norc "$NORC_NAME is listening to" "${NORC_ARTIST:+$NORC_ARTIST – }$NORC_TITLE"

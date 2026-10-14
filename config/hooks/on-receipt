@@ -1,0 +1,16 @@
+#!/bin/sh
+#
+# norc hook: log delivery receipts: the recipient's client got your message
+#
+# Run on the receipt event, when a contact's client confirmed a message you sent.
+# Enable it with `chmod +x on-receipt`. Several hooks per event: on-receipt.<anything> (e.g. on-receipt.log).
+#
+# Arguments: from (bare jid) id
+# NORC_FROM  full jid of the client
+# NORC_NAME  name of the contact
+# NORC_ID    id of the sent message (NORC_ID of on-sent)
+# Always set: NORC_EVENT NORC_ACCOUNT (the account name) NORC_JID (your jid)
+
+log="${XDG_DATA_HOME:-$HOME/.local/share}/norc/logs/$NORC_ACCOUNT"
+mkdir -p "$log"
+printf '%s ✓ %s\n' "$(date '+%Y-%m-%d %H:%M')" "$2" >> "$log/$1.log"

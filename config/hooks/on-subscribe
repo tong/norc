@@ -1,0 +1,14 @@
+#!/bin/sh
+#
+# norc hook: notification when someone asks to see your presence
+#
+# Run on the subscribe event, when someone asked to see your presence (add you as contact).
+# Enable it with `chmod +x on-subscribe`. Several hooks per event: on-subscribe.<anything> (e.g. on-subscribe.log).
+#
+# Arguments: from (bare jid)
+# NORC_FROM  jid
+# NORC_NAME  name (if already in the roster)
+# Always set: NORC_EVENT NORC_ACCOUNT (the account name) NORC_JID (your jid)
+
+command -v notify-send >/dev/null || exit 0
+exec notify-send --app-name=norc "$1 wants to see your presence" "/roster accept $1 or /roster deny $1"

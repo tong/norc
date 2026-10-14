@@ -1,0 +1,14 @@
+#!/bin/sh
+#
+# norc hook: notification when a file was received, with its location
+#
+# Run on the file-received event, when a file transfer to you completed.
+# Enable it with `chmod +x on-file-received`. Several hooks per event: on-file-received.<anything> (e.g. on-file-received.log).
+#
+# Arguments: from (bare jid) path
+# NORC_FROM  full jid
+# NORC_PATH  where the file was saved
+# Always set: NORC_EVENT NORC_ACCOUNT (the account name) NORC_JID (your jid)
+
+command -v notify-send >/dev/null || exit 0
+exec notify-send --app-name=norc "received from $1" "$NORC_PATH"

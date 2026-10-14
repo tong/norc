@@ -1,0 +1,14 @@
+#!/bin/sh
+#
+# norc filter hook: fix a typo in sent messages
+#
+# Gets every stanza (message, presence, iq) sent after the login on stdin, prints the stanza to use
+# on stdout; empty output drops it. If the hook fails, takes longer than 5 seconds or prints anything but
+# one XML element, the stanza is passed on unchanged.
+# norc waits for it: each stanza starts a process, keep it fast.
+# Enable it with `chmod +x on-stanza-send`. Several filters: on-stanza-send.<anything>, chained in the order of their names.
+#
+# Always set: NORC_EVENT NORC_ACCOUNT NORC_JID
+
+# replace "teh" with "the" in the text of messages
+sed 's/\bteh\b/the/g'

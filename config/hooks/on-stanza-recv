@@ -1,0 +1,16 @@
+#!/bin/sh
+#
+# norc filter hook: log all received stanzas, unchanged
+#
+# Gets every stanza (message, presence, iq) received after the login on stdin, prints the stanza to use
+# on stdout; empty output drops it. If the hook fails, takes longer than 5 seconds or prints anything but
+# one XML element, the stanza is passed on unchanged.
+# norc waits for it: each stanza starts a process, keep it fast.
+# Enable it with `chmod +x on-stanza-recv`. Several filters: on-stanza-recv.<anything>, chained in the order of their names.
+#
+# Always set: NORC_EVENT NORC_ACCOUNT NORC_JID
+
+log="${XDG_DATA_HOME:-$HOME/.local/share}/norc/logs/$NORC_ACCOUNT"
+mkdir -p "$log"
+# pass the stanza on and append it to the log
+tee -a "$log/stanzas.log"

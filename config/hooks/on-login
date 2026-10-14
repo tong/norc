@@ -1,0 +1,14 @@
+#!/bin/sh
+#
+# norc hook: write the online state to a file, e.g. for a status bar (see on-logout)
+#
+# Run on the login event, when norc logged in.
+# Enable it with `chmod +x on-login`. Several hooks per event: on-login.<anything> (e.g. on-login.log).
+#
+# Arguments: jid
+# NORC_RESUMED  1 if the previous session was resumed after a disconnection (no messages were lost)
+# Always set: NORC_EVENT NORC_ACCOUNT (the account name) NORC_JID (your jid)
+
+dir="${XDG_RUNTIME_DIR:-/tmp}/norc"
+mkdir -p "$dir"
+echo online > "$dir/$NORC_ACCOUNT"

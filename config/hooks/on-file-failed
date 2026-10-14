@@ -1,0 +1,16 @@
+#!/bin/sh
+#
+# norc hook: notification when a file transfer failed
+#
+# Run on the file-failed event, when a file transfer failed, was declined or canceled.
+# Enable it with `chmod +x on-file-failed`. Several hooks per event: on-file-failed.<anything> (e.g. on-file-failed.log).
+#
+# Arguments: peer (bare jid) name reason
+# NORC_PEER       full jid of the other side
+# NORC_FILE       file name
+# NORC_REASON     why
+# NORC_DIRECTION  send or receive
+# Always set: NORC_EVENT NORC_ACCOUNT (the account name) NORC_JID (your jid)
+
+command -v notify-send >/dev/null || exit 0
+exec notify-send --app-name=norc "file transfer failed: $NORC_FILE" "$NORC_REASON"

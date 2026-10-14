@@ -1,0 +1,71 @@
+# norc base config: defaults for all accounts
+#
+# Location: ~/.config/norc/conf ($XDG_CONFIG_HOME/norc/conf, Windows: %APPDATA%\norc\conf),
+# or <dir>/conf with `norc -c <dir>`.
+# Every account config (accounts/<name>) can override any of these values.
+# Accounts: one file per account in accounts/, e.g. accounts/me with `jid = me@example.org`
+# (or create one with `norc account register me@example.org --save`).
+#
+# Format: `key = value` per line, `#` starts a comment.
+# The commented values are the defaults.
+
+# The account to use without -a (only here, not in account configs): the name of its file in accounts/,
+# the local part of its jid or the jid. Without it, norc uses the only configured account.
+# account = me
+
+# Server host and port. Without host, norc uses the SRV records of the domain of the jid
+# (_xmpp-client._tcp), else the domain itself.
+# host = xmpp.example.org
+# port = 5222
+
+# Resource of the connection, unless the jid has one (me@example.org/laptop).
+# resource = norc
+
+# Command printing the password (first line of its output). Without it, norc asks for the password.
+# Required with --stdin.
+# password_cmd = pass xmpp/me@example.org
+
+# Directory for received files (`~/` is the home directory).
+# Default: $XDG_DOWNLOAD_DIR or ~/Downloads.
+# download_dir = ~/Downloads
+
+# Ping the server after this many seconds without data from it, to detect dead connections
+# (e.g. after a network change); without answer within 30 seconds norc reconnects. 0 disables it.
+# keepalive = 60
+
+# Prompt of the input line (-i), in "" to keep spaces at the start or end.
+# prompt = "> "
+
+# --- Privacy: what others can learn about you ---
+
+# Answer last activity requests with the time since your last input in norc (reveals when you were
+# last active).
+# last_activity = 0
+
+# Answer time requests (/time) with your local time (reveals your time zone).
+# entity_time = 0
+
+# Send chat states (typing, paused, …) to your contacts.
+# chat_states = 1
+
+# --- Messages ---
+
+# Receive copies of the messages sent and received by your other clients (Message Carbons).
+# carbons = 1
+
+# Accept attention requests (/buzz) of contacts: they ring the terminal bell.
+# attention = 1
+
+# --- Socket interface for other programs (also: --api) ---
+
+# norc listens on 127.0.0.1 and writes the port and a token to <state dir>/api
+# (~/.local/state/norc/<account>/api), readable only by you. Clients authenticate with the token, then
+# send commands as JSON lines (or as in the REPL). Programs starting norc can use --stdin instead.
+# api = 0
+
+# Address to listen on. Other addresses make the api reachable over the network, unencrypted: the token
+# can be read from the traffic. Prefer an SSH tunnel to 127.0.0.1.
+# api_host = 127.0.0.1
+
+# Port, a free one if not set.
+# api_port = 5280

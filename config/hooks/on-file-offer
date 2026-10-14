@@ -1,0 +1,16 @@
+#!/bin/sh
+#
+# norc hook: notification when a contact offers a file
+#
+# Run on the file-offer event, when a contact offered to send you a file (/file accept or /file decline).
+# Enable it with `chmod +x on-file-offer`. Several hooks per event: on-file-offer.<anything> (e.g. on-file-offer.log).
+#
+# Arguments: from (bare jid) name size
+# NORC_FROM  full jid
+# NORC_FILE  file name
+# NORC_SIZE  bytes
+# NORC_ID    number of the offer (/file accept <id>)
+# Always set: NORC_EVENT NORC_ACCOUNT (the account name) NORC_JID (your jid)
+
+command -v notify-send >/dev/null || exit 0
+exec notify-send --app-name=norc "$1 offers a file" "$NORC_FILE ($NORC_SIZE bytes): /file accept $NORC_ID"

@@ -1,0 +1,21 @@
+#!/bin/sh
+#
+# norc hook: notification when a contact allows or stops sharing their presence
+#
+# Run on the subscription event, when the presence subscription with a contact changed.
+# Enable it with `chmod +x on-subscription`. Several hooks per event: on-subscription.<anything> (e.g. on-subscription.log).
+#
+# Arguments: from (bare jid) type
+# NORC_FROM  jid
+# NORC_NAME  name of the contact
+# NORC_TYPE  subscribed (you can see their presence), unsubscribed (you can't anymore),
+#            unsubscribe (they don't want to see yours anymore)
+# Always set: NORC_EVENT NORC_ACCOUNT (the account name) NORC_JID (your jid)
+
+command -v notify-send >/dev/null || exit 0
+case "$NORC_TYPE" in
+	subscribed) text="allowed you to see their presence" ;;
+	unsubscribed) text="removed your presence subscription" ;;
+	*) text="unsubscribed from your presence" ;;
+esac
+exec notify-send --app-name=norc "$NORC_NAME" "$text"

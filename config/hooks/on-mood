@@ -1,0 +1,17 @@
+#!/bin/sh
+#
+# norc hook: notification when a contact shares their mood
+#
+# Run on the mood event, when a contact published a mood (also after the login).
+# Enable it with `chmod +x on-mood`. Several hooks per event: on-mood.<anything> (e.g. on-mood.log).
+#
+# Arguments: from (bare jid) mood text (empty: stopped publishing it)
+# NORC_FROM  bare jid
+# NORC_NAME  name of the contact
+# NORC_MOOD  e.g. happy, tired, in_love; empty if removed
+# NORC_TEXT  optional text
+# Always set: NORC_EVENT NORC_ACCOUNT (the account name) NORC_JID (your jid)
+
+[ -n "$NORC_MOOD" ] || exit 0
+command -v notify-send >/dev/null || exit 0
+exec notify-send --app-name=norc "$NORC_NAME" "is $(echo "$NORC_MOOD" | tr _ ' ')${NORC_TEXT:+: $NORC_TEXT}"

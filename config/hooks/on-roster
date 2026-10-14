@@ -1,0 +1,18 @@
+#!/bin/sh
+#
+# norc hook: log changes of the roster (contact list), also those made by your other clients
+#
+# Run on the roster event, when a contact was added, changed or removed.
+# Enable it with `chmod +x on-roster`. Several hooks per event: on-roster.<anything> (e.g. on-roster.log).
+#
+# Arguments: jid action
+# NORC_JID_CONTACT  jid of the contact
+# NORC_NAME         its name
+# NORC_ACTION       added, updated or removed
+# NORC_SUBSCRIPTION none, to, from, both
+# NORC_GROUPS       groups, comma separated
+# Always set: NORC_EVENT NORC_ACCOUNT (the account name) NORC_JID (your jid)
+
+log="${XDG_DATA_HOME:-$HOME/.local/share}/norc/logs/$NORC_ACCOUNT"
+mkdir -p "$log"
+printf '%s %s %s (%s) %s\n' "$(date '+%Y-%m-%d %H:%M')" "$NORC_ACTION" "$1" "$NORC_SUBSCRIPTION" "$NORC_NAME" >> "$log/roster.log"

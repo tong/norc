@@ -1,0 +1,16 @@
+#!/bin/sh
+#
+# norc hook: notification when a file was sent
+#
+# Run on the file-sent event, when a file transfer to a contact completed.
+# Enable it with `chmod +x on-file-sent`. Several hooks per event: on-file-sent.<anything> (e.g. on-file-sent.log).
+#
+# Arguments: to (bare jid) path
+# NORC_TO    full jid of the recipient
+# NORC_PATH  the sent file
+# NORC_FILE  its name
+# NORC_SIZE  bytes
+# Always set: NORC_EVENT NORC_ACCOUNT (the account name) NORC_JID (your jid)
+
+command -v notify-send >/dev/null || exit 0
+exec notify-send --app-name=norc "sent to $1" "$NORC_FILE"

@@ -1,0 +1,17 @@
+#!/bin/sh
+#
+# norc hook: notification of errors (failed connections, logins, undeliverable messages)
+#
+# Run on the error event, when an error happened.
+# Enable it with `chmod +x on-error`. Several hooks per event: on-error.<anything> (e.g. on-error.log).
+#
+# Arguments: kind text
+# NORC_KIND  connection, stream, login or message
+# NORC_TEXT  the error
+# NORC_FROM  for message errors: the jid the message was sent to
+# Always set: NORC_EVENT NORC_ACCOUNT (the account name) NORC_JID (your jid)
+
+# connection errors repeat while norc reconnects
+[ "$NORC_KIND" = connection ] && exit 0
+command -v notify-send >/dev/null || exit 0
+exec notify-send --app-name=norc --urgency=critical "norc: $NORC_KIND error" "$NORC_TEXT"

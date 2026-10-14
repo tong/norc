@@ -1,0 +1,23 @@
+#!/bin/sh
+#
+# norc hook: desktop notification for received messages (notify-send)
+#
+# Run on the message event, when a message is received.
+# Enable it with `chmod +x on-message`. Several hooks per event: on-message.<anything> (e.g. on-message.log).
+#
+# Arguments: from (bare jid) body
+# NORC_FROM      full jid of the sender
+# NORC_NAME      name of the contact (roster name, nickname or jid)
+# NORC_BODY      the text
+# NORC_TYPE      chat, normal, headline, groupchat
+# NORC_ID        id of the message
+# NORC_DELAYED   1 for messages delivered on login (sent while you were offline)
+# NORC_CARBON    1 for a copy of a message received by another of your clients
+# NORC_REPLACES  for a correction: the id of the corrected message
+# Always set: NORC_EVENT NORC_ACCOUNT (the account name) NORC_JID (your jid)
+
+# skip messages delivered on login, and copies of messages of your other clients
+[ "$NORC_DELAYED" = 1 ] && exit 0
+[ "$NORC_CARBON" = 1 ] && exit 0
+command -v notify-send >/dev/null || exit 0
+exec notify-send --app-name=norc "$NORC_NAME" "$NORC_BODY"

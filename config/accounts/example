@@ -1,0 +1,16 @@
+# norc account config, used with `norc -a example`
+#
+# Location: ~/.config/norc/accounts/<name> ($XDG_CONFIG_HOME/norc/accounts/<name>,
+# Windows: %APPDATA%\norc\accounts\<name>); the file name is the account name.
+# Values set here override the base config (conf).
+
+# The account (required). A resource given here (me@example.org/laptop) is used for the connection.
+jid = me@example.org
+
+# Get the password from a password manager instead of being asked.
+password_cmd = pass xmpp/me@example.org
+
+# host = xmpp.example.org
+# port = 5222
+# resource = laptop
+# download_dir = ~/xmpp/me

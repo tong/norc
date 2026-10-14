@@ -1,0 +1,16 @@
+#!/bin/sh
+#
+# norc hook: notification when a contact changes their nickname
+#
+# Run on the nickname event, when a contact published a nickname (also after the login).
+# Enable it with `chmod +x on-nickname`. Several hooks per event: on-nickname.<anything> (e.g. on-nickname.log).
+#
+# Arguments: from (bare jid) nickname (empty: stopped publishing it)
+# NORC_FROM      bare jid
+# NORC_NAME      name of the contact
+# NORC_NICKNAME  the nickname, empty if removed
+# Always set: NORC_EVENT NORC_ACCOUNT (the account name) NORC_JID (your jid)
+
+[ -n "$2" ] || exit 0
+command -v notify-send >/dev/null || exit 0
+exec notify-send --app-name=norc "$1" "is now known as $2"

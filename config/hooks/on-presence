@@ -1,0 +1,28 @@
+#!/bin/sh
+#
+# norc hook: notification when a contact comes online or goes offline
+#
+# Run on the presence event, when a contact's client changed its presence.
+# Enable it with `chmod +x on-presence`. Several hooks per event: on-presence.<anything> (e.g. on-presence.log).
+#
+# Arguments: from (bare jid) state status
+# NORC_FROM       full jid of the client
+# NORC_NAME       name of the contact
+# NORC_STATE      available, chat, away, xa, dnd or offline
+# NORC_STATUS     status message
+# NORC_PREVIOUS   the previous state of this client (offline if it was not online)
+# NORC_RESOURCES  online clients (devices) of the contact after this change
+# NORC_INITIAL    1 for the presences sent by the server right after the login
+# Always set: NORC_EVENT NORC_ACCOUNT (the account name) NORC_JID (your jid)
+
+# skip the presences of all online contacts after the login
+[ "$NORC_INITIAL" = 1 ] && exit 0
+command -v notify-send >/dev/null || exit 0
+if [ "$NORC_STATE" = offline ]; then
+	# the last device of the contact went offline
+	[ "$NORC_RESOURCES" = 0 ] || exit 0
+	exec notify-send --app-name=norc "$NORC_NAME" "is offline"
+elif [ "$NORC_PREVIOUS" = offline ] && [ "$NORC_RESOURCES" = 1 ]; then
+	# the first device of the contact came online
+	exec notify-send --app-name=norc "$NORC_NAME" "is online${NORC_STATUS:+: $NORC_STATUS}"
+fi
