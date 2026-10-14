@@ -414,7 +414,7 @@ class Client {
 			case subscribe:
 				contacts.request(p.from);
 				emit("subscribe", [Jid.parseBare(p.from)], {from: p.from, name: who});
-				'$who wants to see your presence: /roster accept ${Jid.parseBare(p.from)} or /roster deny ${Jid.parseBare(p.from)}';
+				'$who wants to see your presence: /contacts accept ${Jid.parseBare(p.from)} or /contacts deny ${Jid.parseBare(p.from)}';
 			case subscribed:
 				subscriptionEvent(p.from, "subscribed", who);
 				'$who allowed you to see their presence';

@@ -28,7 +28,7 @@ typedef Command = {
 	var ?exit:Bool;
 
 	/**
-		Subcommands, selected by the first word (e.g. `/roster add <jid>`).
+		Subcommands, selected by the first word (e.g. `/contacts add <jid>`).
 		Without a subcommand, `run` is called (if set, else the help of the command is shown).
 	**/
 	var ?subcommands:Array<Command>;
@@ -60,7 +60,7 @@ private typedef Entry = {
 	var command:Command;
 	var params:Array<Param>;
 
-	/** Usage prefix, e.g. `/roster add` **/
+	/** Usage prefix, e.g. `/contacts add` **/
 	var path:String;
 
 	/** Subcommands by name and alias **/
@@ -193,7 +193,7 @@ class Commands {
 	}
 
 	/**
-		Runs `command` (e.g. `roster add`, without `/`) with the arguments `args`, one per parameter, a parameter taking
+		Runs `command` (e.g. `contacts add`, without `/`) with the arguments `args`, one per parameter, a parameter taking
 		the rest of the line gets the remaining ones joined with spaces. The first arguments can select subcommands.
 		Returns `false` if the command could not run.
 	**/
@@ -332,7 +332,7 @@ class Commands {
 		return {word: word, candidates: matches};
 	}
 
-	/** A command for `/help`, e.g. `roster add` **/
+	/** A command for `/help`, e.g. `contacts add` **/
 	function completeCommand(arg:String):Array<String> {
 		final line = '/$arg';
 		final c = complete(line);
@@ -377,7 +377,7 @@ class Commands {
 	}
 
 	/**
-		Lists the commands, or shows the usage of command `name` (e.g. `roster` or `roster add`).
+		Lists the commands, or shows the usage of command `name` (e.g. `contacts` or `contacts add`).
 	**/
 	public function help(?name:String, ?out:Output) {
 		out ??= TermOutput.instance;

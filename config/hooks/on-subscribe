@@ -11,4 +11,4 @@
 # Always set: NORC_EVENT NORC_ACCOUNT (the account name) NORC_JID (your jid)
 
 command -v notify-send >/dev/null || exit 0
-exec notify-send --app-name=norc "$1 wants to see your presence" "/roster accept $1 or /roster deny $1"
+exec notify-send --app-name=norc "$1 wants to see your presence" "/contacts accept $1 or /contacts deny $1"

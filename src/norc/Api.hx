@@ -18,14 +18,14 @@ using StringTools;
 
 		→ {"auth":"4f3a…"}
 		← {"type":"auth","ok":true}
-		→ {"id":1,"cmd":"roster"}
+		→ {"id":1,"cmd":"contacts"}
 		← {"type":"data","id":1,"data":{"contacts":[{"jid":"alice@example.org","name":"Alice",…}]}}
 		← {"type":"done","id":1,"ok":true}
 		→ {"id":2,"cmd":"msg","args":["alice","hi there"]}
 		← {"type":"done","id":2,"ok":true}
 		← {"type":"event","event":"message","data":{"from":"alice@example.org/phone","body":"hello","delayed":false,…}}
 
-	Requests: `cmd` is a command (e.g. `roster add`) with its arguments in `args` (one per parameter, a parameter
+	Requests: `cmd` is a command (e.g. `contacts add`) with its arguments in `args` (one per parameter, a parameter
 	taking the rest of the line gets the remaining ones), or without `args` a command line as in the REPL (`/` optional).
 	`id` (any JSON value) is copied into the replies of the request.
 	For use by hand (e.g. with socat), plain lines work too: `auth <token>`, then command lines, optionally prefixed

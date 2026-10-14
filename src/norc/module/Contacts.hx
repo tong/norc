@@ -14,7 +14,7 @@ using StringTools;
 using xmpp.client.Roster;
 
 /**
-	The roster (contact list) and presence subscriptions: `/roster` and its subcommands.
+	The roster (contact list) and presence subscriptions: `/contacts` and its subcommands.
 **/
 class Contacts implements Module {
 	/** The roster, as last received from the server (kept while disconnected) **/
@@ -42,7 +42,7 @@ class Contacts implements Module {
 	public function commands():Array<Commands.Command>
 		return [
 			{
-				name: "roster",
+				name: "contacts",
 				description: "list contacts",
 				run: (args, out) -> list(out),
 				subcommands: [
@@ -208,7 +208,7 @@ class Contacts implements Module {
 		];
 		out.data({contacts: contacts}, () -> {
 			if (contacts.length == 0)
-				out.info("roster is empty");
+				out.info("no contacts");
 			for (c in contacts) {
 				final details = [c.subscription];
 				if (c.asked)
