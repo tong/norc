@@ -31,6 +31,9 @@ using StringTools;
 	For use by hand (e.g. with socat), plain lines work too: `auth <token>`, then command lines, optionally prefixed
 	with `@<id> `.
 
+	The same protocol works over stdin and stdout (`stdio`), without authentication, e.g. for a program running norc
+	as a child process.
+
 	Replies: `out`, `info` and `error` (`text`) as on the terminal, `data` (`data`): a result as data, instead of
 	its text. Last `done` (`ok`: `false` if an error was reported), once the command finished, including responses
 	of the server it waits for (or `TIMEOUT`). Later replies with the id are notifications (e.g. of a file transfer).
@@ -75,8 +78,26 @@ class Api {
 		file = path;
 		Thread.create(() -> while (true) {
 			final s = try socket.accept() catch (_) return;
-			post(() -> clients.push(new ApiClient(s, this)));
+			post(() -> clients.push(new ApiClient(s.input, s.output, () -> {
+				try
+					s.shutdown(true, true)
+				catch (_) {};
+				try
+					s.close()
+				catch (_) {};
+			}, this)));
 		});
+	}
+
+	/**
+		Takes requests from stdin and writes replies and events to stdout, as an authenticated client.
+		`closed` is called when stdin is closed.
+	**/
+	public function stdio(closed:() -> Void) {
+		final client = new ApiClient(Sys.stdin(), Sys.stdout(), () -> {}, this);
+		client.authenticated = true;
+		client.onClose = closed;
+		clients.push(client);
 	}
 
 	public function stop() {
@@ -175,7 +196,8 @@ class Api {
 }
 
 /**
-	A connected program: a thread reads its lines, a thread writes (writes don't block the main thread).
+	A connected program (a socket, or stdin and stdout): a thread reads its lines, a thread writes
+	(writes don't block the main thread).
 **/
 @:allow(norc.Api)
 private class ApiClient {
@@ -184,13 +206,23 @@ private class ApiClient {
 
 	public var authenticated = false;
 
-	final socket:Socket;
+	/** Called on the main thread when the client closed the connection (end of input) **/
+	public var onClose:Null<() -> Void>;
+
+	final input:haxe.io.Input;
+	final output:haxe.io.Output;
+
+	/** Closes the connection, after the last write **/
+	final shutdown:() -> Void;
+
 	final api:Api;
 	final writes = new Deque<String>();
 	var closed = false;
 
-	function new(socket:Socket, api:Api) {
-		this.socket = socket;
+	function new(input:haxe.io.Input, output:haxe.io.Output, shutdown:() -> Void, api:Api) {
+		this.input = input;
+		this.output = output;
+		this.shutdown = shutdown;
 		this.api = api;
 		Thread.create(readLoop);
 		Thread.create(writeLoop);
@@ -210,13 +242,17 @@ private class ApiClient {
 
 	function readLoop() {
 		while (true) {
-			final line = try socket.input.readLine() catch (_) null;
+			final line = try input.readLine() catch (_) null;
 			if (line == null)
 				break;
 			final l = line.endsWith("\r") ? line.substr(0, line.length - 1) : line;
 			api.post(() -> if (!closed) api.receive(this, l));
 		}
-		api.post(close);
+		api.post(() -> {
+			close();
+			if (onClose != null)
+				onClose();
+		});
 	}
 
 	function writeLoop() {
@@ -224,17 +260,13 @@ private class ApiClient {
 			final line = writes.pop(true);
 			if (line == CLOSE)
 				break;
-			try
-				socket.output.writeString(line + "\n")
-			catch (_)
+			try {
+				output.writeString(line + "\n");
+				output.flush();
+			} catch (_)
 				break;
 		}
-		try
-			socket.shutdown(true, true)
-		catch (_) {};
-		try
-			socket.close()
-		catch (_) {};
+		shutdown();
 	}
 }
 

@@ -8,6 +8,9 @@ using StringTools;
 class Term {
 	public static var colors = true;
 
+	/** All output to stderr, e.g. while stdout carries the API (`--stdin`) **/
+	public static var stderrOnly = false;
+
 	/** The line editor reading input (`-i` on a terminal): output is printed above its input line **/
 	public static var editor:Null<LineEditor>;
 
@@ -16,7 +19,7 @@ class Term {
 		final e = editor;
 		if (e != null)
 			e.print(text, error);
-		else if (error)
+		else if (error || stderrOnly)
 			Sys.stderr().writeString(text + "\n");
 		else
 			Sys.println(text);

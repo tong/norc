@@ -19,6 +19,7 @@ Options:
       --resource <res>   resource of the jid (default: from the config, or norc)
   -i, --interactive      read commands from stdin
       --api              socket interface for other programs (port and token in the state dir: api)
+      --stdin            the api over stdin and stdout (JSON lines, no token), other output to stderr
       --xmpp-debug       print the XMPP stream
       --no-color         disable colored output
   -v, --version          show the version
@@ -34,6 +35,7 @@ function main() {
 	var debug = false;
 	var interactive = false;
 	var api = false;
+	var stdin = false;
 	var save = false;
 	var yes = false;
 	var purge = false;
@@ -67,6 +69,8 @@ function main() {
 				interactive = true;
 			case "--api":
 				api = true;
+			case "--stdin":
+				stdin = true;
 			case "--xmpp-debug":
 				debug = true;
 			case "--no-color":
@@ -138,6 +142,14 @@ function main() {
 		account.api = true;
 	if (port != null)
 		account.port = try Config.parsePort(port) catch (e) exit(Std.string(e));
+	if (stdin) {
+		if (interactive)
+			exit('--stdin and -i both read stdin, use one');
+		// stdin carries the api: the password can't be asked
+		if (account.passwordCmd == null)
+			exit('--stdin needs password_cmd in the account config');
+		Term.stderrOnly = true;
+	}
 	final pidFile = try PidFile.acquire(Config.stateDir(account.name)) catch (e) exit('${account.name}: $e');
 	final password = try {
 		account.passwordCmd != null ? Term.readCommand(account.passwordCmd) : Term.readPassword('Password for ${xmpp.Jid.parseBare(account.jid)}: ');
@@ -147,7 +159,7 @@ function main() {
 	}
 	final client = new Client(account, password);
 	client.debug = debug;
-	final code = client.run(interactive);
+	final code = client.run(interactive, stdin);
 	pidFile.release();
 	Sys.exit(code);
 }

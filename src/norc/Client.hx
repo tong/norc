@@ -189,22 +189,29 @@ class Client {
 
 	/**
 		Connects and processes events until the client quits; returns the exit code.
+		With `stdio`, API requests are read from stdin and replies and events written to stdout (`--stdin`);
+		the client quits at the end of the input.
 	**/
-	public function run(interactive:Bool):Int {
+	public function run(interactive:Bool, stdio = false):Int {
 		// regular checks, e.g. the keepalive of the session
 		Thread.create(() -> while (true) {
 			Sys.sleep(5);
 			events.add(Call(() -> session?.tick()));
 		});
-		if (account.api == true) {
+		if (account.api == true || stdio) {
 			final api = new Api((line, args, out) -> {
 				lastInput = Sys.time();
 				return (args == null) ? commands.run(line, out, false) : commands.call(line, args, out);
 			}, f -> events.add(Call(f)));
+			this.api = api;
+			if (stdio)
+				api.stdio(quit);
+		}
+		if (account.api == true) {
+			final api = this.api;
 			try {
 				final host = account.apiHost ?? "127.0.0.1";
 				api.start(Config.stateDir(account.name), host, account.apiPort ?? 0);
-				this.api = api;
 				Term.info('api: ${Config.stateDir(account.name)}/api');
 				if (!host.startsWith("127.") && host != "localhost" && host != "::1")
 					Term.error('warning: the api is reachable over the network ($host), unencrypted: '
