@@ -323,7 +323,7 @@ class Client {
 		final from = m.from != null ? Jid.parseBare(m.from) : account.jid.domain;
 		if (m.type == error) {
 			final condition:Null<String> = m.error?.condition;
-			Term.error('message error from $from' + (condition != null ? ': $condition' : ''));
+			Term.error('message error from $from' + describeError(m.error));
 			errorEvent("message", condition ?? "error", {from: m.from ?? from});
 			return;
 		}
@@ -386,7 +386,9 @@ class Client {
 			case unsubscribe:
 				subscriptionEvent(p.from, "unsubscribe", who);
 				'$who unsubscribed from your presence';
-			case error: 'presence error from $full';
+			case error:
+				Term.error('presence error from $full' + describeError(p.error));
+				return;
 			case _: return;
 		}
 		Term.println(timestamp(Date.now()) + ' ' + Term.style(msg, 2));
@@ -514,6 +516,14 @@ class Client {
 		v.set("kind", kind);
 		v.set("text", text);
 		emit("error", [kind, text], v);
+	}
+
+	/** The condition and text of a stanza error, e.g. `: remote-server-timeout: Server-to-server connection failed` **/
+	static function describeError(e:Null<xmpp.Stanza.Error>):String {
+		if (e == null)
+			return '';
+		final parts = [(e.condition : Null<String>), e.text].filter(v -> v != null && v.length > 0);
+		return parts.length > 0 ? ': ${parts.join(": ")}' : '';
 	}
 
 	function subscriptionEvent(from:String, type:String, name:String)
