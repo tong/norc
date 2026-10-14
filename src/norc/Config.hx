@@ -37,6 +37,9 @@ typedef Account = {
 	/** Receive copies of the messages of the other clients of the account (Message Carbons), `true` if not set **/
 	var ?carbons:Bool;
 
+	/** Send chat states (typing, …), `true` if not set **/
+	var ?chatStates:Bool;
+
 	/** Prompt of the input line (`-i`), `> ` if not set **/
 	var ?prompt:String;
 }
@@ -53,6 +56,7 @@ typedef Account = {
 	`api` (`1`: socket interface for other programs), `api_host`, `api_port`,
 	`last_activity` (`1`: answer last activity requests with the idle time),
 	`carbons` (`0`: no copies of the messages of your other clients),
+	`chat_states` (`0`: don't send chat states),
 	`prompt` (of the input line, in `"` to keep spaces at the start or end).
 
 	The runtime state of an account (pid file) is in `$XDG_STATE_HOME/norc/<name>/` (Windows: `%LOCALAPPDATA%\norc\<name>\`).
@@ -124,6 +128,7 @@ class Config {
 			{key: "api_port", value: str(account.apiPort)},
 			{key: "last_activity", value: bool(account.lastActivity)},
 			{key: "carbons", value: bool(account.carbons)},
+			{key: "chat_states", value: bool(account.chatStates)},
 			{key: "prompt", value: account.prompt != null ? '"${account.prompt}"' : null}
 		];
 	}
@@ -278,6 +283,8 @@ class Config {
 					account.downloadDir = expandHome(value);
 				case "api":
 					account.api = parseBool(value, key, source);
+				case "chat_states":
+					account.chatStates = parseBool(value, key, source);
 				case "carbons":
 					account.carbons = parseBool(value, key, source);
 				case "last_activity":
