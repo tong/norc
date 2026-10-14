@@ -8,6 +8,7 @@ using StringTools;
 
 private final USAGE = 'Usage: norc [options]
        norc account <command> [options]   (norc account help)
+       norc check <domain...> [--json] [--timeout <s>]   what servers offer, e.g. registration (norc check)
 
 Options:
   -a, --account <name>   account to use (config: <config dir>/accounts/<name>)
@@ -36,6 +37,8 @@ function main() {
 	var save = false;
 	var yes = false;
 	var purge = false;
+	var json = false;
+	var timeout:Null<String> = null;
 	final positional = new Array<String>();
 	var i = 0;
 	function value():String {
@@ -72,6 +75,10 @@ function main() {
 				save = true;
 			case "--yes":
 				yes = true;
+			case "--json":
+				json = true;
+			case "--timeout":
+				timeout = value();
 			case "--purge":
 				purge = true;
 			case "-v", "--version":
@@ -101,6 +108,15 @@ function main() {
 				yes: yes,
 				purge: purge
 			}));
+		case ["check"]:
+			Sys.println(norc.Check.USAGE);
+			Sys.exit(0);
+		case _ if (positional[0] == "check"):
+			final seconds = (timeout != null) ? Std.parseFloat(timeout) : 20.0;
+			if (Math.isNaN(seconds) || seconds <= 0)
+				exit('invalid timeout: $timeout');
+			final port = port != null ? (try Config.parsePort(port) catch (e) exit(Std.string(e))) : null;
+			Sys.exit(norc.Check.run(positional.slice(1), {json: json, timeout: seconds, debug: debug, port: port}));
 		case _:
 			exit('unknown command: ${positional.join(" ")}\n\n$USAGE');
 	}

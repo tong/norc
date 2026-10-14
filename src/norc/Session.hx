@@ -37,6 +37,9 @@ class Session {
 	/** Print the XMPP stream (passwords hidden) **/
 	public var debug:Bool;
 
+	/** Print status messages (connecting) **/
+	public var verbose = true;
+
 	/** The host and port connected to, once connected **/
 	public var address(default, null):Null<{host:String, port:Int}>;
 	var failed = false;
@@ -123,7 +126,8 @@ class Session {
 	public function open() {
 		// without host: the hosts of the SRV records of the domain
 		final host = account.host ?? account.jid.domain;
-		Term.info('connecting to $host' + (account.host != null ? ':${account.port}' : ''));
+		if (verbose)
+			Term.info('connecting to $host' + (account.host != null ? ':${account.port}' : ''));
 		conn.open(host, account.port, account.host == null);
 	}
 
