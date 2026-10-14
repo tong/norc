@@ -3,6 +3,7 @@ package norc;
 import norc.Config.Account;
 import norc.Output;
 import norc.module.Blocking;
+import norc.module.Carbons;
 import norc.module.Contacts;
 import norc.module.Discovery;
 import norc.module.FileTransfers;
@@ -144,6 +145,7 @@ class Client {
 		commands.completers.set("jid", _ -> contacts.completions());
 		messages = new Messages(emit, contacts.resolve, contacts.name);
 		addModule(messages);
+		addModule(new Carbons(messages, account.carbons != false));
 		addModule(new Blocking(contacts.resolveOptional));
 		addModule(new Discovery(contacts.resolveOptional, resourcesOf, account.lastActivity == true ? () -> Std.int(Sys.time() - lastInput) : null));
 		addModule(new FileTransfers(account.downloadDir ?? Config.downloadDir(), emit, contacts.resolve, f -> events.add(Call(f)), resourcesOf));
