@@ -302,6 +302,15 @@ or the only configured one.';
 			FileSystem.deleteFile(path);
 			Term.info('removed $path');
 		}
+		// an account directory: removed if it has nothing else (hooks and scripts are kept)
+		final accountDir = Config.accountDir(account.name);
+		if (accountDir != null) {
+			if (FileSystem.readDirectory(accountDir).length == 0) {
+				FileSystem.deleteDirectory(accountDir);
+				Term.info('removed $accountDir');
+			} else
+				Term.info('kept $accountDir (hooks, scripts)');
+		}
 		final dir = Config.stateDir(account.name);
 		if (FileSystem.exists(dir)) {
 			for (f in FileSystem.readDirectory(dir))

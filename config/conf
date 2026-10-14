@@ -4,7 +4,8 @@
 # or <dir>/conf with `norc -c <dir>`.
 # Every account config (accounts/<name>) can override any of these values.
 # Accounts: one file per account in accounts/, e.g. accounts/me with `jid = me@example.org`
-# (or create one with `norc account register me@example.org --save`).
+# (or create one with `norc account register me@example.org --save`), or a directory accounts/me/ with the
+# config in conf, and hooks/ and scripts/ only of this account (those of this directory are for all accounts).
 #
 # Format: `key = value` per line, `#` starts a comment.
 # The commented values are the defaults.

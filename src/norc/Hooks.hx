@@ -7,17 +7,19 @@ import sys.thread.Thread;
 using StringTools;
 
 /**
-	External hooks: executables in `<config dir>/hooks/` named `on-<event>`, run when the event happens
-	(e.g. `hooks/on-message` for a received message, to show a notification).
-	Several hooks per event: names starting with `on-<event>.` (e.g. `on-message.notify`, `on-message.log`),
-	all are run, in the order of their names. Files without execute permission are skipped (disabled hooks).
+	External hooks: executables in `<config dir>/hooks/` (all accounts) and `<account dir>/hooks/` (one account)
+	named `on-<event>`, run when the event happens (e.g. `hooks/on-message` for a received message, to show a
+	notification). Several hooks per event: names starting with `on-<event>.` (e.g. `on-message.notify`,
+	`on-message.log`), all are run, those of the config directory first, each in the order of their names.
+	Files without execute permission are skipped (disabled hooks).
 
 	A hook gets the main values as arguments and all values as environment variables (`NORC_*`, the names
 	uppercased), plus `NORC_EVENT`, `NORC_ACCOUNT` and `NORC_JID`. Hooks run asynchronously; their output is
 	ignored, a failure (exit code other than 0) is reported.
 **/
 class Hooks {
-	final dir:String;
+	/** Directories of hooks, in the order their hooks run **/
+	final dirs:Array<String>;
 	final account:String;
 
 	/** Returns the own jid (empty while offline) **/
@@ -26,8 +28,8 @@ class Hooks {
 	/** Runs a callback on the main thread **/
 	final post:(() -> Void)->Void;
 
-	public function new(dir:String, account:String, jid:() -> String, post:(() -> Void)->Void) {
-		this.dir = dir;
+	public function new(dirs:Array<String>, account:String, jid:() -> String, post:(() -> Void)->Void) {
+		this.dirs = dirs;
 		this.account = account;
 		this.jid = jid;
 		this.post = post;
@@ -47,13 +49,13 @@ class Hooks {
 				// matching a Dynamic against true would cast it to Bool
 				env.set(k, (v == null) ? "" : Std.isOfType(v, Bool) ? ((v : Bool) ? "1" : "0") : Std.string(v));
 		final started = withEnv(event, env, () -> [
-			for (name in hooks) {
-				final proc = try start('$dir/$name', args) catch (e) {
-					Term.error('hook $name: $e');
+			for (h in hooks) {
+				final proc = try start(h.path, args) catch (e) {
+					Term.error('hook ${h.name}: $e');
 					null;
 				}
 				if (proc != null)
-					{name: name, proc: proc};
+					{name: h.name, proc: proc};
 			}
 		]);
 		for (h in started)
@@ -83,8 +85,9 @@ class Hooks {
 			return data;
 		return withEnv(event, null, () -> {
 			var result:Null<String> = data;
-			for (name in hooks) {
-				final out = try runFilter('$dir/$name', result).trim() catch (e) {
+			for (h in hooks) {
+				final name = h.name;
+				final out = try runFilter(h.path, result).trim() catch (e) {
 					Term.error('hook $name: $e');
 					continue;
 				}
@@ -157,29 +160,41 @@ class Hooks {
 	}
 
 	/**
-		The hooks of `event`, sorted by name: executables named `on-<event>`, or starting with `on-<event>.`
-		(e.g. `on-message.notify`, `on-message.log`). Files without execute permission are skipped.
+		The hooks of `event`: executables named `on-<event>`, or starting with `on-<event>.` (e.g. `on-message.notify`,
+		`on-message.log`), of each directory sorted by name. Files without execute permission are skipped.
 	**/
-	function find(event:String):Array<String> {
-		if (!FileSystem.exists(dir) || !FileSystem.isDirectory(dir))
-			return [];
+	function find(event:String):Array<{name:String, path:String}> {
 		final prefix = 'on-$event';
-		final windows = Sys.systemName() == "Windows";
-		final hooks = [
-			for (name in FileSystem.readDirectory(dir))
-				if ((name == prefix || name.startsWith('$prefix.')) && !name.endsWith("~")) {
-					final path = '$dir/$name';
-					// not executable: disabled (e.g. a placeholder, enabled with chmod +x)
-					if (!FileSystem.isDirectory(path) && (windows || FileSystem.stat(path).mode & 0x49 != 0))
-						name;
-				}
-		];
-		hooks.sort(Reflect.compare);
+		final hooks = [];
+		for (dir in dirs) {
+			final names = [
+				for (name in executables(dir))
+					if ((name == prefix || name.startsWith('$prefix.')) && !name.endsWith("~"))
+						name
+			];
+			names.sort(Reflect.compare);
+			for (name in names)
+				hooks.push({name: name, path: '$dir/$name'});
+		}
 		return hooks;
 	}
 
+	/** The executable files of `dir` (not executable: disabled, e.g. an example, enabled with chmod +x) **/
+	public static function executables(dir:String):Array<String> {
+		if (!FileSystem.exists(dir) || !FileSystem.isDirectory(dir))
+			return [];
+		final windows = Sys.systemName() == "Windows";
+		return [
+			for (name in FileSystem.readDirectory(dir)) {
+				final path = '$dir/$name';
+				if (!name.startsWith(".") && !FileSystem.isDirectory(path) && (windows || FileSystem.stat(path).mode & 0x49 != 0))
+					name;
+			}
+		];
+	}
+
 	/** Starts a hook (batch files with `cmd` on Windows), with stdin closed unless `input` **/
-	static function start(path:String, args:Array<String>, input = false):Process {
+	public static function start(path:String, args:Array<String>, input = false):Process {
 		final proc = (Sys.systemName() == "Windows" && ~/\.(bat|cmd)$/i.match(path)) ? new Process("cmd", ["/c", path].concat(args)) : new Process(path, args);
 		if (!input)
 			proc.stdin.close();

@@ -105,7 +105,10 @@ class Client {
 	public function new(account:Account, password:String) {
 		this.account = account;
 		this.password = password;
-		hooks = new Hooks(Config.configDir() + "/hooks", account.name, () -> session?.stream.jid ?? "", f -> events.add(Call(f)));
+		// the hooks of all accounts, then those of this account (if its config is a directory)
+		final accountDir = Config.accountDir(account.name);
+		hooks = new Hooks([Config.configDir() + "/hooks"].concat(accountDir != null ? ['$accountDir/hooks'] : []), account.name,
+			() -> session?.stream.jid ?? "", f -> events.add(Call(f)));
 		commands = new Commands(online);
 		commands.registerAll([
 			{

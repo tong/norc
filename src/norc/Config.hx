@@ -58,7 +58,9 @@ typedef Account = {
 	(`$XDG_CONFIG_HOME/norc`, Windows: `%APPDATA%\norc`, or `--config`):
 
 	- `conf`: base config, the defaults of all accounts, and `account`: the account to use without `-a`
-	- `accounts/<name>`: one file per account, overriding values of the base config
+	- `accounts/<name>`: one file per account, overriding values of the base config; or a directory with the config
+	  in `conf`, and hooks (`hooks/`) and scripts (`scripts/`) only of this account, in addition to those of the
+	  config directory
 
 	Keys: `jid`, `host`, `port`, `resource`, `password_cmd`, `download_dir` (`~/` is the home directory),
 	`keepalive` (seconds without data before pinging the server, `0` to disable),
@@ -97,7 +99,9 @@ class Config {
 		final dir = accountsDir();
 		if (!FileSystem.exists(dir) || !FileSystem.isDirectory(dir))
 			return [];
-		final names = FileSystem.readDirectory(dir).filter(f -> !f.startsWith(".") && !FileSystem.isDirectory('$dir/$f'));
+		// a file, or a directory with the config in conf
+		final names = FileSystem.readDirectory(dir).filter(f -> !f.startsWith(".")
+			&& (!FileSystem.isDirectory('$dir/$f') || FileSystem.exists('$dir/$f/conf')));
 		names.sort(Reflect.compare);
 		return names;
 	}
@@ -106,8 +110,17 @@ class Config {
 	public static function downloadDir():String
 		return windows() ? home() + "/Downloads" : env("XDG_DOWNLOAD_DIR", "Downloads");
 
-	public static function accountPath(name:String):String
-		return accountsDir() + '/$name';
+	/** The config file of the account `name`: `accounts/<name>`, or `accounts/<name>/conf` of an account directory **/
+	public static function accountPath(name:String):String {
+		final dir = accountDir(name);
+		return (dir != null) ? '$dir/conf' : accountsDir() + '/$name';
+	}
+
+	/** The directory of the account `name` (with `conf`, `hooks/`, `scripts/`), `null` if its config is a file **/
+	public static function accountDir(name:String):Null<String> {
+		final path = accountsDir() + '/$name';
+		return (FileSystem.exists(path) && FileSystem.isDirectory(path)) ? path : null;
+	}
 
 	/**
 		Writes the config file of a new account; throws if it exists.
