@@ -16,8 +16,8 @@ using StringTools;
 	The default config (`config/` of the sources: `conf`, the example hooks and scripts), embedded in the binary and
 	written to the config directory when norc runs the first time (`install`).
 
-	The example accounts are not installed (norc would use the only configured account), and the hooks are
-	disabled (not executable): they are enabled with `chmod +x`. The scripts are executable, they only run when started.
+	The example accounts are not installed (norc would use the only configured account), and the hooks and scripts
+	are disabled (not executable): they are enabled with `chmod +x`.
 **/
 #if !macro
 @:build(norc.Defaults.embed())
@@ -40,8 +40,6 @@ class Defaults {
 			final path = '$dir/$name';
 			FileSystem.createDirectory(haxe.io.Path.directory(path));
 			File.saveBytes(path, haxe.Resource.getBytes(PREFIX + name));
-			if (name.startsWith("scripts/") && Sys.systemName() != "Windows")
-				Sys.command("chmod", ["755", path]);
 		}
 		return names;
 	}

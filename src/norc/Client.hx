@@ -71,7 +71,10 @@ class Client {
 	final hooks:Hooks;
 
 	/** Socket interface for other programs, if enabled **/
-	var api:Null<Api>;
+	final api:Api;
+
+	/** Programs started with norc, connected to the api (`<config dir>/scripts/`, `<account dir>/scripts/`) **/
+	final scripts:Scripts;
 
 	/** Features of the client, each with its commands and part of the session **/
 	final modules = new Array<Module>();
@@ -105,11 +108,21 @@ class Client {
 	public function new(account:Account, password:String) {
 		this.account = account;
 		this.password = password;
-		// the hooks of all accounts, then those of this account (if its config is a directory)
+		// the hooks and scripts of all accounts, then those of this account (if its config is a directory)
 		final accountDir = Config.accountDir(account.name);
 		hooks = new Hooks([Config.configDir() + "/hooks"].concat(accountDir != null ? ['$accountDir/hooks'] : []), account.name,
 			() -> session?.stream.jid ?? "", f -> events.add(Call(f)));
 		commands = new Commands(online);
+		// the socket is only opened with api = 1 (run), stdin/stdout (--stdin) and scripts use it too
+		api = new Api((line, args, out) -> {
+			lastInput = Sys.time();
+			return (args == null) ? commands.run(line, out, false) : commands.call(line, args, out);
+		}, f -> events.add(Call(f)));
+		final env = ["ACCOUNT" => account.name, "CONFIG" => Config.configDir()];
+		if (accountDir != null)
+			env.set("ACCOUNT_DIR", accountDir);
+		scripts = new Scripts(Config.configDir() + "/scripts", accountDir != null ? '$accountDir/scripts' : null, api, env, f -> events.add(Call(f)));
+		commands.registerAll(scripts.commands());
 		commands.registerAll([
 			{
 				name: "presence",
@@ -201,17 +214,9 @@ class Client {
 			Sys.sleep(5);
 			events.add(Call(() -> session?.tick()));
 		});
-		if (account.api == true || stdio) {
-			final api = new Api((line, args, out) -> {
-				lastInput = Sys.time();
-				return (args == null) ? commands.run(line, out, false) : commands.call(line, args, out);
-			}, f -> events.add(Call(f)));
-			this.api = api;
-			if (stdio)
-				api.stdio(quit);
-		}
+		if (stdio)
+			api.stdio(quit);
 		if (account.api == true) {
-			final api = this.api;
 			try {
 				final host = account.apiHost ?? "127.0.0.1";
 				api.start(Config.stateDir(account.name), host, account.apiPort ?? 0);
@@ -226,12 +231,15 @@ class Client {
 		Term.editor = editor;
 		if (editor != null)
 			editor.complete = complete;
+		// before the connection: the scripts get the login event
+		scripts.startAll();
 		connect();
 		if (interactive)
 			Thread.create(() -> readStdin(editor));
 		while (exitCode == null)
 			handle(events.pop(true));
-		api?.stop();
+		scripts.stopAll();
+		api.stop();
 		Term.editor = null;
 		editor?.stop();
 		return exitCode;
@@ -601,7 +609,7 @@ class Client {
 	/** See `Module.Emit` **/
 	function emit(event:String, args:Array<String>, values:haxe.DynamicAccess<Dynamic>) {
 		hooks.run(event, args, values);
-		api?.event(event, values);
+		api.event(event, values);
 	}
 
 	function presenceHook(from:String, state:String, status:Null<String>) {

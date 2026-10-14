@@ -106,7 +106,7 @@ function main() {
 			[];
 		}
 		if (installed.length > 0)
-			Term.info('created $dir with the default config: conf, example hooks in hooks/ (disabled, enable them with chmod +x) and scripts/');
+			Term.info('created $dir with the default config: conf, example hooks and scripts in hooks/ and scripts/ (disabled, enable them with chmod +x)');
 	}
 	switch positional {
 		case []:

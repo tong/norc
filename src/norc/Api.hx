@@ -93,11 +93,20 @@ class Api {
 		Takes requests from stdin and writes replies and events to stdout, as an authenticated client.
 		`closed` is called when stdin is closed.
 	**/
-	public function stdio(closed:() -> Void) {
-		final client = new ApiClient(Sys.stdin(), Sys.stdout(), () -> {}, this);
+	public function stdio(closed:() -> Void)
+		connect(Sys.stdin(), Sys.stdout(), () -> {}, closed);
+
+	/**
+		An authenticated client reading requests from `input` and writing replies and events to `output`
+		(e.g. a script: its stdout and stdin). `shutdown` is called after the last write when the client is closed,
+		`closed` when the input ended. Returns the function closing the client.
+	**/
+	public function connect(input:haxe.io.Input, output:haxe.io.Output, shutdown:() -> Void, ?closed:() -> Void):() -> Void {
+		final client = new ApiClient(input, output, shutdown, this);
 		client.authenticated = true;
 		client.onClose = closed;
 		clients.push(client);
+		return client.close;
 	}
 
 	public function stop() {
@@ -204,6 +213,9 @@ private class ApiClient {
 	/** Queued to close the connection after the queued lines **/
 	static final CLOSE = "\x00close";
 
+	/** Lines not yet written, more are dropped (a client not reading, e.g. a script ignoring events) **/
+	static inline var MAX_QUEUED = 1000;
+
 	public var authenticated = false;
 
 	/** Called on the main thread when the client closed the connection (end of input) **/
@@ -219,6 +231,12 @@ private class ApiClient {
 	final writes = new Deque<String>();
 	var closed = false;
 
+	/** Lines queued and not written yet (approximately: changed by two threads) **/
+	var queued = 0;
+
+	/** Lines are dropped because the client doesn't read **/
+	var dropping = false;
+
 	function new(input:haxe.io.Input, output:haxe.io.Output, shutdown:() -> Void, api:Api) {
 		this.input = input;
 		this.output = output;
@@ -228,9 +246,20 @@ private class ApiClient {
 		Thread.create(writeLoop);
 	}
 
-	public function send(line:String)
-		if (!closed)
-			writes.add(line);
+	public function send(line:String) {
+		if (closed)
+			return;
+		if (queued >= MAX_QUEUED) {
+			if (!dropping) {
+				dropping = true;
+				Term.error('api: a client does not read its replies and events, dropping them');
+			}
+			return;
+		}
+		dropping = false;
+		queued++;
+		writes.add(line);
+	}
 
 	public function close() {
 		if (closed)
@@ -260,6 +289,7 @@ private class ApiClient {
 			final line = writes.pop(true);
 			if (line == CLOSE)
 				break;
+			queued--;
 			try {
 				output.writeString(line + "\n");
 				output.flush();
