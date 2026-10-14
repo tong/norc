@@ -6,6 +6,7 @@ import norc.module.Blocking;
 import norc.module.Contacts;
 import norc.module.Discovery;
 import norc.module.FileTransfers;
+import norc.module.Messages;
 import sys.FileSystem;
 import sys.thread.Deque;
 import sys.thread.Lock;
@@ -19,7 +20,6 @@ import xmpp.XML;
 import xmpp.Response;
 
 using StringTools;
-using xmpp.DelayedDelivery;
 
 /**
 	XMPP client session of one account.
@@ -67,6 +67,9 @@ class Client {
 	/** Roster and presence subscriptions **/
 	final contacts:Contacts;
 
+	/** Chat messages, extended by other modules **/
+	final messages:Messages;
+
 	/** Last printed presence of each available full jid **/
 	final presences = new Map<String, String>();
 
@@ -90,13 +93,6 @@ class Client {
 		hooks = new Hooks(Config.configDir() + "/hooks", account.name, () -> session?.stream.jid ?? "", f -> events.add(Call(f)));
 		commands = new Commands(online);
 		commands.registerAll([
-			{
-				name: "msg",
-				args: "<jid> <text...>",
-				description: "send a message to a jid or contact name (\\n for a newline)",
-				online: true,
-				run: (args, out) -> sendMessage(args[0], args[1].replace("\\n", "\n"), out)
-			},
 			{
 				name: "presence",
 				args: "[state] [status...]",
@@ -146,6 +142,8 @@ class Client {
 		});
 		addModule(contacts);
 		commands.completers.set("jid", _ -> contacts.completions());
+		messages = new Messages(emit, contacts.resolve, contacts.name);
+		addModule(messages);
 		addModule(new Blocking(contacts.resolveOptional));
 		addModule(new Discovery(contacts.resolveOptional, resourcesOf, account.lastActivity == true ? () -> Std.int(Sys.time() - lastInput) : null));
 		addModule(new FileTransfers(account.downloadDir ?? Config.downloadDir(), emit, contacts.resolve, f -> events.add(Call(f)), resourcesOf));
@@ -320,32 +318,14 @@ class Client {
 	}
 
 	function onMessage(m:Message) {
-		final from = m.from != null ? Jid.parseBare(m.from) : account.jid.domain;
 		if (m.type == error) {
+			final from = m.from != null ? Jid.parseBare(m.from) : account.jid.domain;
 			final condition:Null<String> = m.error?.condition;
 			Term.error('message error from $from' + describeError(m.error));
 			errorEvent("message", condition ?? "error", {from: m.from ?? from});
 			return;
 		}
-		if (m.body == null)
-			return;
-		final delay = m.delay();
-		final date = delay?.date ?? Date.now();
-		final name = displayName(from);
-		final time = timestamp(date);
-		final lines = m.body.split("\n");
-		Term.println('$time ' + Term.style('<$name>', 36) + ' ' + lines[0]);
-		// continuation lines aligned with the first
-		final indent = "".lpad(" ", time.length + name.length + 4);
-		for (i in 1...lines.length)
-			Term.println(indent + lines[i]);
-		emit("message", [from, m.body], {
-			from: m.from ?? from,
-			name: name,
-			body: m.body,
-			type: m.type ?? "normal",
-			delayed: delay != null
-		});
+		messages.receive(m);
 	}
 
 	function onPresence(p:Presence) {
@@ -391,18 +371,7 @@ class Client {
 				return;
 			case _: return;
 		}
-		Term.println(timestamp(Date.now()) + ' ' + Term.style(msg, 2));
-	}
-
-	function sendMessage(input:String, body:String, out:Output) {
-		final to = contacts.resolve(input, out);
-		if (to == null)
-			return;
-		if (!Jid.isValid(to)) {
-			out.error('invalid jid: $to');
-			return;
-		}
-		session.stream.send(new Message(to, body));
+		Term.println(Term.timestamp(Date.now()) + ' ' + Term.style(msg, 2));
 	}
 
 	function setPresence(state:Null<String>, status:Null<String>, out:Output) {
@@ -599,10 +568,4 @@ class Client {
 
 	inline function displayName(bare:String):String
 		return contacts.name(bare);
-
-	static function timestamp(date:Date):String {
-		final now = Date.now();
-		final today = date.getFullYear() == now.getFullYear() && date.getMonth() == now.getMonth() && date.getDate() == now.getDate();
-		return DateTools.format(date, today ? "%H:%M" : "%Y-%m-%d %H:%M");
-	}
 }

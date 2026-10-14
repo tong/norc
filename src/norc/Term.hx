@@ -28,6 +28,13 @@ class Term {
 	public static function info(msg:String)
 		println(style(msg, 2));
 
+	/** Time of an event: `12:03` today, else `2026-10-13 12:03` **/
+	public static function timestamp(date:Date):String {
+		final now = Date.now();
+		final today = date.getFullYear() == now.getFullYear() && date.getMonth() == now.getMonth() && date.getDate() == now.getDate();
+		return DateTools.format(date, today ? "%H:%M" : "%Y-%m-%d %H:%M");
+	}
+
 	public static function style(str:String, code:Int):String
 		return colors ? '\x1B[${code}m$str\x1B[0m' : str;
 
