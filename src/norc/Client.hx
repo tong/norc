@@ -11,6 +11,7 @@ import norc.module.Discovery;
 import norc.module.FileTransfers;
 import norc.module.Messages;
 import norc.module.Moods;
+import norc.module.Pings;
 import norc.module.Profile;
 import norc.module.Receipts;
 import norc.module.Time;
@@ -170,6 +171,7 @@ class Client {
 		addModule(new Tunes(messages, emit, contacts.name));
 		addModule(new Time(contacts.resolveOptional, resourcesOf, account.entityTime == true));
 		addModule(new AdHoc(contacts.resolveOptional));
+		addModule(new Pings(contacts.resolveOptional, resourcesOf));
 		addModule(new Blocking(contacts.resolveOptional));
 		addModule(new Discovery(contacts.resolveOptional, resourcesOf, account.lastActivity == true ? () -> Std.int(Sys.time() - lastInput) : null));
 		addModule(new FileTransfers(account.downloadDir ?? Config.downloadDir(), emit, contacts.resolve, f -> events.add(Call(f)), resourcesOf));
