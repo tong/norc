@@ -5,6 +5,7 @@ import norc.Module;
 import norc.Output;
 import norc.Term;
 import xmpp.Jid;
+import xmpp.LastMessageCorrection;
 import xmpp.Message;
 import xmpp.client.Stream;
 
@@ -108,23 +109,28 @@ class Messages implements Module {
 		if (m.body == null)
 			return;
 		final delay = m.delay();
+		// a correction of the last message (XEP-0308), checked by the module of corrections
+		final replaces = LastMessageCorrection.correction(m);
+		final corrected = (replaces != null) ? " ✎" : "";
 		if (carbon == sent) {
 			if (m.to == null)
 				return;
 			final to = Jid.parseBare(m.to);
-			show(to, m.body, delay?.date, '→ <${name(to)}>');
+			show(to, m.body, delay?.date, '→ <${name(to)}>$corrected');
 			sentEvent(m, true);
 			return;
 		}
 		final from = (m.from != null) ? Jid.parseBare(m.from) : stream.domain;
-		show(from, m.body, delay?.date);
+		show(from, m.body, delay?.date, (replaces != null) ? '<${name(from)}>$corrected' : null);
 		emit("message", [from, m.body], {
 			from: m.from ?? from,
 			name: name(from),
 			body: m.body,
+			id: m.id,
 			type: m.type ?? "normal",
 			delayed: delay != null,
-			carbon: carbon == received
+			carbon: carbon == received,
+			replaces: replaces
 		});
 	}
 
@@ -136,7 +142,8 @@ class Messages implements Module {
 			name: name(to),
 			body: m.body,
 			id: m.id,
-			carbon: carbon
+			carbon: carbon,
+			replaces: LastMessageCorrection.correction(m)
 		});
 	}
 
