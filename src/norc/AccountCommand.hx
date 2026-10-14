@@ -18,6 +18,7 @@ typedef AccountOptions = {
 
 	var ?host:String;
 	var ?port:Int;
+	var ?resource:String;
 	var debug:Bool;
 
 	/** register: write the account config **/
@@ -261,6 +262,8 @@ or the only configured one.';
 			account.host = options.host;
 		if (options.port != null)
 			account.port = options.port;
+		if (options.resource != null)
+			account.resource = options.resource;
 	}
 
 	function connect(account:Account):Session {

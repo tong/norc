@@ -15,6 +15,7 @@ Options:
   -c, --config <dir>     config directory (default: ${Config.configDir()})
       --host <host>      server host (default: the jid\'s domain)
       --port <port>      server port (default: 5222)
+      --resource <res>   resource of the jid (default: from the config, or norc)
   -i, --interactive      read commands from stdin
       --api              socket interface for other programs (port and token in the state dir: api)
       --xmpp-debug       print the XMPP stream
@@ -28,6 +29,7 @@ function main() {
 	var jid:Null<String> = null;
 	var host:Null<String> = null;
 	var port:Null<String> = null;
+	var resource:Null<String> = null;
 	var debug = false;
 	var interactive = false;
 	var api = false;
@@ -54,6 +56,10 @@ function main() {
 				host = value();
 			case "--port":
 				port = value();
+			case "--resource":
+				resource = value();
+				if (resource.trim().length == 0)
+					exit('invalid resource: "$resource"');
 			case "-i", "--interactive":
 				interactive = true;
 			case "--api":
@@ -89,6 +95,7 @@ function main() {
 				name: accountName,
 				host: host,
 				port: port,
+				resource: resource,
 				debug: debug,
 				save: save,
 				yes: yes,
@@ -97,6 +104,8 @@ function main() {
 		case _:
 			exit('unknown command: ${positional.join(" ")}\n\n$USAGE');
 	}
+	if (save || yes || purge)
+		exit('--save, --yes and --purge are options of: norc account (norc account help)');
 	final account = try {
 		if (jid != null) {
 			Config.createAccount(accountName ?? xmpp.Jid.parseBare(jid), jid);
@@ -107,6 +116,8 @@ function main() {
 		exit(Std.string(e));
 	if (host != null)
 		account.host = host;
+	if (resource != null)
+		account.resource = resource;
 	if (api)
 		account.api = true;
 	if (port != null)

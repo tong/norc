@@ -92,22 +92,79 @@ class Config {
 		final path = accountPath(account.name);
 		if (FileSystem.exists(path))
 			throw 'account config exists: $path';
-		// values of the base config are not repeated
-		final defaults = createAccount(account.name, Jid.parseBare(account.jid));
-		final lines = ['jid = ${Jid.parseBare(account.jid)}'];
-		if (account.host != defaults.host)
-			lines.push('host = ${account.host}');
-		if (account.port != defaults.port)
-			lines.push('port = ${account.port}');
-		if (account.resource != defaults.resource)
-			lines.push('resource = ${account.resource}');
-		if (account.passwordCmd != defaults.passwordCmd)
-			lines.push('password_cmd = ${account.passwordCmd}');
-		else if (account.passwordCmd == null)
+		storeAccount(account);
+	}
+
+	/**
+		The config values of `account` in the order of the keys, `null` if not set.
+	**/
+	public static function values(account:Account):Array<{key:String, value:Null<String>}> {
+		inline function str<T>(v:Null<T>):Null<String>
+			return v != null ? Std.string(v) : null;
+		inline function bool(v:Null<Bool>):Null<String>
+			return v != null ? (v ? "1" : "0") : null;
+		return [
+			{key: "jid", value: Jid.parseBare(account.jid)},
+			{key: "host", value: account.host},
+			{key: "port", value: str(account.port)},
+			{key: "resource", value: account.resource},
+			{key: "password_cmd", value: account.passwordCmd},
+			{key: "download_dir", value: account.downloadDir != null ? contractHome(account.downloadDir) : null},
+			{key: "keepalive", value: str(account.keepalive)},
+			{key: "api", value: bool(account.api)},
+			{key: "api_host", value: account.apiHost},
+			{key: "api_port", value: str(account.apiPort)},
+			{key: "last_activity", value: bool(account.lastActivity)}
+		];
+	}
+
+	/**
+		The values of `account` differing from its config file (with the base config), `[]` if saved.
+		Without config file: the values differing from the base config.
+	**/
+	public static function unsaved(account:Account):Array<String> {
+		final saved = valueMap(FileSystem.exists(accountPath(account.name)) ? loadAccount(account.name) : createAccount(account.name,
+			Jid.parseBare(account.jid)));
+		return [for (v in values(account)) if (saved.get(v.key) != v.value) v.key];
+	}
+
+	/**
+		Writes the values of `account` to its config file (created if it doesn't exist), returns its path.
+		Comments, the order and the formatting of unchanged values are kept; values of the base config are not repeated.
+	**/
+	public static function storeAccount(account:Account):String {
+		final path = accountPath(account.name);
+		final exists = FileSystem.exists(path);
+		final changed = unsaved(account);
+		final current = valueMap(account);
+		final lines = exists ? File.getContent(path).split("\n") : ['jid = ${Jid.parseBare(account.jid)}'];
+		while (lines.length > 0 && lines[lines.length - 1].trim() == "")
+			lines.pop();
+		final written = new Map<String, Bool>();
+		for (i in 0...lines.length) {
+			final line = lines[i].trim();
+			final eq = line.indexOf("=");
+			if (line.startsWith("#") || eq == -1)
+				continue;
+			final key = line.substr(0, eq).trim();
+			written.set(key, true);
+			if (!changed.contains(key))
+				continue;
+			final value = current.get(key);
+			lines[i] = value != null ? '$key = $value' : '# $key =';
+		}
+		for (key in changed)
+			if (!written.exists(key) && current.get(key) != null)
+				lines.push('$key = ${current.get(key)}');
+		if (!exists && account.passwordCmd == null)
 			lines.push('# password_cmd = pass xmpp/${Jid.parseBare(account.jid)}');
 		FileSystem.createDirectory(accountsDir());
 		File.saveContent(path, lines.join("\n") + "\n");
+		return path;
 	}
+
+	static function valueMap(account:Account):Map<String, Null<String>>
+		return [for (v in values(account)) v.key => v.value];
 
 	/**
 		The account `name`: a config file with this name, else the only configured account whose jid
@@ -266,6 +323,10 @@ class Config {
 
 	public static function expandHome(path:String):String
 		return path.startsWith("~/") ? home() + path.substr(1) : path;
+
+	/** `path` with the home directory as `~/` **/
+	static function contractHome(path:String):String
+		return path.startsWith(home() + "/") ? "~" + path.substr(home().length) : path;
 
 	static function home():String
 		return Sys.getEnv(windows() ? "USERPROFILE" : "HOME");

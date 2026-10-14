@@ -6,6 +6,7 @@ import norc.module.Blocking;
 import norc.module.Contacts;
 import norc.module.Discovery;
 import norc.module.FileTransfers;
+import sys.FileSystem;
 import sys.thread.Deque;
 import sys.thread.Thread;
 import xmpp.EntityCapabilities;
@@ -106,6 +107,18 @@ class Client {
 				args: "[state]",
 				description: "print the XMPP stream: on (default) or off",
 				run: (args, out) -> setDebug(args[0], out)
+			},
+			{
+				name: "config",
+				description: "show the config of the account (values not saved marked with *)",
+				run: (args, out) -> showConfig(out),
+				subcommands: [
+					{
+						name: "save",
+						description: "save the config of the account (e.g. options given on the command line)",
+						run: (args, out) -> saveConfig(out)
+					}
+				]
 			},
 			{
 				name: "quit",
@@ -397,6 +410,39 @@ class Client {
 
 	function describePresence():String
 		return (show ?? "available") + (status != null ? ' ($status)' : '');
+
+	function showConfig(out:Output) {
+		final path = Config.accountPath(account.name);
+		final unsaved = try Config.unsaved(account) catch (e) {
+			out.error(Std.string(e));
+			[];
+		}
+		out.print('account ${account.name}' + Term.style(FileSystem.exists(path) ? ' ($path)' : ' (no config file: /config save creates $path)', 2));
+		final values = Config.values(account);
+		var width = 0;
+		for (v in values)
+			if (v.key.length > width)
+				width = v.key.length;
+		for (v in values)
+			out.print('  ${v.key.rpad(" ", width + 2)}' + (v.value ?? Term.style("-", 2)) + (unsaved.contains(v.key) ? Term.style(" *", 33) : ""));
+	}
+
+	function saveConfig(out:Output) {
+		final unsaved = try Config.unsaved(account) catch (e) {
+			out.error(Std.string(e));
+			return;
+		}
+		final path = Config.accountPath(account.name);
+		if (unsaved.length == 0 && FileSystem.exists(path)) {
+			out.info('nothing to save, $path is up to date');
+			return;
+		}
+		try {
+			Config.storeAccount(account);
+			out.info('saved $path' + (unsaved.length > 0 ? ': ${unsaved.join(", ")}' : ''));
+		} catch (e)
+			out.error('cannot save $path: $e');
+	}
 
 	function quit() {
 		quitting = true;
