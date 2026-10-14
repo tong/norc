@@ -62,7 +62,8 @@ class Forms {
 			final value = switch type {
 				case boolean: (values[0] == "1" || values[0] == "true") ? "yes" : (values.length > 0 ? "no" : "");
 				case text_private: (values.length > 0) ? "••••" : "";
-				case _: values.join(", ").replace("\n", "\n" + "".lpad(" ", width + 4));
+				// several values of a result one per line, aligned
+				case _: values.join(editable ? ", " : "\n").replace("\n", "\n" + "".lpad(" ", width + 4 + (f.label != null && f.label != f.variable ? f.label.length + 1 : 0)));
 			}
 			// a field without variable in a result: only its label
 			final label = (f.label != null && f.label != f.variable) ? Term.style(f.label, 2) + ' ' : '';

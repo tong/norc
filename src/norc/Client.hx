@@ -2,6 +2,7 @@ package norc;
 
 import norc.Config.Account;
 import norc.Output;
+import norc.module.AdHoc;
 import norc.module.Blocking;
 import norc.module.Carbons;
 import norc.module.ChatStates;
@@ -168,6 +169,7 @@ class Client {
 		addModule(new Moods(messages, emit, contacts.name));
 		addModule(new Tunes(messages, emit, contacts.name));
 		addModule(new Time(contacts.resolveOptional, resourcesOf, account.entityTime == true));
+		addModule(new AdHoc(contacts.resolveOptional));
 		addModule(new Blocking(contacts.resolveOptional));
 		addModule(new Discovery(contacts.resolveOptional, resourcesOf, account.lastActivity == true ? () -> Std.int(Sys.time() - lastInput) : null));
 		addModule(new FileTransfers(account.downloadDir ?? Config.downloadDir(), emit, contacts.resolve, f -> events.add(Call(f)), resourcesOf));
