@@ -100,6 +100,12 @@ class Client {
 				run: (args, out) -> setPresence(args[0], args[1], out)
 			},
 			{
+				name: "xmpp-debug",
+				args: "[state]",
+				description: "print the XMPP stream: on (default) or off",
+				run: (args, out) -> setDebug(args[0], out)
+			},
+			{
 				name: "quit",
 				aliases: ["exit"],
 				description: "disconnect and exit",
@@ -434,6 +440,19 @@ class Client {
 			return;
 		wasOnline = false;
 		emit("logout", [reason], ["reason" => reason, "reconnect" => reconnect ? "1" : "0"]);
+	}
+
+	function setDebug(state:Null<String>, out:Output) {
+		debug = switch state {
+			case null, "on": true;
+			case "off": false;
+			case _:
+				out.error('invalid state: $state (on or off)');
+				return;
+		}
+		if (session != null)
+			session.debug = debug;
+		out.info('xmpp debug: ${debug ? "on" : "off"}');
 	}
 
 	/** The available full jids of a contact (bare jid) **/

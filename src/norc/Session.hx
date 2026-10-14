@@ -26,7 +26,8 @@ class Session {
 
 	final account:Account;
 	final conn:Connection;
-	final debug:Bool;
+	/** Print the XMPP stream (passwords hidden) **/
+	public var debug:Bool;
 	var failed = false;
 
 	/** Seconds without received data before pinging the server, `0` to disable (call `tick` regularly) **/
