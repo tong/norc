@@ -142,6 +142,12 @@ class Contacts implements Module {
 		return (matches.length == 1) ? matches[0] : input;
 	}
 
+	/** The contact (bare jid) may see the own presence (subscription `from` or `both`) **/
+	public function seesPresence(bare:String):Bool {
+		final item = find(bare);
+		return item != null && (item.subscription == from || item.subscription == both);
+	}
+
 	/** Jids and names (without spaces) of the contacts and of pending subscription requests, to complete input **/
 	public function completions():Array<String> {
 		final list = requests.copy();
