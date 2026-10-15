@@ -169,7 +169,19 @@ class Calls extends Module {
 			{
 				name: "calls",
 				description: "list the calls and their state",
-				run: (args, out) -> list(out)
+				run: (args, out) -> list(out),
+				subcommands: [
+					{
+						name: "hangup",
+						description: "end all calls (ringing calls are declined)",
+						run: (args, out) -> {
+							if (calls.length == 0)
+								out.info("no calls");
+							for (c in calls.copy())
+								hangup(c);
+						}
+					}
+				]
 			}
 		];
 
