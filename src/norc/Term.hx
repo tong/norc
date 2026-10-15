@@ -143,6 +143,25 @@ class Term {
 		return line.endsWith("\r") ? line.substr(0, line.length - 1) : line;
 	}
 
+	/**
+		Whether stdin is a terminal and norc runs in its foreground: reading it (or changing its mode) in the
+		background would stop norc (`norc &`). On Windows: whether there is a console.
+	**/
+	public static function isForegroundTerminal():Bool {
+		if (Sys.systemName() == "Windows")
+			return true;
+		if (Sys.command("test -t 0") != 0)
+			return false;
+		// the process group of norc is the foreground group of the terminal
+		final groups = output("ps", ["-o", "pgid=,tpgid=", "-p", Std.string(pid())]);
+		final ids = (groups != null) ? [for (w in ~/\s+/g.split(StringTools.trim(groups))) Std.parseInt(w)] : [];
+		return ids.length != 2 || ids[0] == null || ids[0] == ids[1];
+	}
+
+	@:hlNative("std", "sys_getpid")
+	static function pid():Int
+		return 0;
+
 	/** Runs a program and returns its output, `null` if it can't be started or fails (exit code) **/
 	public static function output(cmd:String, args:Array<String>):Null<String> {
 		return try {

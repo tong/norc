@@ -18,7 +18,8 @@ Options:
       --host <host>      server host (default: the jid\'s domain)
       --port <port>      server port (default: 5222)
       --resource <res>   resource of the jid (default: from the config, or norc)
-  -i, --interactive      read commands from stdin
+  -i, --interactive      read commands from stdin, also if it is no terminal (default: on a terminal, in the foreground)
+      --no-input         don\'t read commands from the terminal (e.g. for norc running in the background)
       --api              socket interface for other programs (port and token in the state dir: api)
       --stdin            the api over stdin and stdout (JSON lines, no token), other output to stderr
       --xmpp-debug       print the XMPP stream
@@ -35,7 +36,8 @@ function main() {
 	var port:Null<Int> = null;
 	var resource:Null<String> = null;
 	var debug = false;
-	var interactive = false;
+	// null: on a terminal (in the foreground)
+	var interactive:Null<Bool> = null;
 	var api = false;
 	var stdin = false;
 	var silent = false;
@@ -73,6 +75,8 @@ function main() {
 					exit('invalid resource: "$resource"');
 			case "-i", "--interactive":
 				interactive = true;
+			case "--no-input":
+				interactive = false;
 			case "--api":
 				api = true;
 			case "--stdin":
@@ -165,7 +169,7 @@ function main() {
 	if (port != null)
 		account.port = port;
 	if (stdin) {
-		if (interactive)
+		if (interactive == true)
 			exit('--stdin and -i both read stdin, use one');
 		// stdin carries the api: the password can't be asked
 		if (account.passwordCmd == null)
@@ -173,7 +177,7 @@ function main() {
 		Term.stderrOnly = true;
 	}
 	if (silent) {
-		if (interactive)
+		if (interactive == true)
 			exit('--silent and -i: -i shows the input line, use one');
 		// the password can't be asked
 		if (account.passwordCmd == null)
@@ -186,7 +190,7 @@ function main() {
 	}
 	final client = new Client(account, password);
 	client.debug = debug;
-	final code = client.run(interactive, stdin);
+	final code = client.run(interactive ?? (!stdin && !silent && Term.isForegroundTerminal()), stdin);
 	pidFile.release();
 	Sys.exit(code);
 }

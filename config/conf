@@ -64,11 +64,11 @@
 # Messages of the archive of the server (MAM) shown when the chat mode starts with a contact (/chat), 0: none.
 # chat_history = 10
 
-# Keep the history of the input line (-i) between runs, in ~/.local/state/norc/<account>/history (readable only
+# Keep the history of the input line (interactive mode) between runs, in ~/.local/state/norc/<account>/history (readable only
 # by you, with the messages typed in chat mode). 0 disables it.
 # persistent_command_history = 1
 
-# Prompt of the input line (-i), in "" to keep spaces at the start or end.
+# Prompt of the input line (interactive mode), in "" to keep spaces at the start or end.
 # prompt = "> "
 
 # Prompt in chat mode (/chat): {name} is the name of the contact (in its color), {jid} its jid,
