@@ -8,7 +8,7 @@ PCRE := $(addprefix include/pcre/pcre2_,auto_possess chartables compile config c
 LIBHL_SRC := $(PCRE) src/gc $(addprefix src/std/,array buffer bytes cast date error debug file fun \
 	maps math obj random regexp socket string sys types ucs2 thread process track)
 
-.PHONY: all build from-c clean install uninstall
+.PHONY: all build from-c clean install install-completion uninstall
 all: build
 
 # Rebuild when sources or build settings change
@@ -132,26 +132,27 @@ from-c: | $(HASHLINK_SRC)/src/hl.h
 
 # --- Install (Linux): `make install`, `sudo make install`, `make install PREFIX=~/.local` ---------------
 #
-# Installs the single binary, and the completion for the login shell ($SHELL) if it is zsh or bash
-# (override with ZSH_COMPLETION / BASH_COMPLETION = yes or no). DESTDIR is prepended to all paths (packaging).
+# Installs the single binary. `make install-completion` installs the shell completion: for the login shell
+# ($SHELL) if it is zsh or bash, or for the shells in COMPLETION (e.g. COMPLETION="zsh bash").
+# DESTDIR is prepended to all paths (packaging).
 
 PREFIX ?= /usr/local
 BINDIR ?= $(PREFIX)/bin
 ZSH_COMPLETION_DIR ?= $(PREFIX)/share/zsh/site-functions
-ZSH_COMPLETION ?= auto
 BASH_COMPLETION_DIR ?= $(PREFIX)/share/bash-completion/completions
-BASH_COMPLETION ?= auto
 
 install: $(BIN)
 	install -Dm755 $(BIN) $(DESTDIR)$(BINDIR)/norc
-	@if [ "$(ZSH_COMPLETION)" = yes ] || { [ "$(ZSH_COMPLETION)" = auto ] && [ "$${SHELL##*/}" = zsh ]; }; then \
-		echo install -Dm644 extras/zsh/_norc $(DESTDIR)$(ZSH_COMPLETION_DIR)/_norc; \
-		install -Dm644 extras/zsh/_norc $(DESTDIR)$(ZSH_COMPLETION_DIR)/_norc; \
-	fi
-	@if [ "$(BASH_COMPLETION)" = yes ] || { [ "$(BASH_COMPLETION)" = auto ] && [ "$${SHELL##*/}" = bash ]; }; then \
-		echo install -Dm644 extras/bash/norc $(DESTDIR)$(BASH_COMPLETION_DIR)/norc; \
-		install -Dm644 extras/bash/norc $(DESTDIR)$(BASH_COMPLETION_DIR)/norc; \
-	fi
+
+install-completion:
+	@for sh in $${COMPLETION:-$${SHELL##*/}}; do \
+		case $$sh in \
+		zsh) set -- extras/zsh/_norc $(DESTDIR)$(ZSH_COMPLETION_DIR)/_norc ;; \
+		bash) set -- extras/bash/norc $(DESTDIR)$(BASH_COMPLETION_DIR)/norc ;; \
+		*) echo "no completion for $$sh: set COMPLETION=zsh or bash" >&2; exit 1 ;; \
+		esac; \
+		echo install -Dm644 $$1 $$2; install -Dm644 $$1 $$2 || exit 1; \
+	done
 
 uninstall:
 	rm -f $(DESTDIR)$(BINDIR)/norc
