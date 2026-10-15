@@ -68,7 +68,7 @@ _norc() {
 		if [[ $cur == -* ]]; then
 			COMPREPLY=($(compgen -W "$options" -- "$cur"))
 		else
-			COMPREPLY=($(compgen -W "account check" -- "$cur"))
+			COMPREPLY=($(compgen -W "account check ctl" -- "$cur"))
 		fi
 		return
 	fi

@@ -54,6 +54,7 @@ _norc() {
 			commands=(
 				'account:manage accounts'
 				'check:what servers offer before the login, e.g. registration'
+				'ctl:run a command in the running norc (norc ctl --help)'
 			)
 			_describe -t commands 'command' commands && ret=0
 			;;

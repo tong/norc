@@ -27,6 +27,7 @@ using StringTools;
 
 	Requests: `cmd` is a command (e.g. `contacts add`) with its arguments in `args` (one per parameter, a parameter
 	taking the rest of the line gets the remaining ones), or without `args` a command line as in the REPL (`/` optional).
+	With `"text": true` results are text (`out`) as on the terminal instead of `data`.
 	`id` (any JSON value) is copied into the replies of the request.
 	For use by hand (e.g. with socat), plain lines work too: `auth <token>`, then command lines, optionally prefixed
 	with `@<id> `.
@@ -156,7 +157,8 @@ class Api {
 			}
 			return;
 		}
-		final out = new RequestOutput(client, Reflect.field(request, "id"), post);
+		// "text": true, the text of data results (as on the terminal) instead of the data
+		final out = new RequestOutput(client, Reflect.field(request, "id"), post, Reflect.field(request, "text") == true);
 		final cmd:Dynamic = Reflect.field(request, "cmd");
 		final args:Dynamic = Reflect.field(request, "args");
 		if (!Std.isOfType(cmd, String)) {
@@ -326,10 +328,14 @@ private class RequestOutput implements Output {
 	/** `done` was sent **/
 	var finished = false;
 
-	public function new(client:ApiClient, id:Dynamic, post:(() -> Void)->Void) {
+	/** Data results as text **/
+	final text:Bool;
+
+	public function new(client:ApiClient, id:Dynamic, post:(() -> Void)->Void, text = false) {
 		this.client = client;
 		this.id = id;
 		this.post = post;
+		this.text = text;
 	}
 
 	public function print(text:String)
@@ -345,7 +351,10 @@ private class RequestOutput implements Output {
 	}
 
 	public function data(value:Dynamic, show:() -> Void)
-		send({type: "data", data: value});
+		if (text)
+			show();
+		else
+			send({type: "data", data: value});
 
 	public function wait():() -> Void {
 		pending++;

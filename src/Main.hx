@@ -9,6 +9,7 @@ using StringTools;
 private final USAGE = 'Usage: norc [options]
        norc account <command> [options]   (norc account help)
        norc check <domain...> [--json] [--timeout <s>]   what servers offer, e.g. registration (norc check)
+       norc ctl <command> [args...]                      run a command in the running norc (norc ctl --help)
 
 Options:
   -a, --account <name>   account to use (config: <config dir>/accounts/<name>)
@@ -52,6 +53,9 @@ function main() {
 		return args[i];
 	}
 	while (i < args.length) {
+		// norc ctl: its own options and the words of a command, as given
+		if (args[i] == "ctl" && positional.length == 0)
+			Sys.exit(norc.Ctl.run(args.slice(i + 1), accountName));
 		switch args[i] {
 			case "-c", "--config":
 				Config.dir = haxe.io.Path.removeTrailingSlashes(value());
@@ -133,7 +137,12 @@ function main() {
 			final seconds = (timeout != null) ? Std.parseFloat(timeout) : 20.0;
 			if (Math.isNaN(seconds) || seconds <= 0)
 				exit('invalid timeout: $timeout');
-			Sys.exit(norc.Check.run(positional.slice(1), {json: json, timeout: seconds, debug: debug, port: port}));
+			Sys.exit(norc.Check.run(positional.slice(1), {
+				json: json,
+				timeout: seconds,
+				debug: debug,
+				port: port
+			}));
 		case _:
 			exit('unknown command: ${positional.join(" ")}\n\n$USAGE');
 	}
