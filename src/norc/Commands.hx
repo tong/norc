@@ -91,6 +91,12 @@ class Commands {
 	/** Returns `true` if connected (for commands requiring a connection) **/
 	public final isOnline:() -> Bool;
 
+	/**
+		Aliases (`alias.<name>` in the config): the name, without `/`, and the command it runs with its first
+		arguments (e.g. `h` → `help`, `away` → `presence away`). A command of the same name is run instead.
+	**/
+	public final aliases = new Map<String, String>();
+
 	/** Completions of arguments by name for all commands (e.g. `jid`), unless a command has its own **/
 	public final completers = new Map<String, Completion>();
 
@@ -154,6 +160,7 @@ class Commands {
 		The command of `line` (without `/`) and its arguments, descending into subcommands; `null` if unknown.
 	**/
 	function resolve(line:String):Null<{entry:Entry, args:String}> {
+		line = expand(line);
 		var i = line.indexOf(" ");
 		var entry = entries.get((i == -1) ? line : line.substr(0, i));
 		var args = (i == -1) ? "" : line.substr(i + 1).ltrim();
@@ -171,6 +178,14 @@ class Commands {
 	/** `command` (e.g. `room`) has the subcommand `name` (or alias) **/
 	public function hasSubcommand(command:String, name:String):Bool
 		return entries.get(command)?.subs.exists(name) == true;
+
+	/** `line` (without `/`) with an alias as first word replaced by its command **/
+	function expand(line:String):String {
+		final i = line.indexOf(" ");
+		final name = (i == -1) ? line : line.substr(0, i);
+		final command = entries.exists(name) ? null : aliases.get(name);
+		return (command == null) ? line : command + ((i == -1) ? "" : line.substr(i));
+	}
 
 	/** Registers several commands **/
 	public function registerAll(commands:Array<Command>)
@@ -267,7 +282,12 @@ class Commands {
 		final text = before.substr(1);
 		var i = text.indexOf(" ");
 		if (i == -1)
-			return result(before, [for (name in entries.keys()) '/$name']);
+			return result(before, [for (name in entries.keys()) '/$name'].concat([for (name in aliases.keys()) '/$name']));
+		// the arguments of an alias: those of its command
+		if (expand(text) != text) {
+			final c = complete('/' + expand(text), target);
+			return (c == null) ? null : {word: c.word, candidates: c.candidates};
+		}
 		var entry = entries.get(text.substr(0, i));
 		var args = text.substr(i + 1).ltrim();
 		while (entry != null && entry.command.subcommands != null) {
@@ -444,7 +464,13 @@ class Commands {
 				for (sub in e.command.subcommands)
 					list.push(e.subs.get(sub.name));
 		}
-		out.data({commands: [for (e in list) describe(e)]}, () -> printTable(list, out));
+		final names = [for (name in aliases.keys()) if (!entries.exists(name)) name];
+		names.sort(Reflect.compare);
+		out.data({commands: [for (e in list) describe(e)], aliases: [for (n in names) {alias: n, command: aliases.get(n)}]}, () -> {
+			printTable(list, out);
+			if (names.length > 0)
+				out.print(Term.style('  aliases: ', 2) + [for (n in names) Term.style('/$n', 36) + Term.style(' → /${aliases.get(n)}', 2)].join(Term.style(", ", 2)));
+		});
 	}
 
 	static function describe(e:Entry)

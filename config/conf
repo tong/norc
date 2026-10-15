@@ -99,3 +99,11 @@
 
 # Port, a free one if not set.
 # api_port = 5280
+
+# --- Aliases of commands ---
+
+# alias.<name> = <command>: /<name> runs the command, with its first arguments if given (/away lunch runs
+# /presence away lunch). A command of the same name is run instead.
+alias.h = help
+# alias.m = msg
+# alias.away = presence away

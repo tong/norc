@@ -49,6 +49,9 @@ typedef Account = {
 	/** Receive attention requests (`/buzz`), `true` if not set **/
 	var ?attention:Bool;
 
+	/** Aliases of commands (`alias.h = help`): the name without `/`, the command it runs with its first arguments **/
+	var ?aliases:Map<String, String>;
+
 	/** Join the rooms bookmarked with autojoin after the login, `true` if not set **/
 	var ?autojoinBookmarks:Bool;
 
@@ -105,6 +108,7 @@ private typedef Key = {
 	`stream_management` (`0`: no acknowledgements and resumption of the session),
 	`call_helper` (program for the media of calls, with options),
 	`autojoin_bookmarks` (`0`: don't join bookmarked rooms after the login),
+	`alias.<name>` (an alias of a command, e.g. `alias.h = help`, `alias.away = presence away`),
 	`persistent_command_history` (`0`: the history of the input line is not kept),
 	`chat_history` (messages of the archive shown when the chat mode starts, `0`: none),
 	`prompt` (of the input line, in `"` to keep spaces at the start or end),
@@ -201,8 +205,11 @@ class Config {
 	/**
 		The config values of `account` in the order of the keys, `null` if not set.
 	**/
-	public static function values(account:Account):Array<{key:String, value:Null<String>}>
-		return [for (k in KEYS) {key: k.name, value: k.get(account)}];
+	public static function values(account:Account):Array<{key:String, value:Null<String>}> {
+		final aliases = [for (name => command in account.aliases ?? []) {key: 'alias.$name', value: command}];
+		aliases.sort((a, b) -> Reflect.compare(a.key, b.key));
+		return [for (k in KEYS) {key: k.name, value: k.get(account)}].concat(aliases);
+	}
 
 	/**
 		The values of `account` differing from its config file (with the base config), `[]` if saved.
@@ -339,6 +346,14 @@ class Config {
 			if (name == "account") {
 				if (!base)
 					throw '$source: account is only allowed in ${basePath()}';
+				continue;
+			}
+			if (name.startsWith("alias.")) {
+				final alias = name.substr("alias.".length);
+				final command = value.startsWith("/") ? value.substr(1) : value;
+				if (!~/^[^\s\/]+$/.match(alias) || command.trim().length == 0)
+					throw '$source: invalid alias: $name = $value (alias.<name> = <command>)';
+				(account.aliases ??= new Map()).set(alias, command);
 				continue;
 			}
 			final key = Lambda.find(KEYS, k -> k.name == name);

@@ -5,7 +5,9 @@ import norc.Module;
 import norc.Output;
 import norc.Term;
 import norc.module.Messages;
+import norc.Forms;
 import xmpp.Bookmarks;
+import xmpp.DataForm;
 import xmpp.Jid;
 import xmpp.Message;
 import xmpp.Muc;
@@ -69,6 +71,9 @@ class Rooms extends Module {
 	/** The room of the room mode (bare jid, lowercase): its occupants entering and leaving are shown **/
 	public var active:Null<String>;
 
+	/** The last configuration form of a room, to complete field names **/
+	var configForm:Null<DataForm>;
+
 	/** The bookmarks by room jid (lowercase), loaded after the login **/
 	final bookmarks = new Map<String, Bookmark>();
 
@@ -129,6 +134,14 @@ class Rooms extends Module {
 						complete: complete
 					},
 					{
+						name: "autojoin",
+						args: "<jid> <state>",
+						description: "join a bookmarked room after the login (on) or not (off), the bookmark is kept",
+						online: true,
+						run: (args, out) -> setAutojoin(args[0], args[1], out),
+						complete: ["jid" => _ -> [for (b in bookmarks) b.jid], "state" => _ -> ["on", "off"]]
+					},
+					{
 						name: "remove",
 						aliases: ["rm"],
 						args: "<jid>",
@@ -172,6 +185,14 @@ class Rooms extends Module {
 						description: "show or set the subject of a room",
 						run: (args, out) -> subject(args[0], args[1], out),
 						complete: complete
+					},
+					{
+						name: "config",
+						args: "<jid> [values...]",
+						description: "show the configuration form of a room (as its owner), or change it: field=value (e.g. persistentroom=yes)",
+						online: true,
+						run: (args, out) -> config(args[0], args[1], out),
+						complete: ["jid" => _ -> [for (r in rooms) r.jid], "values" => completeConfig]
 					},
 					{
 						name: "nick",
@@ -563,12 +584,93 @@ class Rooms extends Module {
 		});
 	}
 
-	function removeBookmark(input:String, out:Output) {
-		final b = bookmarks.get(input.toLowerCase()) ?? [for (b in bookmarks) if (Jid.parseNode(b.jid) == input.toLowerCase()) b][0];
-		if (b == null) {
-			out.error('no bookmark of $input (/bookmarks lists them)');
+	/**
+		Shows the configuration form of a room (as its owner), or changes it with `field=value` arguments: the form is
+		submitted with all its current values and the changed ones (unmentioned settings are not reset).
+	**/
+	function config(input:String, values:Null<String>, out:Output) {
+		final jid = resolve(input) ?? (input.contains("@") ? Jid.parseBare(input) : null);
+		if (jid == null) {
+			out.error('not in the room $input: give its jid');
 			return;
 		}
+		final owner = '${Muc.XMLNS}#owner';
+		request(out, 'cannot get the configuration of $jid', h -> stream.get(XML.create("query").set("xmlns", owner), jid, h), payload -> {
+			final x = payload?.elements.first(e -> e.name == "x" && e.is(DataForm.XMLNS));
+			if (x == null) {
+				out.error('$jid has no configuration form');
+				return;
+			}
+			final form = DataForm.fromXML(x);
+			configForm = form;
+			if (values == null) {
+				out.data({room: jid, form: Forms.data(form)}, () -> {
+					Forms.print(form, out);
+					out.info('change it: /room config ${label(jid)} field=value … (short field names work, e.g. persistentroom=yes)');
+				});
+				return;
+			}
+			final changed = try Forms.parseValues(form, fullFieldNames(form, values)) catch (e:String) {
+				out.error(e);
+				return;
+			}
+			final all = [for (f in form.fields) if (f.variable != null && f.type != fixed) f.variable => f.values ?? []];
+			for (k => v in changed)
+				all.set(k, v);
+			request(out, 'cannot change the configuration of $jid', h -> stream.set(XML.create("query").set("xmlns", owner).append(form.createSubmit(all)), jid,
+				h), _ -> out.info('$jid: changed ${[for (k in changed.keys()) k].join(", ")}'));
+		});
+	}
+
+	/** `field=value` arguments with short field names (the unique end of a name, e.g. `roomname`) completed **/
+	static function fullFieldNames(form:DataForm, input:String):String
+		return ~/(^|\s)([^\s=]+)=/g.map(input, re -> {
+			final name = re.matched(2);
+			final matches = [
+				for (f in form.fields)
+					if (f.variable != null && (f.variable.endsWith('_$name') || f.variable.endsWith('#$name'))) f.variable
+			];
+			final known = form.fields.exists(f -> f.variable == name);
+			re.matched(1) + ((!known && matches.length == 1) ? matches[0] : name) + "=";
+		});
+
+	/** The fields of the last configuration form, to complete `field=` **/
+	function completeConfig(arg:String):Array<String> {
+		final i = arg.lastIndexOf(" ") + 1;
+		return (configForm == null) ? [] : [
+			for (f in configForm.fields) if (f.variable != null && f.type != fixed && f.type != hidden) arg.substr(0, i) + f.variable + "="
+		];
+	}
+
+	/** The bookmark of a room given by its jid or local part, else `null` with an error **/
+	function findBookmark(input:String, out:Output):Null<Bookmark> {
+		final b = bookmarks.get(input.toLowerCase()) ?? [for (b in bookmarks) if (Jid.parseNode(b.jid) == input.toLowerCase()) b][0];
+		if (b == null)
+			out.error('no bookmark of $input (/bookmarks lists them)');
+		return b;
+	}
+
+	function setAutojoin(input:String, state:String, out:Output) {
+		if (state != "on" && state != "off") {
+			out.error('invalid state: $state (on or off)');
+			return;
+		}
+		final current = findBookmark(input, out);
+		if (current == null)
+			return;
+		// only the flag changes: name, nick, password and the data of other clients are kept
+		final b:Bookmark = Reflect.copy(current);
+		b.autojoin = state == "on";
+		request(out, 'cannot change the bookmark of ${b.jid}', h -> Bookmarks.set(stream, b, h), _ -> {
+			bookmarks.set(b.jid.toLowerCase(), b);
+			out.info('${b.jid}: ' + (b.autojoin ? "joined after the login" : "not joined after the login (still bookmarked)"));
+		});
+	}
+
+	function removeBookmark(input:String, out:Output) {
+		final b = findBookmark(input, out);
+		if (b == null)
+			return;
 		request(out, 'cannot remove the bookmark of ${b.jid}', h -> Bookmarks.remove(stream, b.jid, h), _ -> {
 			bookmarks.remove(b.jid.toLowerCase());
 			out.info('removed the bookmark of ${b.jid}');
