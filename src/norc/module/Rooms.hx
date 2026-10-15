@@ -93,7 +93,7 @@ class Rooms extends Module {
 	}
 
 	override public function commands():Array<Commands.Command> {
-		final complete:Map<String, Completion> = ["jid" => _ -> [for (r in rooms) r.jid], "contact" => _ -> contacts.completions()];
+		final complete:Map<String, Completion> = ["jid" => _ -> [for (r in rooms) r.jid], "contact" => arg -> contacts.completions(arg)];
 		return [
 			{
 				name: "rooms",

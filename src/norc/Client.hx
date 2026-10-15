@@ -172,7 +172,7 @@ class Client {
 			chat: account.chatPrompt ?? "{name}{state}> ",
 			room: account.roomPrompt ?? "#{name}> "
 		}, account.persistentCommandHistory != false ? '${Config.stateDir(account.name)}/history' : null);
-		commands.completers.set("jid", _ -> contacts.completions());
+		commands.completers.set("jid", arg -> contacts.completions(arg));
 		final sessions = new JingleSessions(context);
 		final history = new History(context, contacts, rooms);
 		console.entered = (jid, out) -> history.recent(jid, account.chatHistory ?? 10, out);

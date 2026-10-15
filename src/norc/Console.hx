@@ -91,7 +91,7 @@ class Console {
 			target: false,
 			description: "chat with a contact or room: lines without / are sent to it (// for a line starting with /); without jid, or Ctrl-C: leave",
 			run: (args, out) -> (args[0] == null) ? leave(out) : enter(args[0], out),
-			complete: ["jid" => _ -> contacts.completions().concat(rooms.completions())]
+			complete: ["jid" => arg -> contacts.completions(arg).concat(rooms.completions())]
 		});
 		editor = LineEditor.start(prompts.normal, historyPath);
 		Term.editor = editor;

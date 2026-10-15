@@ -173,13 +173,18 @@ class Contacts extends Module {
 		return (online.length > 0) ? online : [jid];
 	}
 
-	/** Jids and names (without spaces) of the contacts and of pending subscription requests, to complete input **/
-	public function completions():Array<String> {
+	/**
+		The contacts and pending subscription requests to complete `arg`: each contact once, by its name (without
+		spaces, unique) if `arg` starts it, else by its jid
+	**/
+	public function completions(arg = ""):Array<String> {
 		final list = requests.copy();
+		final names = [for (item in items) if (item.name != null) item.name.toLowerCase()];
 		for (item in items) {
-			list.push(item.jid);
-			if (item.name != null && item.name.length > 0 && !item.name.contains(" "))
-				list.push(item.name);
+			// once: the name if it is typed and unique (as input it must match one contact), else the jid
+			final name = item.name;
+			final usable = name != null && name.length > 0 && !name.contains(" ") && names.filter(n -> n == name.toLowerCase()).length == 1;
+			list.push((usable && name.toLowerCase().startsWith(arg.toLowerCase())) ? name : item.jid);
 		}
 		return list;
 	}
