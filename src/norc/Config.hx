@@ -64,6 +64,15 @@ typedef Account = {
 	/** TURN servers for calls (`turn://user:password@host:port`, `turns://…`), in addition to those of the server **/
 	var ?turn:Array<String>;
 
+	/** Devices of calls: their names or parts of them (`/calls devices`), the default devices if not set **/
+	var ?callMicrophone:String;
+
+	var ?callSpeaker:String;
+	var ?callCamera:String;
+
+	/** Echo cancellation and noise suppression of the microphone in calls, `true` if not set **/
+	var ?callEchoCancel:Bool;
+
 	/** Program for the media of calls with its options, `norc-rtc` if not set **/
 	var ?callHelper:String;
 
@@ -116,6 +125,8 @@ private typedef Key = {
 	`attention` (`0`: ignore attention requests),
 	`stream_management` (`0`: no acknowledgements and resumption of the session),
 	`call_helper` (program for the media of calls, with options),
+	`call_microphone`, `call_speaker`, `call_camera` (devices of calls by name, see `/calls devices`),
+	`call_echo_cancel` (`0`: no echo cancellation and noise suppression in calls),
 	`stun`, `turn` (servers for calls, `stun://host:port`, `turn://user:password@host:port`, several separated by `,`),
 	`autojoin_bookmarks` (`0`: don't join bookmarked rooms after the login),
 	`priority` (of the presence, -128 to 127),
@@ -151,6 +162,10 @@ class Config {
 		flag("stream_management", a -> a.streamManagement, (a, v) -> a.streamManagement = v),
 		{name: "priority", get: a -> (a.priority != null) ? Std.string(a.priority) : null, set: (a, v) -> a.priority = parsePriority(v)},
 		flag("autojoin_bookmarks", a -> a.autojoinBookmarks, (a, v) -> a.autojoinBookmarks = v),
+		{name: "call_microphone", get: a -> a.callMicrophone, set: (a, v) -> a.callMicrophone = v},
+		{name: "call_speaker", get: a -> a.callSpeaker, set: (a, v) -> a.callSpeaker = v},
+		{name: "call_camera", get: a -> a.callCamera, set: (a, v) -> a.callCamera = v},
+		flag("call_echo_cancel", a -> a.callEchoCancel, (a, v) -> a.callEchoCancel = v),
 		{
 			name: "stun",
 			get: a -> a.stun,

@@ -34,6 +34,14 @@
 # (e.g. after a network change); without answer within 30 seconds norc reconnects. 0 disables it.
 # keepalive = 60
 
+# Devices of calls: their names, or parts of them (/calls devices lists them); the default devices if not set.
+# call_microphone = C270
+# call_speaker = Headphones
+# call_camera = C270
+
+# Echo cancellation and noise suppression of the microphone in calls; 0 disables it (e.g. with headphones).
+# call_echo_cancel = 1
+
 # STUN and TURN servers for calls (/call), needed when the other side isn't on the same network: in addition to
 # those of your server (XEP-0215, e.g. Prosody's mod_turn_external with coturn). Several TURN servers separated by ,
 # stun = stun://stun.example.org:3478

@@ -32,9 +32,13 @@ static GMutex output_lock;
 typedef enum { NONE, SEND, RECEIVE, BOTH } Direction;
 
 static Direction audio = BOTH, video = NONE;
-static gboolean test = FALSE, bundle = TRUE;
+static gboolean test = FALSE, bundle = TRUE, echo_cancel = FALSE,
+                list_devices = FALSE;
+static gchar *microphone = NULL, *speaker = NULL, *camera = NULL;
 
 static gboolean sends(Direction d);
+static GstElement *device_element(const char *klass, const char *name,
+                                  const char *what);
 static void set_directions(void);
 static void update_sending(void);
 static const char *transceiver_media(GstWebRTCRTPTransceiver *t);
@@ -87,6 +91,16 @@ static GOptionEntry options[] = {
      "Video source (default autovideosrc)", "PIPELINE"},
     {"video-sink", 0, 0, G_OPTION_ARG_STRING, &video_sink,
      "Video sink (default autovideosink)", "PIPELINE"},
+    {"microphone", 0, 0, G_OPTION_ARG_STRING, &microphone,
+     "Microphone: its name or a part of it (see --list-devices)", "NAME"},
+    {"speaker", 0, 0, G_OPTION_ARG_STRING, &speaker,
+     "Speaker: its name or a part of it", "NAME"},
+    {"camera", 0, 0, G_OPTION_ARG_STRING, &camera,
+     "Camera: its name or a part of it", "NAME"},
+    {"list-devices", 0, 0, G_OPTION_ARG_NONE, &list_devices,
+     "List the microphones, speakers and cameras, then exit", NULL},
+    {"echo-cancel", 0, 0, G_OPTION_ARG_NONE, &echo_cancel,
+     "Echo cancellation and noise suppression of the microphone", NULL},
     {"no-bundle", 0, G_OPTION_FLAG_REVERSE, G_OPTION_ARG_NONE, &bundle,
      "A connection for each media (the peer doesn't support BUNDLE)", NULL},
     {"test", 0, 0, G_OPTION_ARG_NONE, &test,
@@ -307,8 +321,16 @@ static void on_decoded(GstElement *decodebin, GstPad *pad, gpointer user_data) {
   gst_caps_unref(caps);
   if (!audio && !g_str_has_prefix(name, "video/"))
     return;
+  // the audio to the echo probe (played after it), or to the speaker device
+  GstElement *probe =
+      audio ? gst_bin_get_by_name(GST_BIN(pipeline), "echo-probe") : NULL;
+  GstPad *probe_pad =
+      (probe != NULL) ? gst_element_get_static_pad(probe, "sink") : NULL;
+  const gboolean to_probe = probe_pad != NULL && !gst_pad_is_linked(probe_pad);
+  const gboolean to_device = audio && !to_probe && speaker != NULL && !test;
   gchar *desc =
-      test    ? g_strdup("queue ! fakesink")
+      (to_probe || to_device) ? g_strdup("queue ! audioconvert ! audioresample")
+      : test                  ? g_strdup("queue ! fakesink")
       : audio ? g_strdup_printf("queue ! audioconvert ! audioresample ! %s",
                                 audio_sink ? audio_sink : "autoaudiosink")
               : g_strdup_printf("queue ! videoconvert ! %s",
@@ -316,16 +338,34 @@ static void on_decoded(GstElement *decodebin, GstPad *pad, gpointer user_data) {
   GError *error = NULL;
   GstElement *sink = gst_parse_bin_from_description(desc, TRUE, &error);
   g_free(desc);
-  if (sink == NULL) {
-    fail("cannot play the %s: %s", audio ? "audio" : "video", error->message);
-    g_error_free(error);
+  GstElement *device =
+      (sink != NULL && to_device) ? device_element("Audio/Sink", speaker, "speaker") : NULL;
+  if (sink == NULL || (to_device && device == NULL)) {
+    if (error != NULL) {
+      fail("cannot play the %s: %s", audio ? "audio" : "video", error->message);
+      g_error_free(error);
+    }
+    gst_clear_object(&probe_pad);
+    gst_clear_object(&probe);
     return;
   }
   gst_bin_add(GST_BIN(pipeline), sink);
+  if (device != NULL) {
+    gst_bin_add(GST_BIN(pipeline), device);
+    gst_element_link(sink, device);
+    gst_element_sync_state_with_parent(device);
+  }
+  if (to_probe) {
+    GstPad *src = gst_element_get_static_pad(sink, "src");
+    gst_pad_link(src, probe_pad);
+    gst_object_unref(src);
+  }
   gst_element_sync_state_with_parent(sink);
   GstPad *sinkpad = gst_element_get_static_pad(sink, "sink");
   gst_pad_link(pad, sinkpad);
   gst_object_unref(sinkpad);
+  gst_clear_object(&probe_pad);
+  gst_clear_object(&probe);
   send_value("media", "media", audio ? "audio" : "video");
 }
 
@@ -472,6 +512,97 @@ static void update_sending(void) {
   g_array_unref(transceivers);
 }
 
+/* --- Devices
+ * ------------------------------------------------------------------------------------------------- */
+
+/* The device of `klass` (e.g. Audio/Source): its name contains `name` (case
+ * insensitive), or a property is `name` (e.g. node.name, a device path) */
+static GstDevice *find_device(const char *klass, const char *name) {
+  GstDeviceMonitor *monitor = gst_device_monitor_new();
+  gst_device_monitor_add_filter(monitor, klass, NULL);
+  GList *devices = gst_device_monitor_get_devices(monitor);
+  gchar *wanted = g_utf8_casefold(name, -1);
+  GstDevice *found = NULL;
+  for (GList *d = devices; d != NULL && found == NULL; d = d->next) {
+    GstDevice *device = d->data;
+    gchar *display = gst_device_get_display_name(device);
+    gchar *folded = g_utf8_casefold(display, -1);
+    gboolean match = strstr(folded, wanted) != NULL;
+    GstStructure *props = gst_device_get_properties(device);
+    for (int i = 0; props != NULL && !match && i < gst_structure_n_fields(props); i++) {
+      const gchar *value = gst_structure_get_string(props, gst_structure_nth_field_name(props, i));
+      match = g_strcmp0(value, name) == 0;
+    }
+    if (props != NULL)
+      gst_structure_free(props);
+    if (match)
+      found = gst_object_ref(device);
+    g_free(folded);
+    g_free(display);
+  }
+  g_list_free_full(devices, gst_object_unref);
+  gst_object_unref(monitor);
+  g_free(wanted);
+  return found;
+}
+
+/* An element of the device `name` of `klass`, else NULL after an error */
+static GstElement *device_element(const char *klass, const char *name,
+                                  const char *what) {
+  GstDevice *device = find_device(klass, name);
+  if (device == NULL) {
+    fail("no %s %s (norc-rtc --list-devices)", what, name);
+    return NULL;
+  }
+  GstElement *element = gst_device_create_element(device, NULL);
+  gst_object_unref(device);
+  if (element == NULL)
+    fail("cannot use the %s %s", what, name);
+  return element;
+}
+
+/* Links the device `name` to (a source) or from (a sink) the element `slot` of
+ * the pipeline, if it exists */
+static gboolean link_device(const char *slot, gboolean source,
+                            const char *klass, const char *name,
+                            const char *what) {
+  GstElement *element = gst_bin_get_by_name(GST_BIN(pipeline), slot);
+  if (element == NULL)
+    return TRUE;
+  GstElement *device = device_element(klass, name, what);
+  gboolean ok = device != NULL;
+  if (ok) {
+    gst_bin_add(GST_BIN(GST_ELEMENT_PARENT(element)), device);
+    ok = source ? gst_element_link(device, element)
+                : gst_element_link(element, device);
+    if (!ok)
+      fail("cannot use the %s %s", what, name);
+  }
+  gst_object_unref(element);
+  return ok;
+}
+
+static void print_devices(void) {
+  const char *kinds[][2] = {{"Audio/Source", "microphone"},
+                            {"Audio/Sink", "speaker"},
+                            {"Video/Source", "camera"}};
+  for (int k = 0; k < 3; k++) {
+    GstDeviceMonitor *monitor = gst_device_monitor_new();
+    gst_device_monitor_add_filter(monitor, kinds[k][0], NULL);
+    GList *devices = gst_device_monitor_get_devices(monitor);
+    // the same devices of several providers (PipeWire, PulseAudio, ALSA) once
+    GHashTable *seen = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
+    for (GList *d = devices; d != NULL; d = d->next) {
+      gchar *name = gst_device_get_display_name(d->data);
+      if (g_hash_table_add(seen, name))
+        g_print("%-11s %s\n", kinds[k][1], name);
+    }
+    g_hash_table_destroy(seen);
+    g_list_free_full(devices, gst_object_unref);
+    gst_object_unref(monitor);
+  }
+}
+
 /* The pipeline: the own audio (and video) into webrtcbin, Opus (payload 111)
  * and VP8 (96) as browsers use them */
 /* The audio source playing `audio_file`: at the speed it plays (a file is read
@@ -496,21 +627,39 @@ static gboolean start(void) {
     return FALSE;
   }
   gchar *file = (audio_file != NULL) ? file_source() : NULL;
+  // echo cancellation: of the sent audio, with the received audio played
+  const gboolean echo = echo_cancel && sends(audio) && (audio == BOTH);
+  gchar *dsp = (echo_cancel && sends(audio))
+                   ? g_strdup_printf("webrtcdsp probe=echo-probe echo-cancel=%s ! "
+                                     "audioconvert ! ",
+                                     echo ? "true" : "false")
+                   : NULL;
   GString *desc =
       g_string_new(bundle ? "webrtcbin name=webrtc bundle-policy=max-bundle "
                           : "webrtcbin name=webrtc bundle-policy=none ");
   if (sends(audio))
     g_string_append_printf(
       desc,
-      "%s ! queue ! audioconvert ! audioresample ! volume name=audio-mute ! "
+      "%s ! queue ! audioconvert ! audioresample ! %s volume name=audio-mute ! "
       "valve name=audio-send ! opusenc ! rtpopuspay pt=111 "
       "! application/x-rtp,media=audio,encoding-name=OPUS,payload=111,encoding-params=(string)2 ! "
       "webrtc. ",
       file           ? file
       : test         ? "audiotestsrc is-live=true wave=sine volume=0.2"
+      : microphone   ? "identity name=microphone"
       : audio_source ? audio_source
-                     : "autoaudiosrc");
+                     : "autoaudiosrc",
+      dsp ? dsp : "");
   g_free(file);
+  g_free(dsp);
+  // the played audio for the echo cancellation, the received audio is linked to it
+  if (echo)
+    g_string_append_printf(
+        desc, "webrtcechoprobe name=echo-probe ! audioconvert ! audioresample ! %s ",
+        test        ? "fakesink"
+        : speaker   ? "identity name=speaker"
+        : audio_sink ? audio_sink
+                     : "autoaudiosink");
   if (sends(video))
     g_string_append_printf(
         desc,
@@ -521,6 +670,7 @@ static gboolean start(void) {
         "webrtc. ",
         test ? "videotestsrc is-live=true pattern=ball ! "
                "video/x-raw,width=320,height=240"
+        : camera       ? "identity name=camera"
         : video_source ? video_source
                        : "autovideosrc");
   GError *error = NULL;
@@ -540,6 +690,12 @@ static gboolean start(void) {
     pipeline = gst_pipeline_new(NULL);
     gst_bin_add(GST_BIN(pipeline), parsed);
   }
+  if (!test &&
+      !((microphone == NULL ||
+         link_device("microphone", TRUE, "Audio/Source", microphone, "microphone")) &&
+        (camera == NULL || link_device("camera", TRUE, "Video/Source", camera, "camera")) &&
+        (speaker == NULL || link_device("speaker", FALSE, "Audio/Sink", speaker, "speaker"))))
+    return FALSE;
   webrtc = gst_bin_get_by_name(GST_BIN(pipeline), "webrtc");
   if (stun != NULL)
     g_object_set(webrtc, "stun-server", stun, NULL);
@@ -657,6 +813,10 @@ int main(int argc, char *argv[]) {
     return 2;
   }
   g_option_context_free(context);
+  if (list_devices) {
+    print_devices();
+    return 0;
+  }
   loop = g_main_loop_new(NULL, FALSE);
   if (start()) {
     g_thread_unref(g_thread_new("input", read_input, NULL));

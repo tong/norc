@@ -16,6 +16,9 @@ norc-rtc [--audio=DIRECTION] [--video[=DIRECTION]] [--stun URI] [--turn URI ...]
 | `--stun stun://host:port` | STUN server |
 | `--turn turn://user:password@host:port` | TURN server, repeatable (`turns://` for TLS) |
 | `--audio-source`, `--audio-sink` | GStreamer elements, default `autoaudiosrc`, `autoaudiosink` |
+| `--microphone`, `--speaker`, `--camera NAME` | a device by its name or a part of it (`--list-devices`), instead of the source and sink elements |
+| `--list-devices` | list the microphones, speakers and cameras, then exit |
+| `--echo-cancel` | echo cancellation (of the played audio) and noise suppression of the microphone (`webrtcdsp`) |
 | `--audio-file PATH` | play a file instead of the audio source (any format GStreamer decodes, at its speed; silence after its end) |
 | `--video-source`, `--video-sink` | default `autovideosrc`, `autovideosink` |
 | `--no-bundle` | a connection for each media, for peers without BUNDLE (e.g. Dino); by default all media share one |

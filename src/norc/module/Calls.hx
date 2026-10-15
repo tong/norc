@@ -180,6 +180,11 @@ class Calls extends Module {
 				run: (args, out) -> list(out),
 				subcommands: [
 					{
+						name: "devices",
+						description: "list the microphones, speakers and cameras for calls (names for call_microphone, …)",
+						run: (args, out) -> devices(out)
+					},
+					{
 						name: "hangup",
 						description: "end all calls (ringing calls are declined)",
 						run: (args, out) -> {
@@ -342,7 +347,8 @@ class Calls extends Module {
 			if (!calls.contains(c))
 				return;
 			try {
-				final options = servers.concat(c.bundle ? [] : ["--no-bundle"])
+				final options = servers.concat(settings())
+					.concat(c.bundle ? [] : ["--no-bundle"])
 					.concat(['--audio=${c.audio}'])
 					.concat(c.video != none ? ['--video=${c.video}'] : [])
 					.concat(c.file != null ? ["--audio-file", c.file] : []);
@@ -352,6 +358,43 @@ class Calls extends Module {
 				end(c, failed_application, "failed");
 			}
 		});
+
+	/** The options of norc-rtc of the settings (devices, echo cancellation) **/
+	function settings():Array<String> {
+		final options = [];
+		for (o in [
+			{option: "--microphone", value: account.callMicrophone},
+			{option: "--speaker", value: account.callSpeaker},
+			{option: "--camera", value: account.callCamera}
+		])
+			if (o.value != null && o.value.length > 0)
+				options.push('${o.option}=${o.value}');
+		if (account.callEchoCancel != false)
+			options.push("--echo-cancel");
+		return options;
+	}
+
+	/** Lists the devices for calls (of norc-rtc), their names for the settings **/
+	function devices(out:Output) {
+		if (helper == null) {
+			out.error("calls need norc-rtc (not found, see call_helper)");
+			return;
+		}
+		final lines = try {
+			final p = new Process(helper[0], ["--list-devices"]);
+			final text = p.stdout.readAll().toString();
+			p.close();
+			[for (l in text.split("\n")) if (l.trim().length > 0) l];
+		} catch (e) {
+			out.error('cannot list the devices: $e');
+			return;
+		}
+		out.data({devices: [for (l in lines) {kind: l.substr(0, 11).trim(), name: l.substr(11)}]}, () -> {
+			for (l in lines)
+				out.print('  $l');
+			out.info("use a name (or a part of it): call_microphone, call_speaker, call_camera in the config");
+		});
+	}
 
 	/**
 		The options of norc-rtc for the STUN and TURN servers: of the config, and of the server (XEP-0215, requested
