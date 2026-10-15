@@ -5,7 +5,7 @@ import norc.Module;
 import norc.Output;
 import norc.module.Messages;
 import xmpp.Jid;
-import xmpp.Mam;
+import xmpp.MessageArchiveManagement;
 import xmpp.client.Stream;
 
 /**
@@ -22,7 +22,7 @@ class History extends Module {
 	final rooms:Rooms;
 
 	/** The archive queries of the session **/
-	var mam:Null<Mam>;
+	var mam:Null<MessageArchiveManagement>;
 
 	public function new(context:Context, contacts:Contacts, rooms:Rooms) {
 		super(context);
@@ -43,7 +43,7 @@ class History extends Module {
 
 	override public function attach(stream:Stream) {
 		super.attach(stream);
-		mam = new Mam(stream);
+		mam = new MessageArchiveManagement(stream);
 		// the results of queries, before the messages
 		final message = stream.onMessage;
 		stream.onMessage = m -> if (!mam.handleMessage(m)) message(m);
