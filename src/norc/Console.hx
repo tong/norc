@@ -14,16 +14,24 @@ using StringTools;
 	The interactive input (`-i`): reads lines from stdin, with the line editor on a terminal, and runs them as commands.
 
 	Chat mode (`/chat <jid>`): lines without `/` are sent to the contact (`//` sends a line starting with `/`), commands
-	keep working. `/chat` or Ctrl-C on an empty line leaves it. While typing a message, the chat state is `composing`.
+	keep working. `/chat` or Ctrl-C on an empty line leaves it.
+	Chat states (XEP-0085) are sent: `active` in the chat, `composing` while typing a message, `paused` after some seconds
+	without typing, `gone` when leaving it; the state of the contact is shown in the prompt (e.g. `alice (typing)> `).
 **/
 class Console {
+	/** Seconds without typing before the chat state `paused` **/
+	static inline var PAUSE = 5;
+
 	final context:Context;
 	final commands:Commands;
 	final contacts:Contacts;
 	final chatStates:ChatStates;
 	final prompt:String;
 
-	/** The prompt in chat mode: `{name}` is replaced with the name of the contact, `{jid}` with its jid **/
+	/**
+		The prompt in chat mode: `{name}` is replaced with the name of the contact, `{jid}` with its jid, `{state}` with
+		its chat state unless active (e.g. ` (typing)`)
+	**/
 	final chatPrompt:String;
 
 	/** The line editor, `null` without terminal **/
@@ -32,6 +40,15 @@ class Console {
 	/** The jid of the chat mode; set on the main thread, read by the input thread (Ctrl-C) **/
 	var chat:Null<String>;
 
+	/** The chat state of the contact of the chat mode, `null` if active or unknown **/
+	var theirState:Null<String>;
+
+	/** Time of the last change of a message being typed, for `paused` **/
+	var lastTyping = 0.0;
+
+	/** A check for `paused` is pending **/
+	var pausing = false;
+
 	public function new(context:Context, commands:Commands, contacts:Contacts, chatStates:ChatStates, prompt:String, chatPrompt:String) {
 		this.context = context;
 		this.commands = commands;
@@ -39,6 +56,10 @@ class Console {
 		this.chatStates = chatStates;
 		this.prompt = prompt;
 		this.chatPrompt = chatPrompt;
+		chatStates.received = (from, state) -> if (chat != null && Jid.parseBare(chat) == from) {
+			theirState = (state == "active") ? null : state;
+			updatePrompt();
+		}
 	}
 
 	/**
@@ -95,12 +116,14 @@ class Console {
 			out.error('invalid jid: $jid');
 			return;
 		}
-		if (chat != jid)
-			state("active");
+		if (chat != jid) {
+			state("gone");
+			theirState = null;
+		}
 		chat = jid;
-		final name = contacts.name(Jid.parseBare(jid)) + (Jid.parseResource(jid) != null ? '/${Jid.parseResource(jid)}' : '');
-		editor?.setPrompt(chatPrompt.replace("{name}", Term.name(name, Jid.parseBare(jid))).replace("{jid}", jid));
-		out.info('chat with $name: lines without / are sent, /chat or Ctrl-C to leave');
+		state("active");
+		updatePrompt();
+		out.info('chat with ${name(jid)}: lines without / are sent, /chat or Ctrl-C to leave');
 	}
 
 	function leave(out:Output) {
@@ -108,18 +131,59 @@ class Console {
 			out.info("not in a chat (/chat <jid> starts one)");
 			return;
 		}
-		state("active");
+		state("gone");
 		chat = null;
-		editor?.setPrompt(prompt);
+		theirState = null;
+		updatePrompt();
 	}
 
 	/** A line of chat mode is a message, not a command **/
 	static function message(line:String):Bool
 		return !line.startsWith("/") || line.startsWith("//");
 
-	/** The input line changed: `composing` while it is a message, else `active` **/
-	function typing(line:String)
-		state((line.length > 0 && message(line)) ? "composing" : "active");
+	/** The name of a contact, with the resource of `jid` if it has one **/
+	function name(jid:String):String {
+		final resource = Jid.parseResource(jid);
+		return contacts.name(Jid.parseBare(jid)) + (resource != null ? '/$resource' : '');
+	}
+
+	function updatePrompt() {
+		final jid = chat;
+		editor?.setPrompt((jid == null) ? prompt : chatPrompt.replace("{name}", Term.name(name(jid), Jid.parseBare(jid)))
+			.replace("{jid}", jid)
+			.replace("{state}", (theirState != null) ? Term.style(' (${theirState == "composing" ? "typing" : theirState})', 2) : ""));
+	}
+
+	/** The input line changed: `composing` while it is a message (`paused` after a while), else `active` **/
+	function typing(line:String) {
+		if (line.length == 0 || !message(line)) {
+			state("active");
+			return;
+		}
+		state("composing");
+		lastTyping = Sys.time();
+		checkPaused(PAUSE);
+	}
+
+	/** Sends `paused` if the message being typed did not change for `PAUSE` seconds, checked after `delay` **/
+	function checkPaused(delay:Float) {
+		if (pausing)
+			return;
+		pausing = true;
+		Thread.create(() -> {
+			Sys.sleep(delay);
+			context.post(() -> {
+				pausing = false;
+				if (chat == null || chatStates.last(chat) != "composing")
+					return;
+				final idle = Sys.time() - lastTyping;
+				if (idle >= PAUSE)
+					state("paused");
+				else
+					checkPaused(PAUSE - idle);
+			});
+		});
+	}
 
 	/** Sends the chat state to the contact of the chat mode **/
 	function state(s:String) {

@@ -18,6 +18,9 @@ class ChatStates extends Module {
 	final contacts:Contacts;
 	final enabled:Bool;
 
+	/** Called with the chat states of contacts (bare jid): received states, `active` for a message without state **/
+	public var received:Null<(from:String, state:String) -> Void>;
+
 	/** Last state sent to each jid, a state is not sent twice in a row **/
 	final sent = new Map<String, String>();
 
@@ -68,6 +71,10 @@ class ChatStates extends Module {
 			set(to, state);
 	}
 
+	/** The last state sent to `to` (a jid) **/
+	public function last(to:String):Null<String>
+		return sent.get(to);
+
 	/** Sends `state` to `to` (a jid) while online, unless disabled or it was the last state sent to it **/
 	public function set(to:String, state:String) {
 		if (!enabled || sent.get(to) == state)
@@ -79,11 +86,19 @@ class ChatStates extends Module {
 	/** The state of a contact (not of copies of messages of other own clients) **/
 	function receive(i:Incoming):Bool {
 		final m = i.message;
-		final state = ChatState.getChatState(m);
-		if (state == null || i.carbon != null || m.from == null || m.type == groupchat)
+		if (i.carbon != null || m.from == null || m.type == groupchat)
 			return false;
 		final from = Jid.parseBare(m.from);
+		final state = ChatState.getChatState(m);
+		if (state == null) {
+			// a message of a client without chat states: not typing anymore
+			if (m.body != null && received != null)
+				received(from, "active");
+			return false;
+		}
 		emit("chatstate", [from, state], {from: m.from, name: contacts.name(from), state: state});
+		if (received != null)
+			received(from, state);
 		return m.body == null;
 	}
 }

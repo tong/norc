@@ -37,8 +37,9 @@
 # Prompt of the input line (-i), in "" to keep spaces at the start or end.
 # prompt = "> "
 
-# Prompt in chat mode (/chat): {name} is the name of the contact (in its color), {jid} its jid.
-# chat_prompt = "{name}> "
+# Prompt in chat mode (/chat): {name} is the name of the contact (in its color), {jid} its jid,
+# {state} its chat state unless active, e.g. " (typing)".
+# chat_prompt = "{name}{state}> "
 
 # --- Privacy: what others can learn about you ---
 

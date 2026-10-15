@@ -52,7 +52,10 @@ typedef Account = {
 	/** Prompt of the input line (`-i`), `> ` if not set **/
 	var ?prompt:String;
 
-	/** Prompt in chat mode (`/chat`): `{name}` is the contact's name, `{jid}` its jid; `{name}> ` if not set **/
+	/**
+		Prompt in chat mode (`/chat`): `{name}` is the contact's name, `{jid}` its jid, `{state}` its chat state unless
+		active (e.g. ` (typing)`); `{name}{state}> ` if not set
+	**/
 	var ?chatPrompt:String;
 }
 
@@ -86,7 +89,7 @@ private typedef Key = {
 	`attention` (`0`: ignore attention requests),
 	`stream_management` (`0`: no acknowledgements and resumption of the session),
 	`prompt` (of the input line, in `"` to keep spaces at the start or end),
-	`chat_prompt` (in chat mode, `{name}` and `{jid}` of the contact).
+	`chat_prompt` (in chat mode, `{name}`, `{jid}` and `{state}` of the contact).
 
 	The runtime state of an account (pid file) is in `$XDG_STATE_HOME/norc/<name>/` (Windows: `%LOCALAPPDATA%\norc\<name>\`).
 **/

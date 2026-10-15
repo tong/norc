@@ -160,7 +160,7 @@ class Client {
 		final contacts = new Contacts(context);
 		final messages = new Messages(context, contacts);
 		final chatStates = new ChatStates(context, messages, contacts, account.chatStates != false);
-		console = new Console(context, commands, contacts, chatStates, account.prompt ?? "> ", account.chatPrompt ?? "{name}> ");
+		console = new Console(context, commands, contacts, chatStates, account.prompt ?? "> ", account.chatPrompt ?? "{name}{state}> ");
 		commands.completers.set("jid", _ -> contacts.completions());
 		modules = [
 			contacts,
