@@ -49,6 +49,9 @@ typedef Account = {
 	/** Receive attention requests (`/buzz`), `true` if not set **/
 	var ?attention:Bool;
 
+	/** Join the rooms bookmarked with autojoin after the login, `true` if not set **/
+	var ?autojoinBookmarks:Bool;
+
 	/** Program for the media of calls with its options, `norc-rtc` if not set **/
 	var ?callHelper:String;
 
@@ -101,6 +104,7 @@ private typedef Key = {
 	`attention` (`0`: ignore attention requests),
 	`stream_management` (`0`: no acknowledgements and resumption of the session),
 	`call_helper` (program for the media of calls, with options),
+	`autojoin_bookmarks` (`0`: don't join bookmarked rooms after the login),
 	`persistent_command_history` (`0`: the history of the input line is not kept),
 	`chat_history` (messages of the archive shown when the chat mode starts, `0`: none),
 	`prompt` (of the input line, in `"` to keep spaces at the start or end),
@@ -130,6 +134,7 @@ class Config {
 		flag("entity_time", a -> a.entityTime, (a, v) -> a.entityTime = v),
 		flag("attention", a -> a.attention, (a, v) -> a.attention = v),
 		flag("stream_management", a -> a.streamManagement, (a, v) -> a.streamManagement = v),
+		flag("autojoin_bookmarks", a -> a.autojoinBookmarks, (a, v) -> a.autojoinBookmarks = v),
 		{name: "call_helper", get: a -> a.callHelper, set: (a, v) -> a.callHelper = v},
 		{name: "chat_history", get: a -> (a.chatHistory != null) ? Std.string(a.chatHistory) : null, set: (a, v) -> a.chatHistory = parseCount(v)},
 		flag("persistent_command_history", a -> a.persistentCommandHistory, (a, v) -> a.persistentCommandHistory = v),

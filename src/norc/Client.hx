@@ -164,7 +164,7 @@ class Client {
 		final contacts = new Contacts(context);
 		final messages = new Messages(context, contacts);
 		// before the modules adding elements to sent chat messages
-		final rooms = new Rooms(context, messages, contacts);
+		final rooms = new Rooms(context, messages, contacts, account.autojoinBookmarks != false);
 		final chatStates = new ChatStates(context, messages, contacts, account.chatStates != false);
 		chatStates.isRoom = rooms.joined;
 		console = new Console(context, commands, contacts, chatStates, rooms, {

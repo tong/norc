@@ -90,7 +90,8 @@ class Console {
 			args: "[jid]",
 			target: false,
 			description: "chat with a contact or room: lines without / are sent to it (// for a line starting with /); without jid, or Ctrl-C: leave",
-			run: (args, out) -> (args[0] == null) ? leave(out) : enter(args[0], out)
+			run: (args, out) -> (args[0] == null) ? leave(out) : enter(args[0], out),
+			complete: ["jid" => _ -> contacts.completions().concat(rooms.completions())]
 		});
 		editor = LineEditor.start(prompts.normal, historyPath);
 		Term.editor = editor;
@@ -180,6 +181,8 @@ class Console {
 
 	function updatePrompt() {
 		final jid = chat;
+		// its occupants entering and leaving are shown
+		rooms.active = (jid != null && rooms.joined(jid)) ? Jid.parseBare(jid).toLowerCase() : null;
 		if (jid == null) {
 			editor?.setPrompt(prompts.normal);
 			return;

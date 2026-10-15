@@ -34,6 +34,9 @@
 # (e.g. after a network change); without answer within 30 seconds norc reconnects. 0 disables it.
 # keepalive = 60
 
+# Join the rooms bookmarked with autojoin after the login (/bookmarks), 0 disables it.
+# autojoin_bookmarks = 1
+
 # Program for the audio and video of calls (/call), with its options (see norc-rtc --help), e.g. other devices:
 # call_helper = norc-rtc --audio-source "pipewiresrc target-object=alsa_input.usb-headset"
 # call_helper = norc-rtc

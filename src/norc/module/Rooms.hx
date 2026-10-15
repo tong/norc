@@ -36,6 +36,12 @@ private typedef Room = {
 	final occupants:Map<String, Presence>;
 
 	var ?subject:String;
+
+	/** Joined (the own presence received): later presences are changes of the occupants **/
+	var ?entered:Bool;
+
+	/** New nicks of occupants changing their nick: their presence is no new occupant **/
+	var ?renamed:Array<String>;
 }
 
 /**
@@ -60,6 +66,9 @@ class Rooms extends Module {
 	/** Called when a room was left (also when removed by the room), or the own nick in it changed **/
 	public var changed:Null<(room:String) -> Void>;
 
+	/** The room of the room mode (bare jid, lowercase): its occupants entering and leaving are shown **/
+	public var active:Null<String>;
+
 	/** The bookmarks by room jid (lowercase), loaded after the login **/
 	final bookmarks = new Map<String, Bookmark>();
 
@@ -69,7 +78,11 @@ class Rooms extends Module {
 	/** The chat service of the server, once found (`null`: not searched yet) **/
 	var service:Null<{jid:Null<String>}>;
 
-	public function new(context:Context, messages:Messages, contacts:Contacts) {
+	/** Join the rooms bookmarked with autojoin after the login (`autojoin_bookmarks`) **/
+	final autojoinBookmarks:Bool;
+
+	public function new(context:Context, messages:Messages, contacts:Contacts, autojoinBookmarks = true) {
+		this.autojoinBookmarks = autojoinBookmarks;
 		super(context);
 		this.messages = messages;
 		this.contacts = contacts;
@@ -231,6 +244,10 @@ class Rooms extends Module {
 	public function resolve(input:String):Null<String>
 		return room(input, null)?.jid;
 
+	/** The rooms the user is in, by jid and local part, e.g. to complete input **/
+	public function completions():Array<String>
+		return [for (r in rooms) r.jid].concat([for (r in rooms) Jid.parseNode(r.jid)]);
+
 	/** The own nick in a room **/
 	public function nickIn(jid:String):Null<String>
 		return find(jid)?.nick;
@@ -257,7 +274,11 @@ class Rooms extends Module {
 				return done();
 			}
 			if (joined(jid)) {
-				out.info('already in $jid');
+				// on the terminal: the room mode
+				if (entered != null && out == TermOutput.instance)
+					entered(find(jid).jid, out);
+				else
+					out.info('already in $jid');
 				return done();
 			}
 			joinRoom(jid, nick, null, r -> {
@@ -294,13 +315,14 @@ class Rooms extends Module {
 
 	/** Joins the room of bookmark `b` if it is marked autojoin and not joined **/
 	function autojoin(b:Bookmark)
-		if (b.autojoin && !joined(b.jid))
+		if (autojoinBookmarks && b.autojoin && !joined(b.jid))
 			joinRoom(b.jid, b.nick, b.password, r -> if (r != null) Term.notice('joined ${r.jid} as ${r.nick} (bookmark)'));
 
 	/** Enters room `r` (again), `callback` gets the error or `null` **/
 	function enter(r:Room, callback:Null<String>->Void) {
 		r.muc.join(r.nick, r.password, res -> switch res {
 			case Result(presence):
+				r.entered = true;
 				r.nick = r.muc.nick;
 				// the own presence, answering the join
 				r.occupants.set(r.nick, (presence : Presence));
@@ -310,6 +332,27 @@ class Rooms extends Module {
 			case Error(e):
 				callback(Term.errorText(e));
 		});
+	}
+
+	/** An occupant entered, left or changed the nick (`known`: was in the room) **/
+	function showOccupant(r:Room, nick:String, p:Presence, known:Bool) {
+		final label = Term.style(label(r.jid), 2) + ' ' + Term.name(nick, '${r.jid}/$nick');
+		if (p.type == unavailable) {
+			final newNick = changedNick(p);
+			if (newNick != null)
+				(r.renamed ??= []).push(newNick);
+			final status:Null<String> = p.status;
+			Term.notice((newNick != null) ? '$label is now $newNick' : '$label left' + (status != null && status.length > 0 ? ' ($status)' : ''));
+		} else if (!known && !(r.renamed?.remove(nick) ?? false))
+			Term.notice('$label entered');
+	}
+
+	/** The new nick of an occupant leaving with a nick change (status 303), else `null` **/
+	static function changedNick(p:Presence):Null<String> {
+		for (x in p.properties)
+			if (x.is(Muc.XMLNS_USER) && x.elements.exists(e -> e.name == "status" && e.get("code") == "303"))
+				return x.elements.find(e -> e.name == "item")?.get("nick");
+		return null;
 	}
 
 	/** The own presence when joining tells that the room was created (status 201) **/
@@ -413,10 +456,15 @@ class Rooms extends Module {
 		muc.onPrivateMessage = m -> messages.receive(m);
 		muc.onPresence = p -> {
 			final nick = Jid.parseResource(p.from);
-			if (nick != null && p.type == unavailable)
+			if (nick == null)
+				return;
+			final known = r.occupants.exists(nick);
+			if (p.type == unavailable)
 				r.occupants.remove(nick);
-			else if (nick != null)
+			else
 				r.occupants.set(nick, p);
+			if (r.entered == true && r.jid == active && nick != r.nick)
+				showOccupant(r, nick, p, known);
 		}
 		muc.onSubject = subject -> {
 			// also sent when joining
