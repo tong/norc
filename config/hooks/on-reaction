@@ -1,0 +1,25 @@
+#!/bin/sh
+#
+# norc hook: desktop notification when a contact reacts to a message
+#
+# Run on the reaction event, for reactions of contacts and in rooms (/react).
+# Enable it with `chmod +x on-reaction`. Several hooks per event: on-reaction.<anything> (e.g. on-reaction.log).
+#
+# Arguments: chat (bare jid of the contact or room) reactions
+# NORC_CHAT       the contact or room
+# NORC_FROM       full jid of the sender (in rooms the occupant jid)
+# NORC_NAME       name of the contact, in rooms the nick
+# NORC_ROOM       jid of the room, empty for contacts
+# NORC_ID         id of the message reacted to
+# NORC_TEXT       the text of the message reacted to, empty if unknown
+# NORC_REACTIONS  all reactions of the sender to the message, separated by spaces; empty: removed
+# NORC_OWN        1: your own reactions (also sent by another of your clients)
+# NORC_CARBON     1: sent by another of your clients
+# NORC_DELAYED    1: delivered on login
+# Always set: NORC_EVENT NORC_ACCOUNT (the account name) NORC_JID (your jid)
+
+[ "$NORC_OWN" = 1 ] && exit 0
+[ "$NORC_DELAYED" = 1 ] && exit 0
+[ -n "$NORC_REACTIONS" ] || exit 0
+command -v notify-send >/dev/null || exit 0
+exec notify-send --app-name=norc "$NORC_NAME reacted $NORC_REACTIONS" "${NORC_TEXT:-}"

@@ -14,6 +14,8 @@
 # NORC_DELAYED   1 for messages delivered on login (sent while you were offline)
 # NORC_CARBON    1 for a copy of a message received by another of your clients
 # NORC_REPLACES  for a correction: the id of the corrected message
+# NORC_REPLY_ID  for a reply: the id of the message replied to (NORC_BODY is without its quote)
+# NORC_REPLY_TO  for a reply: the author of the message replied to (full jid, if given)
 # Always set: NORC_EVENT NORC_ACCOUNT (the account name) NORC_JID (your jid)
 
 # skip messages delivered on login, and copies of messages of your other clients

@@ -6,11 +6,12 @@ import norc.Output;
 import norc.module.Messages;
 import xmpp.Jid;
 import xmpp.MessageArchiveManagement;
+import xmpp.MessageReply;
 import xmpp.client.Stream;
 
 /**
 	Message Archive Management (XEP-0313): `/history` shows the last messages with a contact (from the archive of the
-	server), or of a joined room (from the archive of the room).
+	server), or of a joined room (from the archive of the room). The messages shown can be reacted and replied to.
 **/
 class History extends Module {
 	/** Messages shown without a count, and at most **/
@@ -20,14 +21,16 @@ class History extends Module {
 
 	final contacts:Contacts;
 	final rooms:Rooms;
+	final messages:Messages;
 
 	/** The archive queries of the session **/
 	var mam:Null<MessageArchiveManagement>;
 
-	public function new(context:Context, contacts:Contacts, rooms:Rooms) {
+	public function new(context:Context, contacts:Contacts, rooms:Rooms, messages:Messages) {
 		super(context);
 		this.contacts = contacts;
 		this.rooms = rooms;
+		this.messages = messages;
 	}
 
 	override public function commands():Array<Commands.Command>
@@ -83,17 +86,19 @@ class History extends Module {
 								id: i.id,
 								from: i.message.from,
 								to: i.message.to,
-								body: i.message.body,
+								body: MessageReply.getBody(i.message),
 								date: (i.date != null) ? xmpp.DelayedDelivery.formatStamp(i.date) : null,
 								own: (room != null) ? Jid.parseResource(i.message.from) == rooms.nickIn(room) : Jid.parseBare(i.message.from
-									?? own) == own
+									?? own) == own,
+								reply_id: MessageReply.getReply(i.message)?.id
 							}
 					];
+					remember(jid, room, items, [for (m in messages) m.own]);
 					out.data({jid: jid, messages: messages, complete: r.complete}, () -> {
 						if (items.length == 0 && !quiet)
 							out.info('no messages with $jid in the archive');
 						for (i in 0...items.length)
-							show(items[i], messages[i].own, room, out);
+							show(jid, items[i], messages[i].own, room, out);
 					});
 				case Failed(e) if (!quiet):
 					out.error('cannot get the history of $jid: ${Term.errorText(e)}');
@@ -103,19 +108,39 @@ class History extends Module {
 		});
 	}
 
-	/** A message of the archive, as received or sent messages are shown **/
-	function show(item:MamItem, own:Bool, room:Null<String>, out:Output) {
+	/**
+		Keeps the messages of the archive of `jid` in the recent messages, to refer to them: in rooms by their archive id
+		(the `stanza-id` of the room), else by their id.
+	**/
+	function remember(jid:String, room:Null<String>, items:Array<MamItem>, own:Array<Bool>) {
+		final chat = Jid.parseBare(jid);
+		final older = [];
+		for (i in 0...items.length) {
+			final m = items[i].message;
+			final id = (room != null) ? items[i].id : m.id ?? items[i].id;
+			final body = MessageReply.getBody(m);
+			if (id == null || body == null)
+				continue;
+			final name = (room != null) ? Jid.parseResource(m.from) ?? "" : own[i] ? "you" : contacts.name(chat);
+			older.push({id: id, from: m.from, name: name, body: body, own: own[i]});
+		}
+		messages.recent.addOlder(chat, older);
+	}
+
+	/** A message of the archive of `jid`, as received or sent messages are shown **/
+	function show(jid:String, item:MamItem, own:Bool, room:Null<String>, out:Output) {
 		final m = item.message;
+		final text = messages.text(Jid.parseBare(jid), m);
 		if (room != null) {
 			final nick = Jid.parseResource(m.from) ?? "";
 			final label = Rooms.label(room);
-			Messages.show('<$nick>', own ? null : '$room/$nick', m.body, item.date, Term.style(label, 2) + ' ', label.length + 1);
+			Messages.show('<$nick>', own ? null : '$room/$nick', text, item.date, Term.style(label, 2) + ' ', label.length + 1);
 		} else if (own) {
 			final to = Jid.parseBare(m.to ?? "");
-			Messages.show('→ <${contacts.name(to)}>', null, m.body, item.date);
+			Messages.show('→ <${contacts.name(to)}>', null, text, item.date);
 		} else {
 			final from = Jid.parseBare(m.from);
-			Messages.show('<${contacts.name(from)}>', from, m.body, item.date);
+			Messages.show('<${contacts.name(from)}>', from, text, item.date);
 		}
 	}
 }

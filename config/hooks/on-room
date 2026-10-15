@@ -13,6 +13,9 @@
 # NORC_OWN      1: your own message, sent back by the room
 # NORC_DELAYED  1: history, sent when joining the room
 # NORC_MENTION  1: the message contains your nick
+# NORC_STANZA_ID  the id the room gave the message (if any)
+# NORC_REPLY_ID  for a reply: the id of the message replied to (NORC_BODY is without its quote)
+# NORC_REPLY_TO  for a reply: the occupant jid of the author of the message replied to
 # Always set: NORC_EVENT NORC_ACCOUNT (the account name) NORC_JID (your jid)
 
 [ "$NORC_MENTION" = 1 ] && [ "$NORC_DELAYED" = 0 ] || exit 0

@@ -1,19 +1,21 @@
 package norc.module;
 
 import norc.Commands;
+import norc.Forms;
 import norc.Module;
 import norc.Output;
 import norc.Term;
 import norc.module.Messages;
-import norc.Forms;
 import xmpp.Bookmarks;
 import xmpp.DataForm;
 import xmpp.Jid;
 import xmpp.Message;
+import xmpp.MessageReply;
 import xmpp.Muc;
 import xmpp.Presence;
 import xmpp.Response;
 import xmpp.ServiceDiscovery;
+import xmpp.StanzaId;
 import xmpp.XML;
 import xmpp.client.Stream;
 
@@ -71,6 +73,12 @@ class Rooms extends Module {
 	/** The room of the room mode (bare jid, lowercase): its occupants entering and leaving are shown **/
 	public var active:Null<String>;
 
+	/**
+		Called with each groupchat message of a room (bare jid), also without body, before it is shown;
+		returning `true` ends its processing (e.g. reactions).
+	**/
+	public final incoming = new Array<(room:String, m:Message) -> Bool>();
+
 	/** The last configuration form of a room, to complete field names **/
 	var configForm:Null<DataForm>;
 
@@ -98,7 +106,10 @@ class Rooms extends Module {
 	}
 
 	override public function commands():Array<Commands.Command> {
-		final complete:Map<String, Completion> = ["jid" => _ -> [for (r in rooms) r.jid], "contact" => arg -> contacts.completions(arg)];
+		final complete:Map<String, Completion> = [
+			"jid" => _ -> [for (r in rooms) r.jid],
+			"contact" => arg -> contacts.completions(arg)
+		];
 		return [
 			{
 				name: "rooms",
@@ -116,7 +127,8 @@ class Rooms extends Module {
 						name: "leave",
 						description: "leave all rooms",
 						online: true,
-						run: (args, out) -> for (r in [for (r in rooms) r]) leave(r.jid, out)
+						run: (args, out) -> for (r in [for (r in rooms) r])
+							leave(r.jid, out)
 					}
 				]
 			},
@@ -226,9 +238,10 @@ class Rooms extends Module {
 			case null: presence(p);
 			case muc: muc.handlePresence(p);
 		}
-		stream.onMessage = m -> switch find(m.from)?.muc {
-			case null: message(m);
-			case muc: muc.handleMessage(m);
+		stream.onMessage = m -> switch find(m.from) {
+			case null | {muc: null}: message(m);
+			case r:
+				if (m.type != groupchat || !Lambda.exists(incoming, f -> f(r.jid, m))) r.muc.handleMessage(m);
 		}
 		// after resuming a session, the server kept the rooms
 		for (r in rooms)
@@ -388,8 +401,8 @@ class Rooms extends Module {
 
 	/** A created room is locked until configured: accepts the default configuration (an instant room) **/
 	function unlock(r:Room)
-		stream.set(XML.create("query").set("xmlns", '${Muc.XMLNS}#owner').append(XML.create("x").set("xmlns", "jabber:x:data").set("type", "submit")),
-			r.jid, res -> switch res {
+		stream.set(XML.create("query").set("xmlns", '${Muc.XMLNS}#owner').append(XML.create("x").set("xmlns", "jabber:x:data").set("type", "submit")), r.jid,
+			res -> switch res {
 				case Error(e): Term.error('cannot unlock the new room ${r.jid}: ${Term.errorText(e)}');
 				case _:
 			});
@@ -421,7 +434,12 @@ class Rooms extends Module {
 			}
 			request(out, 'cannot list the rooms of $service', h -> ServiceDiscovery.discoItems(stream, service, null, h), payload -> {
 				final items = (payload == null) ? [] : ServiceDiscovery.parseItems(payload).slice(0, MAX_FOUND);
-				final found = new Array<{jid:String, ?name:String, ?occupants:Int, ?description:String}>();
+				final found = new Array<{
+					jid:String,
+					?name:String,
+					?occupants:Int,
+					?description:String
+				}>();
 				// the information of each room, in parallel
 				var pending = items.length;
 				function show() {
@@ -429,7 +447,8 @@ class Rooms extends Module {
 					out.data({service: service, rooms: found}, () -> {
 						out.info('$service: ${found.length} public rooms' + (found.length > 0 ? " (/room join <jid>)" : ""));
 						for (r in found)
-							out.print('  ${r.jid}' + (r.name != null && r.name != Jid.parseNode(r.jid) ? ' ${r.name}' : '')
+							out.print('  ${r.jid}'
+								+ (r.name != null && r.name != Jid.parseNode(r.jid) ? ' ${r.name}' : '')
 								+ Term.style(r.occupants != null ? ' (${r.occupants} occupants)' : '', 2)
 								+ (r.description != null && r.description.length > 0 ? ': ${r.description}' : ''));
 					});
@@ -525,16 +544,25 @@ class Rooms extends Module {
 		final nick = Jid.parseResource(m.from) ?? "";
 		final own = nick == r.nick;
 		final delay = m.delay();
-		final mention = !own && r.nick.length > 0 && m.body.toLowerCase().contains(r.nick.toLowerCase());
-		Messages.show('<$nick>', own ? null : '${r.jid}/$nick', m.body, delay?.date, Term.style(label(r.jid), 2) + ' ', label(r.jid).length + 1);
-		emit("room", [r.jid, nick, m.body], {
+		final body = MessageReply.getBody(m) ?? "";
+		final mention = !own && r.nick.length > 0 && body.toLowerCase().contains(r.nick.toLowerCase());
+		Messages.show('<$nick>', own ? null : '${r.jid}/$nick', messages.text(r.jid, m), delay?.date, Term.style(label(r.jid), 2) + ' ',
+			label(r.jid).length + 1);
+		// reactions and replies refer to the id the room gave it
+		final id = StanzaId.getStanzaId(m, r.jid);
+		messages.remember(r.jid, m, id, own, nick);
+		final reply = MessageReply.getReply(m);
+		emit("room", [r.jid, nick, body], {
 			room: r.jid,
 			nick: nick,
-			body: m.body,
+			body: body,
 			id: m.id,
+			stanza_id: id,
 			own: own,
 			delayed: delay != null,
-			mention: mention
+			mention: mention,
+			reply_id: reply?.id,
+			reply_to: reply?.to
 		});
 	}
 
@@ -552,16 +580,26 @@ class Rooms extends Module {
 		out.data({
 			bookmarks: [
 				for (b in list)
-					{jid: b.jid, name: b.name, nick: b.nick, autojoin: b.autojoin, joined: joined(b.jid)}
+					{
+						jid: b.jid,
+						name: b.name,
+						nick: b.nick,
+						autojoin: b.autojoin,
+						joined: joined(b.jid)
+					}
 			]
 		}, () -> {
 			if (list.length == 0)
 				out.info("no bookmarks (/bookmarks add <room>)");
 			for (b in list)
-				out.print('  ${b.jid}' + (b.name != null ? ' ${b.name}' : '')
-					+ Term.style([
-						for (s in [b.nick != null ? 'as ${b.nick}' : null, b.autojoin ? "autojoin" : null, joined(b.jid) ? "joined" : null]) if (s != null) s
-					].map(s -> ' $s').join(","), 2));
+				out.print('  ${b.jid}' + (b.name != null ? ' ${b.name}' : '') + Term.style([
+					for (s in [
+						b.nick != null ? 'as ${b.nick}' : null,
+						b.autojoin ? "autojoin" : null,
+						joined(b.jid) ? "joined" : null
+					])
+						if (s != null) s
+				].map(s -> ' $s').join(","), 2));
 		});
 	}
 
@@ -614,11 +652,15 @@ class Rooms extends Module {
 				out.error(e);
 				return;
 			}
-			final all = [for (f in form.fields) if (f.variable != null && f.type != fixed) f.variable => f.values ?? []];
+			final all = [
+				for (f in form.fields)
+					if (f.variable != null && f.type != fixed) f.variable => f.values ?? []
+			];
 			for (k => v in changed)
 				all.set(k, v);
-			request(out, 'cannot change the configuration of $jid', h -> stream.set(XML.create("query").set("xmlns", owner).append(form.createSubmit(all)), jid,
-				h), _ -> out.info('$jid: changed ${[for (k in changed.keys()) k].join(", ")}'));
+			request(out, 'cannot change the configuration of $jid',
+				h -> stream.set(XML.create("query").set("xmlns", owner).append(form.createSubmit(all)), jid, h),
+				_ -> out.info('$jid: changed ${[for (k in changed.keys()) k].join(", ")}'));
 		});
 	}
 
@@ -638,7 +680,8 @@ class Rooms extends Module {
 	function completeConfig(arg:String):Array<String> {
 		final i = arg.lastIndexOf(" ") + 1;
 		return (configForm == null) ? [] : [
-			for (f in configForm.fields) if (f.variable != null && f.type != fixed && f.type != hidden) arg.substr(0, i) + f.variable + "="
+			for (f in configForm.fields)
+				if (f.variable != null && f.type != fixed && f.type != hidden) arg.substr(0, i) + f.variable + "="
 		];
 	}
 
@@ -700,8 +743,9 @@ class Rooms extends Module {
 		if (inv == null || joined(inv.room))
 			return false;
 		final from = (inv.from != null) ? contacts.name(Jid.parseBare(inv.from)) : "someone";
-		Term.notice('$from invites you to ${inv.room}' + (inv.reason != null && inv.reason.length > 0 ? ' (${inv.reason})' : '')
-			+ ': /room join ${inv.room}', 33);
+		Term.notice('$from invites you to ${inv.room}' + (inv.reason != null
+			&& inv.reason.length > 0 ? ' (${inv.reason})' : '') + ': /room join ${inv.room}',
+			33);
 		emit("room-invite", [inv.room, inv.from ?? ""], {room: inv.room, from: inv.from, reason: inv.reason});
 		return i.message.body == null;
 	}
@@ -721,7 +765,8 @@ class Rooms extends Module {
 			if (list.length == 0)
 				out.info("in no rooms (/room join <room>)");
 			for (r in list)
-				out.print('  ${r.jid}' + Term.style(' as ${r.nick}, ${r.occupants} occupants', 2)
+				out.print('  ${r.jid}'
+					+ Term.style(' as ${r.nick}, ${r.occupants} occupants', 2)
 					+ (r.subject != null && r.subject.length > 0 ? ': ${r.subject}' : ''));
 		});
 	}
@@ -732,10 +777,17 @@ class Rooms extends Module {
 			return;
 		final nicks = [for (nick in r.occupants.keys()) nick];
 		nicks.sort((a, b) -> Reflect.compare(a.toLowerCase(), b.toLowerCase()));
-		out.data({room: r.jid, occupants: [for (nick in nicks) {nick: nick, presence: Contacts.describe(state(r.occupants.get(nick)))}]}, () -> {
+		out.data({
+			room: r.jid,
+			occupants: [
+				for (nick in nicks)
+					{nick: nick, presence: Contacts.describe(state(r.occupants.get(nick)))}
+			]
+		}, () -> {
 			out.info('${r.jid}: ${nicks.length} occupants');
 			for (nick in nicks)
-				out.print('  ' + ((nick == r.nick) ? Term.name(nick) : Term.name(nick, '${r.jid}/$nick'))
+				out.print('  '
+					+ ((nick == r.nick) ? Term.name(nick) : Term.name(nick, '${r.jid}/$nick'))
 					+ Term.style(' ${Contacts.describe(state(r.occupants.get(nick)))}', 2));
 		});
 	}

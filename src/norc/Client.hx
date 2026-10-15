@@ -19,7 +19,9 @@ import norc.module.Messages;
 import norc.module.Moods;
 import norc.module.Pings;
 import norc.module.Profile;
+import norc.module.Reactions;
 import norc.module.Receipts;
+import norc.module.Replies;
 import norc.module.Rooms;
 import norc.module.Time;
 import norc.module.Tunes;
@@ -190,12 +192,13 @@ class Client {
 			normal: account.prompt ?? "> ",
 			chat: account.chatPrompt ?? "{name}{state}> ",
 			room: account.roomPrompt ?? "#{name}> "
-		}, account.persistentCommandHistory != false ? '${Config.stateDir(account.name)}/history' : null);
+		},
+			account.persistentCommandHistory != false ? '${Config.stateDir(account.name)}/history' : null);
 		for (name => command in account.aliases ?? [])
 			commands.aliases.set(name, command);
 		commands.completers.set("jid", arg -> contacts.completions(arg));
 		final sessions = new JingleSessions(context);
-		final history = new History(context, contacts, rooms);
+		final history = new History(context, contacts, rooms, messages);
 		console.entered = (jid, out) -> history.recent(jid, account.chatHistory ?? 10, out);
 		modules = [
 			contacts,
@@ -209,6 +212,8 @@ class Client {
 			new Moods(context, messages, contacts),
 			new Tunes(context, messages, contacts),
 			new Corrections(context, messages),
+			new Reactions(context, messages, contacts, rooms),
+			new Replies(context, messages, contacts, rooms),
 			new Buzz(context, messages, contacts, account.attention != false),
 			new Time(context, contacts, account.entityTime == true),
 			new Pings(context, contacts),
@@ -218,9 +223,8 @@ class Client {
 			sessions,
 			new FileTransfers(context, contacts, sessions, account.downloadDir ?? Config.downloadDir()),
 			new Calls(context, contacts, sessions, account),
-			new Upload(context, messages, contacts)
-			// disabled for now (shared documents, /share)
-			// new Share(context, messages, contacts, account.shareService)
+			new Upload(context, messages, contacts) // disabled for now (shared documents, /share)
+				// new Share(context, messages, contacts, account.shareService)
 		];
 		for (m in modules)
 			commands.registerAll(m.commands());
@@ -404,7 +408,12 @@ class Client {
 	function showPresence(out:Output, changed:Bool) {
 		final presence = {state: (show : Null<String>) ?? "available", status: status};
 		final note = online() ? '' : changed ? ' (sent once connected)' : ' (not connected)';
-		out.data({state: presence.state, status: status, priority: priority, online: online()},
+		out.data({
+			state: presence.state,
+			status: status,
+			priority: priority,
+			online: online()
+		},
 			() -> out.info('presence: ${Contacts.describe(presence)}' + (priority != null ? ', priority $priority' : '') + note));
 	}
 

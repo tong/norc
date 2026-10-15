@@ -7,6 +7,7 @@ import norc.Term;
 import xmpp.Jid;
 import xmpp.LastMessageCorrection;
 import xmpp.Message;
+import xmpp.MessageReply;
 import xmpp.PubSub;
 import xmpp.XML;
 import xmpp.client.Stream;
@@ -36,6 +37,8 @@ typedef Incoming = {
 
 	Other modules extend messages: `outgoing` adds elements to sent messages (e.g. a receipt request),
 	`incoming` handles received messages before they are shown (e.g. receipts, chat states).
+	The messages shown are kept in `recent` (for reactions and replies); a reply (XEP-0461) is shown with a line
+	quoting the message replied to, its events have the text without the quote.
 **/
 class Messages extends Module {
 	/** Called with each sent message before it is sent, e.g. to add elements **/
@@ -46,6 +49,9 @@ class Messages extends Module {
 		returning `true` ends its processing: not shown, no event.
 	**/
 	public final incoming = new Array<Incoming->Bool>();
+
+	/** The last messages of each chat, also of rooms **/
+	public final recent = new Recent();
 
 	final contacts:Contacts;
 
@@ -70,20 +76,75 @@ class Messages extends Module {
 		stream.onMessage = m -> (m.type == error) ? failed(m) : receive(m);
 	}
 
-	/** Sends a chat message with `body` to `to` (a jid), with additional `elements`; returns it **/
-	public function send(to:String, body:String, ?elements:Array<XML>):Message {
+	/**
+		Sends a chat message with `body` to `to` (a jid), with additional `elements`, changed by `prepare` before it is
+		sent (e.g. a reply); returns it.
+	**/
+	public function send(to:String, body:String, ?elements:Array<XML>, ?prepare:Message->Void):Message {
 		final m = new Message(to, body);
 		m.id = xmpp.Stream.makeRandomId();
 		for (e in elements ?? [])
 			m.properties.push(e);
+		if (prepare != null)
+			prepare(m);
 		for (f in outgoing)
 			f(m);
 		stream.send(m);
 		// a room sends messages back to all occupants
-		if (m.type != groupchat)
+		if (m.type != groupchat) {
 			showSent(m);
+			remember(Jid.parseBare(to), m, null, true);
+		}
 		sentEvent(m, false);
 		return m;
+	}
+
+	/**
+		The text of `m` as shown in `chat` (bare jid): a reply starts with a line quoting the message replied to
+		(`↪ <name> text`).
+	**/
+	public function text(chat:String, m:Message):String {
+		final body = MessageReply.getBody(m) ?? "";
+		final reply = MessageReply.getReply(m);
+		if (reply == null)
+			return body;
+		final r = recent.find(chat, reply.id);
+		final quote = (r != null) ? '<${r.name}> ${r.body}' : quoted(m.body) ?? "a message";
+		return Term.style("↪ " + Recent.excerpt(quote, 60), 2) + "\n" + body;
+	}
+
+	/**
+		Keeps a message shown in `chat` (bare jid) in `recent`: `id` the id to refer to it (the id of the message if
+		`null`), a correction changes the text of the corrected message.
+	**/
+	public function remember(chat:String, m:Message, ?id:String, own:Bool, ?name:String) {
+		final body = MessageReply.getBody(m);
+		final id = id ?? m.id;
+		if (id == null || body == null)
+			return;
+		final replaces = LastMessageCorrection.correction(m);
+		if (replaces != null) {
+			recent.correct(chat, replaces, body);
+			return;
+		}
+		recent.add(chat, {
+			id: id,
+			from: m.from,
+			name: name ?? (own ? "you" : contacts.name(chat)),
+			body: body,
+			own: own
+		});
+	}
+
+	/** The quote at the start of `body` (lines starting with `>`), without `>`; `null` without **/
+	static function quoted(body:Null<String>):Null<String> {
+		final lines = [];
+		for (l in (body ?? "").split("\n")) {
+			if (!l.startsWith(">"))
+				break;
+			lines.push(l.substr(1).trim());
+		}
+		return (lines.length > 0) ? lines.join(" ") : null;
 	}
 
 	/**
@@ -101,22 +162,28 @@ class Messages extends Module {
 			if (m.to == null)
 				return;
 			showSent(m, delay?.date);
+			remember(Jid.parseBare(m.to), m, null, true);
 			sentEvent(m, true);
 			return;
 		}
 		// a correction of the last message (XEP-0308), checked by the module of corrections
 		final replaces = LastMessageCorrection.correction(m);
 		final from = (m.from != null) ? Jid.parseBare(m.from) : stream.domain;
-		show('<${contacts.name(from)}>' + corrected(m), from, m.body, delay?.date);
-		emit("message", [from, m.body], {
+		show('<${contacts.name(from)}>' + corrected(m), from, text(from, m), delay?.date);
+		remember(from, m, null, false);
+		final body = MessageReply.getBody(m);
+		final reply = MessageReply.getReply(m);
+		emit("message", [from, body], {
 			from: m.from ?? from,
 			name: contacts.name(from),
-			body: m.body,
+			body: body,
 			id: m.id,
 			type: m.type ?? "normal",
 			delayed: delay != null,
 			carbon: carbon == received,
-			replaces: replaces
+			replaces: replaces,
+			reply_id: reply?.id,
+			reply_to: reply?.to
 		});
 	}
 
@@ -149,19 +216,25 @@ class Messages extends Module {
 	/** The `sent` event: a message sent by this client, or by another client of the account (`carbon`) **/
 	function sentEvent(m:Message, carbon:Bool) {
 		final to = Jid.parseBare(m.to);
-		emit("sent", [to, m.body], {
+		final body = MessageReply.getBody(m);
+		final reply = MessageReply.getReply(m);
+		emit("sent", [to, body], {
 			to: m.to,
 			name: contacts.name(to),
-			body: m.body,
+			body: body,
 			id: m.id,
 			carbon: carbon,
-			replaces: LastMessageCorrection.correction(m)
+			replaces: LastMessageCorrection.correction(m),
+			reply_id: reply?.id,
+			reply_to: reply?.to
 		});
 	}
 
 	/** Prints a message sent by this client or another of the account: `12:03:41 → <alice> text`, in the own color **/
-	function showSent(m:Message, ?date:Date)
-		show('→ <${contacts.name(Jid.parseBare(m.to))}>' + corrected(m), null, m.body, date);
+	function showSent(m:Message, ?date:Date) {
+		final to = Jid.parseBare(m.to);
+		show('→ <${contacts.name(to)}>' + corrected(m), null, text(to, m), date);
+	}
 
 	/** ` ✎` for a correction of the last message (XEP-0308) **/
 	static function corrected(m:Message):String
