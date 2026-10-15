@@ -13,6 +13,7 @@ import norc.module.Corrections;
 import norc.module.Contacts;
 import norc.module.Discovery;
 import norc.module.FileTransfers;
+import norc.module.History;
 import norc.module.JingleSessions;
 import norc.module.Messages;
 import norc.module.Moods;
@@ -173,10 +174,13 @@ class Client {
 		}, account.persistentCommandHistory != false ? '${Config.stateDir(account.name)}/history' : null);
 		commands.completers.set("jid", _ -> contacts.completions());
 		final sessions = new JingleSessions(context);
+		final history = new History(context, contacts, rooms);
+		console.entered = (jid, out) -> history.recent(jid, account.chatHistory ?? 10, out);
 		modules = [
 			contacts,
 			messages,
 			rooms,
+			history,
 			new Carbons(context, messages, account.carbons != false),
 			new Receipts(context, messages, contacts),
 			chatStates,

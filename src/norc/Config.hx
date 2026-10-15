@@ -55,6 +55,9 @@ typedef Account = {
 	/** Keep the history of the input line (`-i`) in the state directory, `true` if not set **/
 	var ?persistentCommandHistory:Bool;
 
+	/** Messages of the archive shown when the chat mode starts with a contact, `10` if not set, `0`: none **/
+	var ?chatHistory:Int;
+
 	/** Prompt of the input line (`-i`), `> ` if not set **/
 	var ?prompt:String;
 
@@ -99,6 +102,7 @@ private typedef Key = {
 	`stream_management` (`0`: no acknowledgements and resumption of the session),
 	`call_helper` (program for the media of calls, with options),
 	`persistent_command_history` (`0`: the history of the input line is not kept),
+	`chat_history` (messages of the archive shown when the chat mode starts, `0`: none),
 	`prompt` (of the input line, in `"` to keep spaces at the start or end),
 	`chat_prompt` (in chat mode, `{name}`, `{jid}` and `{state}` of the contact),
 	`room_prompt` (in a room, `{name}`, `{jid}` and `{nick}`).
@@ -127,6 +131,7 @@ class Config {
 		flag("attention", a -> a.attention, (a, v) -> a.attention = v),
 		flag("stream_management", a -> a.streamManagement, (a, v) -> a.streamManagement = v),
 		{name: "call_helper", get: a -> a.callHelper, set: (a, v) -> a.callHelper = v},
+		{name: "chat_history", get: a -> (a.chatHistory != null) ? Std.string(a.chatHistory) : null, set: (a, v) -> a.chatHistory = parseCount(v)},
 		flag("persistent_command_history", a -> a.persistentCommandHistory, (a, v) -> a.persistentCommandHistory = v),
 		// in quotes: spaces at the start or end are kept
 		{name: "prompt", get: a -> (a.prompt != null) ? '"${a.prompt}"' : null, set: (a, v) -> a.prompt = unquote(v)},
@@ -370,6 +375,13 @@ class Config {
 		final v = Std.parseFloat(value);
 		if (Math.isNaN(v) || v < 0)
 			throw 'invalid keepalive: $value (seconds, 0 to disable)';
+		return v;
+	}
+
+	static function parseCount(value:String):Int {
+		final v = Std.parseInt(value);
+		if (v == null || v < 0 || Std.string(v) != value.trim())
+			throw 'invalid chat_history: $value (messages, 0 for none)';
 		return v;
 	}
 

@@ -44,6 +44,9 @@ class Console {
 	/** The line editor, `null` without terminal **/
 	var editor:Null<LineEditor>;
 
+	/** Called when the chat mode starts with a contact (not a room), e.g. to show the last messages **/
+	public var entered:Null<(jid:String, out:Output) -> Void>;
+
 	/** The jid of the chat mode; set on the main thread, read by the input thread (Ctrl-C) **/
 	var chat:Null<String>;
 
@@ -140,6 +143,8 @@ class Console {
 		state("active");
 		updatePrompt();
 		out.info('chat ${rooms.joined(jid) ? "in" : "with"} ${name(jid)}: lines without / are sent, /chat or Ctrl-C to leave');
+		if (entered != null && !rooms.joined(jid))
+			entered(jid, out);
 	}
 
 	function leave(out:Output) {

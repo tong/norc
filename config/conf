@@ -38,6 +38,9 @@
 # call_helper = norc-rtc --audio-source "pipewiresrc target-object=alsa_input.usb-headset"
 # call_helper = norc-rtc
 
+# Messages of the archive of the server (MAM) shown when the chat mode starts with a contact (/chat), 0: none.
+# chat_history = 10
+
 # Keep the history of the input line (-i) between runs, in ~/.local/state/norc/<account>/history (readable only
 # by you, with the messages typed in chat mode). 0 disables it.
 # persistent_command_history = 1
