@@ -18,5 +18,5 @@
 command -v notify-send >/dev/null || exit 0
 case $NORC_STATE in
 ringing) exec notify-send --app-name=norc --urgency=critical "$NORC_NAME is calling" "$NORC_MEDIA call: /call accept" ;;
-ended) [ "$NORC_REASON" = missed ] && exec notify-send --app-name=norc "Missed call from $NORC_NAME" ;;
+ended) if [ "$NORC_REASON" = missed ]; then exec notify-send --app-name=norc "Missed call from $NORC_NAME"; fi ;;
 esac
