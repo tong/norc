@@ -14,7 +14,7 @@ using StringTools;
 	The terminal is switched to non-canonical mode without echo and signals (`stty`): keys are handled here,
 	Ctrl-C included. Only on Unix terminals (`start` returns `null` otherwise); call `stop` to restore the terminal.
 
-	Keys: Tab (complete), ←/→, Home/End, Backspace/Delete, ↑/↓ history, Ctrl-A/E (start/end), Ctrl-U/K (delete to start/end),
+	Keys: Tab (complete), ←/→, Home/End, Backspace/Delete, ↑/↓ history (the lines starting with the text typed), Ctrl-A/E (start/end), Ctrl-U/K (delete to start/end),
 	Ctrl-W (delete word), Ctrl-L (clear screen), Ctrl-C (clear the line; on an empty line `INTERRUPT`), Ctrl-D (quit on an empty line).
 **/
 class LineEditor {
@@ -46,6 +46,9 @@ class LineEditor {
 
 	/** The new line while browsing the history **/
 	var draft = new Array<String>();
+
+	/** The history line shown by browsing, if the line was edited since then a new search starts **/
+	var browsed:Null<String>;
 
 	/** Reading a line (the prompt is shown) **/
 	var active = false;
@@ -374,15 +377,26 @@ class LineEditor {
 		return result;
 	}
 
-	/** Moves through the history: -1 older, 1 newer **/
+	/**
+		Moves through the history: -1 older, 1 newer. Only lines starting with the text typed before browsing
+		(all for an empty line), each different from the line shown. An edited history line is typed text:
+		browsing starts again from the newest line.
+	**/
 	function browse(dir:Int) {
-		final pos = historyPos + dir;
+		final shown = line.join("");
+		if (historyPos == history.length || shown != browsed) {
+			historyPos = history.length;
+			draft = line;
+		}
+		final prefix = draft.join("");
+		var pos = historyPos + dir;
+		while (pos >= 0 && pos < history.length && (!history[pos].startsWith(prefix) || history[pos] == shown))
+			pos += dir;
 		if (pos < 0 || pos > history.length)
 			return;
-		if (historyPos == history.length)
-			draft = line;
 		historyPos = pos;
 		line = (pos == history.length) ? draft : splitChars(history[pos]);
+		browsed = line.join("");
 		cursor = line.length;
 	}
 
