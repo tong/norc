@@ -52,6 +52,9 @@ typedef Account = {
 	/** Aliases of commands (`alias.h = help`): the name without `/`, the command it runs with its first arguments **/
 	var ?aliases:Map<String, String>;
 
+	/** Priority of the presence (-128 to 127), none (0) if not set **/
+	var ?priority:Int;
+
 	/** Join the rooms bookmarked with autojoin after the login, `true` if not set **/
 	var ?autojoinBookmarks:Bool;
 
@@ -108,6 +111,7 @@ private typedef Key = {
 	`stream_management` (`0`: no acknowledgements and resumption of the session),
 	`call_helper` (program for the media of calls, with options),
 	`autojoin_bookmarks` (`0`: don't join bookmarked rooms after the login),
+	`priority` (of the presence, -128 to 127),
 	`alias.<name>` (an alias of a command, e.g. `alias.h = help`, `alias.away = presence away`),
 	`persistent_command_history` (`0`: the history of the input line is not kept),
 	`chat_history` (messages of the archive shown when the chat mode starts, `0`: none),
@@ -138,6 +142,7 @@ class Config {
 		flag("entity_time", a -> a.entityTime, (a, v) -> a.entityTime = v),
 		flag("attention", a -> a.attention, (a, v) -> a.attention = v),
 		flag("stream_management", a -> a.streamManagement, (a, v) -> a.streamManagement = v),
+		{name: "priority", get: a -> (a.priority != null) ? Std.string(a.priority) : null, set: (a, v) -> a.priority = parsePriority(v)},
 		flag("autojoin_bookmarks", a -> a.autojoinBookmarks, (a, v) -> a.autojoinBookmarks = v),
 		{name: "call_helper", get: a -> a.callHelper, set: (a, v) -> a.callHelper = v},
 		{name: "chat_history", get: a -> (a.chatHistory != null) ? Std.string(a.chatHistory) : null, set: (a, v) -> a.chatHistory = parseCount(v)},
@@ -395,6 +400,13 @@ class Config {
 		final v = Std.parseFloat(value);
 		if (Math.isNaN(v) || v < 0)
 			throw 'invalid keepalive: $value (seconds, 0 to disable)';
+		return v;
+	}
+
+	static function parsePriority(value:String):Int {
+		final v = Std.parseInt(value);
+		if (v == null || v < -128 || v > 127 || Std.string(v) != value.trim())
+			throw 'invalid priority: $value (-128 to 127)';
 		return v;
 	}
 

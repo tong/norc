@@ -64,6 +64,9 @@ class Client {
 
 	var status:Null<String>;
 
+	/** Priority of the own presence (-128 to 127), `null`: none sent (0) **/
+	var priority:Null<Int>;
+
 	/** Creates the capabilities element of the current session **/
 	var caps:Null<() -> XML>;
 
@@ -98,6 +101,7 @@ class Client {
 	public function new(account:Account, password:String) {
 		this.account = account;
 		this.password = password;
+		priority = account.priority;
 		// the hooks and scripts of all accounts, then those of this account (if its config is a directory)
 		final accountDir = Config.accountDir(account.name);
 		final dirs = [Config.configDir()].concat(accountDir != null ? [accountDir] : []);
@@ -119,7 +123,21 @@ class Client {
 				args: "[state] [status...]",
 				description: "show or set your presence: available, chat, away, xa (extended away), dnd (busy), with a status message",
 				run: (args, out) -> setPresence(args[0], args[1], out),
-				complete: ["state" => _ -> ["available", "chat", "away", "xa", "dnd"]]
+				complete: ["state" => _ -> ["available", "chat", "away", "xa", "dnd"]],
+				subcommands: [
+					{
+						name: "status",
+						args: "[text...]",
+						description: "show or set your status message, keeping the presence state (- clears it), as /status",
+						run: (args, out) -> setStatus(args[0], out)
+					},
+					{
+						name: "priority",
+						args: "[priority]",
+						description: "show or set the priority of your presence (-128 to 127): messages to your bare jid go to the client with the highest",
+						run: (args, out) -> setPriority(args[0], out)
+					}
+				]
 			},
 			{
 				name: "status",
@@ -383,11 +401,26 @@ class Client {
 	function showPresence(out:Output, changed:Bool) {
 		final presence = {state: (show : Null<String>) ?? "available", status: status};
 		final note = online() ? '' : changed ? ' (sent once connected)' : ' (not connected)';
-		out.data({state: presence.state, status: status, online: online()}, () -> out.info('presence: ${Contacts.describe(presence)}$note'));
+		out.data({state: presence.state, status: status, priority: priority, online: online()},
+			() -> out.info('presence: ${Contacts.describe(presence)}' + (priority != null ? ', priority $priority' : '') + note));
+	}
+
+	function setPriority(value:Null<String>, out:Output) {
+		if (value == null) {
+			out.data({priority: priority ?? 0}, () -> out.info('priority: ${priority ?? 0}'));
+			return;
+		}
+		final p = Std.parseInt(value);
+		if (p == null || Std.string(p) != value.trim() || p < Priority.MIN || p > Priority.MAX) {
+			out.error('invalid priority: $value (-128 to 127)');
+			return;
+		}
+		priority = p;
+		updatePresence(out);
 	}
 
 	function sendPresence() {
-		final presence = new Presence(show, status);
+		final presence = new Presence(show, status, (priority != null) ? (priority : Priority) : null);
 		if (caps != null)
 			presence.properties.push(caps());
 		session.stream.send(presence);
