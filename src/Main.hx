@@ -22,6 +22,7 @@ Options:
       --stdin            the api over stdin and stdout (JSON lines, no token), other output to stderr
       --xmpp-debug       print the XMPP stream
       --no-color         disable colored output
+      --silent           print nothing (only errors that stop norc), e.g. with hooks or --api; needs password_cmd
   -v, --version          show the version
   -h, --help             show this help';
 
@@ -36,6 +37,7 @@ function main() {
 	var interactive = false;
 	var api = false;
 	var stdin = false;
+	var silent = false;
 	var save = false;
 	var yes = false;
 	var purge = false;
@@ -75,6 +77,9 @@ function main() {
 				debug = true;
 			case "--no-color":
 				Term.colors = false;
+			case "--silent":
+				silent = true;
+				Term.silent = true;
 			case "--save":
 				save = true;
 			case "--yes":
@@ -158,6 +163,13 @@ function main() {
 			exit('--stdin needs password_cmd in the account config');
 		Term.stderrOnly = true;
 	}
+	if (silent) {
+		if (interactive)
+			exit('--silent and -i: -i shows the input line, use one');
+		// the password can't be asked
+		if (account.passwordCmd == null)
+			exit('--silent needs password_cmd in the account config');
+	}
 	final pidFile = try PidFile.acquire(Config.stateDir(account.name)) catch (e) exit('${account.name}: $e');
 	final password = try AccountCommand.readPassword(account, "Password") catch (e) {
 		pidFile.release();
@@ -171,6 +183,8 @@ function main() {
 }
 
 private function exit<T>(msg:String):T {
+	// also with --silent: why norc doesn't run
+	Term.silent = false;
 	Term.error(msg);
 	Sys.exit(1);
 	return null;

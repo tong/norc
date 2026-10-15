@@ -11,11 +11,16 @@ class Term {
 	/** All output to stderr, e.g. while stdout carries the API (`--stdin`) **/
 	public static var stderrOnly = false;
 
+	/** No output at all (`--silent`) **/
+	public static var silent = false;
+
 	/** The line editor reading input (`-i` on a terminal): output is printed above its input line **/
 	public static var editor:Null<LineEditor>;
 
 	/** Prints a line (to stderr if `error`), above the input line while the editor is active **/
 	public static function println(text:String, error = false) {
+		if (silent)
+			return;
 		final e = editor;
 		if (e != null)
 			e.print(text, error);

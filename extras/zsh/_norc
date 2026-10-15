@@ -36,6 +36,7 @@ _norc() {
 		'--resource=[resource of the jid]:resource: '
 		'--xmpp-debug[print the XMPP stream]'
 		'--no-color[disable colored output]'
+		'--silent[print nothing]'
 		'(- *)'{-v,--version}'[show the version]'
 		'(- *)'{-h,--help}'[show help]'
 	)
