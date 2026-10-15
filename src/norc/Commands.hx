@@ -423,11 +423,11 @@ class Commands {
 			final c = e.command;
 			out.data({commands: [describe(e)].concat(c.subcommands != null ? [for (sub in c.subcommands) describe(e.subs.get(sub.name))] : [])}, () -> {
 				if (c.run != null)
-					out.print('  ${usage(e)}\n    ${c.description}');
+					out.print('  ${styledUsage(e)}\n    ${c.description}');
 				else
-					out.print('  ${e.path}: ${c.description}');
+					out.print('  ${Term.style(e.path, 36)}: ${c.description}');
 				if (c.aliases != null)
-					out.print('    aliases: ${c.aliases.join(", ")}');
+					out.print(Term.style('    aliases: ${c.aliases.join(", ")}', 2));
 				if (c.subcommands != null)
 					printTable([for (sub in c.subcommands) e.subs.get(sub.name)], out);
 			});
@@ -457,13 +457,19 @@ class Commands {
 		};
 
 	static function printTable(list:Array<Entry>, out:Output) {
-		final lines = [for (e in list) usage(e)];
+		// aligned by the usage without styles
 		var width = 0;
-		for (l in lines)
-			if (l.length > width)
-				width = l.length;
-		for (i in 0...list.length)
-			out.print('  ${lines[i].rpad(" ", width + 2)}${list[i].command.description}');
+		for (e in list)
+			if (usage(e).length > width)
+				width = usage(e).length;
+		for (e in list)
+			out.print('  ${styledUsage(e)}${"".rpad(" ", width + 2 - usage(e).length)}${e.command.description}');
+	}
+
+	/** `usage` for the terminal: the command, required and optional arguments in their colors **/
+	static function styledUsage(entry:Entry):String {
+		final args = (entry.command.args ?? "").split(" ").filter(a -> a.length > 0);
+		return Term.style(entry.path, 36) + [for (a in args) " " + Term.style(a, a.startsWith("<") ? 33 : 2)].join("");
 	}
 
 	static function usage(entry:Entry):String {
