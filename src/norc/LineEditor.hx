@@ -62,6 +62,15 @@ class LineEditor {
 	/** Called with the input line after each change by a key, on the input thread while holding the editor's lock **/
 	public var changed:Null<(line:String) -> Void>;
 
+	/** A text editor runs (`edit`): output is held back until it ends **/
+	var suspended = false;
+
+	/** Output held back while the text editor runs **/
+	final held = new Array<{text:String, error:Bool}>();
+
+	/** Ctrl-X was pressed: Ctrl-E follows for the text editor **/
+	var ctrlX = false;
+
 	/** The file keeping the history (lines appended), `null` without **/
 	var historyFile:Null<FileOutput>;
 
@@ -133,6 +142,11 @@ class LineEditor {
 	**/
 	public function print(text:String, error = false) {
 		mutex.acquire();
+		if (suspended) {
+			held.push({text: text, error: error});
+			mutex.release();
+			return;
+		}
 		if (active)
 			write("\r\x1B[K");
 		if (error) {
@@ -146,12 +160,12 @@ class LineEditor {
 	}
 
 	/**
-		Reads a line (blocking, on the input thread); `null` at the end of input.
+		Reads a line (blocking, on the input thread), starting with `initial`; `null` at the end of input.
 	**/
-	public function readLine():Null<String> {
+	public function readLine(?initial:String):Null<String> {
 		mutex.acquire();
-		line = [];
-		cursor = 0;
+		line = (initial != null) ? splitChars(initial) : [];
+		cursor = line.length;
 		historyPos = history.length;
 		active = true;
 		redraw();
@@ -174,6 +188,8 @@ class LineEditor {
 	}
 
 	function key(c:Int, input:haxe.io.Input):KeyResult {
+		final x = ctrlX;
+		ctrlX = false;
 		switch c {
 			case -1:
 				return finish(null);
@@ -203,6 +219,17 @@ class LineEditor {
 				if (cursor > 0) {
 					line.splice(cursor - 1, 1);
 					cursor--;
+				}
+			case 24: // ctrl-x, ctrl-e: the line in the text editor
+				ctrlX = true;
+				return Continue;
+			case 5 if (x):
+				mutex.release();
+				final text = edit(line.join(""));
+				mutex.acquire();
+				if (text != null) {
+					line = splitChars(text);
+					cursor = line.length;
 				}
 			case 1: // ctrl-a
 				cursor = 0;
@@ -310,6 +337,41 @@ class LineEditor {
 		cursor -= n;
 		for (char in splitChars(insert))
 			line.insert(cursor++, char);
+	}
+
+	/**
+		Edits `text` in the text editor (`$VISUAL`, `$EDITOR`, else `vi`), on the input thread without reading a line:
+		returns the text written, line breaks as `\n` (as in messages), `null` if the editor failed. Output is held
+		back while the editor runs.
+	**/
+	public function edit(text:String):Null<String> {
+		mutex.acquire();
+		suspended = true;
+		if (active)
+			write("\r\x1B[K");
+		mutex.release();
+		final path = haxe.io.Path.join([Sys.getEnv("TMPDIR") ?? "/tmp", 'norc-${Std.random(1 << 30)}.txt']);
+		var result:Null<String> = null;
+		try {
+			File.saveContent(path, "");
+			Sys.command("chmod", ["600", path]);
+			File.saveContent(path, text.replace("\\n", "\n"));
+			stty(saved);
+			final editor = Sys.getEnv("VISUAL") ?? Sys.getEnv("EDITOR") ?? "vi";
+			// the editor may have options (e.g. `code --wait`)
+			if (Sys.command("sh", ["-c", editor + ' "$$1" </dev/tty >/dev/tty', "sh", path]) == 0)
+				result = ~/\n+$/.replace(File.getContent(path), "").replace("\n", "\\n");
+		} catch (_) {}
+		try
+			FileSystem.deleteFile(path)
+		catch (_) {}
+		stty("-icanon -echo -isig min 1 time 0");
+		mutex.acquire();
+		suspended = false;
+		mutex.release();
+		for (h in held.splice(0, held.length))
+			print(h.text, h.error);
+		return result;
 	}
 
 	/** Moves through the history: -1 older, 1 newer **/

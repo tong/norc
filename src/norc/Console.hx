@@ -93,6 +93,12 @@ class Console {
 			run: (args, out) -> (args[0] == null) ? leave(out) : enter(args[0], out),
 			complete: ["jid" => arg -> contacts.completions(arg).concat(rooms.completions())]
 		});
+		commands.register({
+			name: "edit",
+			args: "[text...]",
+			description: "write the input line in your text editor ($VISUAL, $EDITOR), line breaks as \\n (also Ctrl-X Ctrl-E)",
+			run: (args, out) -> out.error("/edit: only on a terminal (-i)")
+		});
 		editor = LineEditor.start(prompts.normal, historyPath);
 		Term.editor = editor;
 		if (editor != null) {
@@ -103,8 +109,16 @@ class Console {
 		}
 		Thread.create(() -> {
 			final stdin = Sys.stdin();
+			// the text of the text editor (/edit), the next input line
+			var initial:Null<String> = null;
 			while (true) {
-				var line = (editor != null) ? editor.readLine() : try stdin.readLine() catch (_:haxe.io.Eof) null;
+				var line = (editor != null) ? editor.readLine(initial) : try stdin.readLine() catch (_:haxe.io.Eof) null;
+				initial = null;
+				// on this thread: the text editor reads the terminal, not this thread
+				if (editor != null && line != null && ~/^\/edit(\s|$)/.match(line.trim())) {
+					initial = editor.edit(line.trim().substr("/edit".length).trim()) ?? "";
+					continue;
+				}
 				if (line == LineEditor.INTERRUPT)
 					line = (chat != null) ? "/chat" : LineEditor.QUIT;
 				read(line);
