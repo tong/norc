@@ -16,6 +16,12 @@ typedef RecentMessage = {
 
 	/** Sent by the user (by any of their clients) **/
 	var own:Bool;
+
+	/** The id of the message, if `id` is another (the `stanza-id` of a room) **/
+	var ?messageId:String;
+
+	/** `id` is the `stanza-id` of the room (needed for moderation) **/
+	var ?stanzaId:Bool;
 }
 
 /**
@@ -27,6 +33,9 @@ class Recent {
 	static inline var MAX = 200;
 
 	final chats = new Map<String, Array<RecentMessage>>();
+
+	/** Ids of retracted messages (`chat id`), also their message ids **/
+	final retracted = new Map<String, Bool>();
 
 	public function new() {}
 
@@ -65,18 +74,39 @@ class Recent {
 			m.body = body;
 	}
 
-	/** The `n`-th last message of the others in `chat` (not the user's), 1 the last; `null` if there is none **/
-	public function last(chat:String, n = 1):Null<RecentMessage> {
+	/**
+		The `n`-th last message of the others in `chat` (`own`: of the user), 1 the last; `null` if there is none.
+	**/
+	public function last(chat:String, n = 1, own = false):Null<RecentMessage> {
 		final list = messages(chat);
 		var i = list.length;
 		while (--i >= 0)
-			if (!list[i].own && --n == 0)
+			if (list[i].own == own && --n == 0)
 				return list[i];
 		return null;
 	}
 
-	public function clear()
+	/** Removes the retracted message with `id`; returns it, `null` if unknown **/
+	public function retract(chat:String, id:String):Null<RecentMessage> {
+		final key = chat.toLowerCase();
+		retracted.set('$key $id', true);
+		final m = find(chat, id);
+		if (m == null)
+			return null;
+		messages(chat).remove(m);
+		if (m.messageId != null)
+			retracted.set('$key ${m.messageId}', true);
+		return m;
+	}
+
+	/** The message with `id` (also its message id) in `chat` was retracted **/
+	public function isRetracted(chat:String, id:String):Bool
+		return retracted.exists('${chat.toLowerCase()} $id');
+
+	public function clear() {
 		chats.clear();
+		retracted.clear();
+	}
 
 	/** The first line of `text`, at most `max` characters (with `…` if shortened) **/
 	public static function excerpt(text:String, max:Int):String {

@@ -119,6 +119,7 @@ class Messages extends Module {
 	**/
 	public function remember(chat:String, m:Message, ?id:String, own:Bool, ?name:String) {
 		final body = MessageReply.getBody(m);
+		final stanzaId = id != null;
 		final id = id ?? m.id;
 		if (id == null || body == null)
 			return;
@@ -132,7 +133,9 @@ class Messages extends Module {
 			from: m.from,
 			name: name ?? (own ? "you" : contacts.name(chat)),
 			body: body,
-			own: own
+			own: own,
+			messageId: (m.id != id) ? m.id : null,
+			stanzaId: stanzaId
 		});
 	}
 

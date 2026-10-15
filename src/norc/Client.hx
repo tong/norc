@@ -22,6 +22,7 @@ import norc.module.Profile;
 import norc.module.Reactions;
 import norc.module.Receipts;
 import norc.module.Replies;
+import norc.module.Retractions;
 import norc.module.Rooms;
 import norc.module.Time;
 import norc.module.Tunes;
@@ -214,6 +215,7 @@ class Client {
 			new Corrections(context, messages),
 			new Reactions(context, messages, contacts, rooms),
 			new Replies(context, messages, contacts, rooms),
+			new Retractions(context, messages, contacts, rooms),
 			new Buzz(context, messages, contacts, account.attention != false),
 			new Time(context, contacts, account.entityTime == true),
 			new Pings(context, contacts),

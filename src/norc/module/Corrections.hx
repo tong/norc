@@ -52,6 +52,10 @@ class Corrections extends Module {
 			out.error("no message to correct");
 			return;
 		}
+		if (messages.recent.isRetracted(Jid.parseBare(l.to), l.id)) {
+			out.error("your last message was retracted");
+			return;
+		}
 		// refers to the original message, also when correcting a correction
 		messages.send(l.to, body, [XML.create("replace").set("xmlns", LastMessageCorrection.XMLNS).set("id", l.id)]);
 	}

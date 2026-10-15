@@ -7,6 +7,7 @@ import norc.module.Messages;
 import xmpp.Jid;
 import xmpp.MessageArchiveManagement;
 import xmpp.MessageReply;
+import xmpp.MessageRetraction;
 import xmpp.client.Stream;
 
 /**
@@ -79,7 +80,10 @@ class History extends Module {
 		mam.query(query, room, res -> {
 			switch res {
 				case Page(r):
-					final items = r.items.filter(i -> i.message.body != null);
+					// without retractions and the messages they retract
+					final retracted = retractedIds(r.items, room);
+					final items = r.items.filter(i -> i.message.body != null && MessageRetraction.getRetraction(i.message) == null
+						&& !retracted.exists(idOf(i, room)));
 					final messages = [
 						for (i in items)
 							{
@@ -117,14 +121,41 @@ class History extends Module {
 		final older = [];
 		for (i in 0...items.length) {
 			final m = items[i].message;
-			final id = (room != null) ? items[i].id : m.id ?? items[i].id;
+			final id = idOf(items[i], room);
 			final body = MessageReply.getBody(m);
 			if (id == null || body == null)
 				continue;
 			final name = (room != null) ? Jid.parseResource(m.from) ?? "" : own[i] ? "you" : contacts.name(chat);
-			older.push({id: id, from: m.from, name: name, body: body, own: own[i]});
+			older.push({id: id, from: m.from, name: name, body: body, own: own[i], messageId: (m.id != id) ? m.id : null, stanzaId: room != null});
 		}
 		messages.recent.addOlder(chat, older);
+	}
+
+	/** The id messages refer to a message of the archive by: in rooms its archive id (the `stanza-id` of the room) **/
+	static function idOf(item:MamItem, room:Null<String>):Null<String>
+		return (room != null) ? item.id : item.message.id ?? item.id;
+
+	/** The ids of the messages retracted in `items`: by their sender, or by the room (moderated) **/
+	static function retractedIds(items:Array<MamItem>, room:Null<String>):Map<String, Bool> {
+		function sender(m:xmpp.Message):String
+			return (room != null) ? Jid.parseResource(m.from ?? "") ?? "" : Jid.parseBare(m.from ?? "").toLowerCase();
+		final by = new Map<String, String>();
+		for (i in items) {
+			final r = MessageRetraction.getRetraction(i.message);
+			if (r == null)
+				continue;
+			if (!r.moderated)
+				by.set(r.id, sender(i.message));
+			else if (room != null && Jid.parseResource(i.message.from ?? "") == null)
+				by.set(r.id, "");
+		}
+		return [
+			for (i in items) {
+				final id = idOf(i, room);
+				if (id != null && by.exists(id) && (by.get(id) == "" || by.get(id) == sender(i.message)))
+					id => true;
+			}
+		];
 	}
 
 	/** A message of the archive of `jid`, as received or sent messages are shown **/
