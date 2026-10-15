@@ -70,6 +70,17 @@ typedef Account = {
 	var ?callSpeaker:String;
 	var ?callCamera:String;
 
+	/** Size of the sent video in calls (`1280x720`), of the camera if not set **/
+	var ?callVideoSize:String;
+
+	/** Frames per second of the sent video in calls, of the camera if not set **/
+	var ?callVideoFps:Int;
+
+	/** Bitrates of the sent video and audio in calls (kbit/s), the defaults of the codecs if not set **/
+	var ?callVideoBitrate:Int;
+
+	var ?callAudioBitrate:Int;
+
 	/** Echo cancellation and noise suppression of the microphone in calls, `true` if not set **/
 	var ?callEchoCancel:Bool;
 
@@ -127,6 +138,7 @@ private typedef Key = {
 	`call_helper` (program for the media of calls, with options),
 	`call_microphone`, `call_speaker`, `call_camera` (devices of calls by name, see `/calls devices`),
 	`call_echo_cancel` (`0`: no echo cancellation and noise suppression in calls),
+	`call_video_size` (`1280x720`), `call_video_fps`, `call_video_bitrate`, `call_audio_bitrate` (kbit/s) of the sent media,
 	`stun`, `turn` (servers for calls, `stun://host:port`, `turn://user:password@host:port`, several separated by `,`),
 	`autojoin_bookmarks` (`0`: don't join bookmarked rooms after the login),
 	`priority` (of the presence, -128 to 127),
@@ -165,6 +177,14 @@ class Config {
 		{name: "call_microphone", get: a -> a.callMicrophone, set: (a, v) -> a.callMicrophone = v},
 		{name: "call_speaker", get: a -> a.callSpeaker, set: (a, v) -> a.callSpeaker = v},
 		{name: "call_camera", get: a -> a.callCamera, set: (a, v) -> a.callCamera = v},
+		{
+			name: "call_video_size",
+			get: a -> a.callVideoSize,
+			set: (a, v) -> a.callVideoSize = ~/^[1-9]\d*x[1-9]\d*$/.match(v) ? v : throw 'invalid call_video_size: $v (e.g. 1280x720)'
+		},
+		{name: "call_video_fps", get: a -> number(a.callVideoFps), set: (a, v) -> a.callVideoFps = positive("call_video_fps", v)},
+		{name: "call_video_bitrate", get: a -> number(a.callVideoBitrate), set: (a, v) -> a.callVideoBitrate = positive("call_video_bitrate", v)},
+		{name: "call_audio_bitrate", get: a -> number(a.callAudioBitrate), set: (a, v) -> a.callAudioBitrate = positive("call_audio_bitrate", v)},
 		flag("call_echo_cancel", a -> a.callEchoCancel, (a, v) -> a.callEchoCancel = v),
 		{
 			name: "stun",
@@ -441,6 +461,17 @@ class Config {
 		if (i == -1 || !schemes.contains(value.substr(0, i)) || value.length <= i + 3)
 			throw 'invalid server: $value (${[for (s in schemes) '$s://…'].join(", ")})';
 		return value;
+	}
+
+	static function number(v:Null<Int>):Null<String>
+		return (v != null) ? Std.string(v) : null;
+
+	/** A positive integer, the value of `name` **/
+	static function positive(name:String, value:String):Int {
+		final v = Std.parseInt(value);
+		if (v == null || v <= 0 || Std.string(v) != value.trim())
+			throw 'invalid $name: $value (a positive number)';
+		return v;
 	}
 
 	static function parsePriority(value:String):Int {

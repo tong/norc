@@ -359,7 +359,7 @@ class Calls extends Module {
 			}
 		});
 
-	/** The options of norc-rtc of the settings (devices, echo cancellation) **/
+	/** The options of norc-rtc of the settings (devices, echo cancellation, video size and rate, bitrates) **/
 	function settings():Array<String> {
 		final options = [];
 		for (o in [
@@ -371,6 +371,14 @@ class Calls extends Module {
 				options.push('${o.option}=${o.value}');
 		if (account.callEchoCancel != false)
 			options.push("--echo-cancel");
+		for (o in [
+			{option: "--video-size", value: account.callVideoSize},
+			{option: "--video-fps", value: (account.callVideoFps != null) ? Std.string(account.callVideoFps) : null},
+			{option: "--video-bitrate", value: (account.callVideoBitrate != null) ? Std.string(account.callVideoBitrate) : null},
+			{option: "--audio-bitrate", value: (account.callAudioBitrate != null) ? Std.string(account.callAudioBitrate) : null}
+		])
+			if (o.value != null)
+				options.push('${o.option}=${o.value}');
 		return options;
 	}
 

@@ -17,6 +17,8 @@ norc-rtc [--audio=DIRECTION] [--video[=DIRECTION]] [--stun URI] [--turn URI ...]
 | `--turn turn://user:password@host:port` | TURN server, repeatable (`turns://` for TLS) |
 | `--audio-source`, `--audio-sink` | GStreamer elements, default `autoaudiosrc`, `autoaudiosink` |
 | `--microphone`, `--speaker`, `--camera NAME` | a device by its name or a part of it (`--list-devices`), instead of the source and sink elements |
+| `--video-size WxH`, `--video-fps N` | size and frame rate of the sent video (default: of the camera) |
+| `--video-bitrate`, `--audio-bitrate KBPS` | bitrates of the sent video (VP8, default 256) and audio (Opus, default: its choice) |
 | `--list-devices` | list the microphones, speakers and cameras, then exit |
 | `--echo-cancel` | echo cancellation (of the played audio) and noise suppression of the microphone (`webrtcdsp`) |
 | `--audio-file PATH` | play a file instead of the audio source (any format GStreamer decodes, at its speed; silence after its end) |
@@ -50,7 +52,7 @@ diagnostics go to stderr. It exits at the end of its input or after `hangup`: ex
 | `{"type": "candidate", "mline": 0, "candidate": "candidate:…"}` | an own ICE candidate, for the peer |
 | `{"type": "gathering", "state": "complete"}` | all own candidates were sent |
 | `{"type": "state", "state": "connecting" \| "connected" \| "disconnected" \| "failed" \| "closed"}` | the connection to the peer |
-| `{"type": "media", "media": "audio" \| "video"}` | media of the peer arrive |
+| `{"type": "media", "media": "audio" \| "video", "width": 640, "height": 360}` | media of the peer arrive (video with its size) |
 | `{"type": "error", "message": "…"}` | an error, the call ends |
 
 A call: the caller sends `offer`, passes the `sdp` it gets to the peer, and the peer's answer back as `sdp`; both

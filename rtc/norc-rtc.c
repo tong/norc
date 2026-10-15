@@ -34,7 +34,9 @@ typedef enum { NONE, SEND, RECEIVE, BOTH } Direction;
 static Direction audio = BOTH, video = NONE;
 static gboolean test = FALSE, bundle = TRUE, echo_cancel = FALSE,
                 list_devices = FALSE;
-static gchar *microphone = NULL, *speaker = NULL, *camera = NULL;
+static gchar *microphone = NULL, *speaker = NULL, *camera = NULL,
+             *video_size = NULL;
+static gint video_fps = 0, video_bitrate = 0, audio_bitrate = 0;
 
 static gboolean sends(Direction d);
 static GstElement *device_element(const char *klass, const char *name,
@@ -99,6 +101,14 @@ static GOptionEntry options[] = {
      "Camera: its name or a part of it", "NAME"},
     {"list-devices", 0, 0, G_OPTION_ARG_NONE, &list_devices,
      "List the microphones, speakers and cameras, then exit", NULL},
+    {"video-size", 0, 0, G_OPTION_ARG_STRING, &video_size,
+     "Size of the sent video, e.g. 1280x720 (default: of the camera)", "WxH"},
+    {"video-fps", 0, 0, G_OPTION_ARG_INT, &video_fps,
+     "Frames per second of the sent video (default: of the camera)", "N"},
+    {"video-bitrate", 0, 0, G_OPTION_ARG_INT, &video_bitrate,
+     "Bitrate of the sent video in kbit/s (default: VP8's 256)", "KBPS"},
+    {"audio-bitrate", 0, 0, G_OPTION_ARG_INT, &audio_bitrate,
+     "Bitrate of the sent audio in kbit/s (default: Opus' choice)", "KBPS"},
     {"echo-cancel", 0, 0, G_OPTION_ARG_NONE, &echo_cancel,
      "Echo cancellation and noise suppression of the microphone", NULL},
     {"no-bundle", 0, G_OPTION_FLAG_REVERSE, G_OPTION_ARG_NONE, &bundle,
@@ -316,8 +326,12 @@ static void on_connection_state(GstElement *webrtc, GParamSpec *spec,
 /* A decoded stream of the peer: played (or discarded with --test) */
 static void on_decoded(GstElement *decodebin, GstPad *pad, gpointer user_data) {
   GstCaps *caps = gst_pad_get_current_caps(pad);
-  const char *name = gst_structure_get_name(gst_caps_get_structure(caps, 0));
+  const GstStructure *s = gst_caps_get_structure(caps, 0);
+  const char *name = gst_structure_get_name(s);
   const gboolean audio = g_str_has_prefix(name, "audio/");
+  int width = 0, height = 0;
+  gst_structure_get_int(s, "width", &width);
+  gst_structure_get_int(s, "height", &height);
   gst_caps_unref(caps);
   if (!audio && !g_str_has_prefix(name, "video/"))
     return;
@@ -366,7 +380,15 @@ static void on_decoded(GstElement *decodebin, GstPad *pad, gpointer user_data) {
   gst_object_unref(sinkpad);
   gst_clear_object(&probe_pad);
   gst_clear_object(&probe);
-  send_value("media", "media", audio ? "audio" : "video");
+  JsonBuilder *b = message("media");
+  member(b, "media", audio ? "audio" : "video");
+  if (!audio && width > 0) {
+    json_builder_set_member_name(b, "width");
+    json_builder_add_int_value(b, width);
+    json_builder_set_member_name(b, "height");
+    json_builder_add_int_value(b, height);
+  }
+  write_message(b);
 }
 
 /* A stream of the peer (RTP): decoded */
@@ -634,6 +656,28 @@ static gboolean start(void) {
                                      "audioconvert ! ",
                                      echo ? "true" : "false")
                    : NULL;
+  gchar *opus = (audio_bitrate > 0) ? g_strdup_printf("bitrate=%d", audio_bitrate * 1000) : g_strdup("");
+  // the size and rate of the sent video, and its bitrate
+  int width = 0, height = 0;
+  if (video_size != NULL && (sscanf(video_size, "%dx%d", &width, &height) != 2 || width <= 0 || height <= 0)) {
+    fail("invalid video size: %s (e.g. 1280x720)", video_size);
+    g_free(opus);
+    g_free(dsp);
+    g_free(file);
+    return FALSE;
+  }
+  GString *scale = g_string_new("");
+  if (width > 0 || video_fps > 0) {
+    g_string_append(scale, (width > 0) ? "videoscale ! " : "");
+    g_string_append(scale, (video_fps > 0) ? "videorate ! " : "");
+    g_string_append(scale, "video/x-raw");
+    if (width > 0)
+      g_string_append_printf(scale, ",width=%d,height=%d", width, height);
+    if (video_fps > 0)
+      g_string_append_printf(scale, ",framerate=%d/1", video_fps);
+    g_string_append(scale, " ! ");
+  }
+  gchar *vp8 = (video_bitrate > 0) ? g_strdup_printf("target-bitrate=%d", video_bitrate * 1000) : g_strdup("");
   GString *desc =
       g_string_new(bundle ? "webrtcbin name=webrtc bundle-policy=max-bundle "
                           : "webrtcbin name=webrtc bundle-policy=none ");
@@ -641,7 +685,7 @@ static gboolean start(void) {
     g_string_append_printf(
       desc,
       "%s ! queue ! audioconvert ! audioresample ! %s volume name=audio-mute ! "
-      "valve name=audio-send ! opusenc ! rtpopuspay pt=111 "
+      "valve name=audio-send ! opusenc %s ! rtpopuspay pt=111 "
       "! application/x-rtp,media=audio,encoding-name=OPUS,payload=111,encoding-params=(string)2 ! "
       "webrtc. ",
       file           ? file
@@ -649,7 +693,8 @@ static gboolean start(void) {
       : microphone   ? "identity name=microphone"
       : audio_source ? audio_source
                      : "autoaudiosrc",
-      dsp ? dsp : "");
+      dsp ? dsp : "", opus);
+  g_free(opus);
   g_free(file);
   g_free(dsp);
   // the played audio for the echo cancellation, the received audio is linked to it
@@ -663,8 +708,8 @@ static gboolean start(void) {
   if (sends(video))
     g_string_append_printf(
         desc,
-        "%s ! queue ! videoconvert ! valve name=video-mute ! valve name=video-send ! "
-        "vp8enc deadline=1 "
+        "%s ! queue ! videoconvert ! %svalve name=video-mute ! valve name=video-send ! "
+        "vp8enc deadline=1 %s "
         "keyframe-max-dist=60 ! rtpvp8pay pt=96 "
         "! application/x-rtp,media=video,encoding-name=VP8,payload=96 ! "
         "webrtc. ",
@@ -672,7 +717,10 @@ static gboolean start(void) {
                "video/x-raw,width=320,height=240"
         : camera       ? "identity name=camera"
         : video_source ? video_source
-                       : "autovideosrc");
+                       : "autovideosrc",
+        scale->str, vp8);
+  g_string_free(scale, TRUE);
+  g_free(vp8);
   GError *error = NULL;
   GstElement *parsed = gst_parse_launch(desc->str, &error);
   g_string_free(desc, TRUE);

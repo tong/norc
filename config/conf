@@ -42,6 +42,13 @@
 # Echo cancellation and noise suppression of the microphone in calls; 0 disables it (e.g. with headphones).
 # call_echo_cancel = 1
 
+# The sent video: size and frames per second (default: of the camera), bitrates of video and audio in kbit/s
+# (default: of the codecs), e.g. lower on mobile data.
+# call_video_size = 1280x720
+# call_video_fps = 30
+# call_video_bitrate = 1000
+# call_audio_bitrate = 32
+
 # STUN and TURN servers for calls (/call), needed when the other side isn't on the same network: in addition to
 # those of your server (XEP-0215, e.g. Prosody's mod_turn_external with coturn). Several TURN servers separated by ,
 # stun = stun://stun.example.org:3478
