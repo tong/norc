@@ -149,6 +149,10 @@ class Contacts extends Module {
 		return (matches.length == 1) ? matches[0] : input;
 	}
 
+	/** `input` is a jid (with `@`), or the name of a contact (as for `resolve`) **/
+	public function known(input:String):Bool
+		return lookup(input).length > 0;
+
 	/** The bare jid is in the roster **/
 	public function contains(bare:String):Bool
 		return find(bare) != null;

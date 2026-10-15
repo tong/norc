@@ -41,6 +41,18 @@ typedef Command = {
 
 	/** Completions of arguments by name, in addition to (or instead of) those of `Commands.completers` **/
 	var ?complete:Map<String, Completion>;
+
+	/** `false`: a left out first `jid` argument is not the contact of the chat mode (see `Target`) **/
+	var ?target:Bool;
+}
+
+/**
+	The contact of the chat mode: a first argument `jid` left out is its jid.
+	A required one is left out if the first word is no jid (with `@`) or contact (`known`), an optional one without arguments.
+**/
+typedef Target = {
+	var jid:String;
+	var known:(word:String) -> Bool;
 }
 
 /**
@@ -163,10 +175,10 @@ class Commands {
 
 	/**
 		Parses and runs an input line, e.g. `/msg juliet@example.com hi`, writing its output to `out`
-		(the terminal by default). With `slash` `false` the `/` is optional.
+		(the terminal by default). With `slash` `false` the `/` is optional, with `target` a jid argument can be left out.
 		Returns `false` if the command could not run (unknown, invalid arguments, not connected).
 	**/
-	public function run(line:String, ?out:Output, slash = true):Bool {
+	public function run(line:String, ?out:Output, slash = true, ?target:Target):Bool {
 		out ??= TermOutput.instance;
 		line = line.trim();
 		if (line.length == 0)
@@ -183,7 +195,7 @@ class Commands {
 			out.error('unknown command: /${(i == -1) ? line : line.substr(0, i)} (/help for the commands)');
 			return false;
 		}
-		return execute(resolved.entry, resolved.args, null, out);
+		return execute(resolved.entry, (target != null && leavesOut(resolved.entry, resolved.args, target)) ? '${target.jid} ${resolved.args}' : resolved.args, null, out);
 	}
 
 	/**
@@ -245,7 +257,7 @@ class Commands {
 		Returns the text being completed (the end of `before`) and the sorted candidates replacing it,
 		`null` if there is nothing to complete.
 	**/
-	public function complete(before:String):Null<{word:String, candidates:Array<String>}> {
+	public function complete(before:String, target = false):Null<{word:String, candidates:Array<String>}> {
 		if (!before.startsWith("/"))
 			return null;
 		final text = before.substr(1);
@@ -259,7 +271,7 @@ class Commands {
 			if (i == -1) {
 				// a subcommand, or the first argument of the command
 				final c = result(args, [for (name in entry.subs.keys()) name]);
-				final a = completeArgs(entry, args);
+				final a = completeArgs(entry, args, target);
 				if (a != null)
 					for (v in a.candidates)
 						c.candidates.push(v);
@@ -272,11 +284,34 @@ class Commands {
 			entry = sub;
 			args = args.substr(i + 1).ltrim();
 		}
-		return (entry == null) ? null : completeArgs(entry, args);
+		return (entry == null) ? null : completeArgs(entry, args, target);
 	}
 
-	/** Completes the argument at the end of `args` (the arguments of `entry`) **/
-	function completeArgs(entry:Entry, args:String):Null<{word:String, candidates:Array<String>}> {
+	/** The first argument `jid` of `entry` is left out in `args`, to be the jid of `target` **/
+	static function leavesOut(entry:Entry, args:String, target:Target):Bool {
+		final p = entry.params[0];
+		if (p == null || p.name != "jid" || entry.command.target == false)
+			return false;
+		return args.length == 0 || (!p.optional && !target.known(args.split(" ")[0]));
+	}
+
+	/**
+		Completes the argument at the end of `args` (the arguments of `entry`); with `target` (chat mode) also as if
+		a first `jid` argument was left out.
+	**/
+	function completeArgs(entry:Entry, args:String, target = false):Null<{word:String, candidates:Array<String>}> {
+		final c = completeParams(entry, entry.params, args);
+		if (!target || entry.params[0]?.name != "jid" || entry.command.target == false)
+			return c;
+		final left = completeParams(entry, entry.params.slice(1), args);
+		if (c == null || c.candidates.length == 0)
+			return left;
+		if (left != null && left.word == c.word)
+			return result(c.word, c.candidates.concat(left.candidates));
+		return c;
+	}
+
+	function completeParams(entry:Entry, params:Array<Param>, args:String):Null<{word:String, candidates:Array<String>}> {
 		// start of each word, the last one is being typed (empty after a space)
 		final starts = new Array<Int>();
 		var i = 0;
@@ -289,7 +324,6 @@ class Commands {
 		}
 		if (starts.length == 0 || args.endsWith(" "))
 			starts.push(args.length);
-		final params = entry.params;
 		var w = 0;
 		for (p in 0...params.length) {
 			final param = params[p];

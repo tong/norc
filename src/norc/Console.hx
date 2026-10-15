@@ -70,6 +70,7 @@ class Console {
 		commands.register({
 			name: "chat",
 			args: "[jid]",
+			target: false,
 			description: "chat with a contact: lines without / are sent to it (// for a line starting with /); without jid, or Ctrl-C: leave",
 			run: (args, out) -> (args[0] == null) ? leave(out) : enter(args[0], out)
 		});
@@ -103,7 +104,7 @@ class Console {
 	/** Runs an input line (on the main thread): a command, or a message in chat mode **/
 	public function input(line:String) {
 		if (chat == null || line.trim().length == 0 || !message(line))
-			commands.run(line);
+			commands.run(line, null, true, (chat != null) ? {jid: chat, known: contacts.known} : null);
 		else
 			commands.call("msg", [chat, line.startsWith("//") ? line.substr(1) : line]);
 	}
@@ -196,7 +197,7 @@ class Console {
 		var result = null;
 		final lock = new Lock();
 		context.post(() -> {
-			result = commands.complete(before);
+			result = commands.complete(before, chat != null);
 			lock.release();
 		});
 		// nothing if the main thread is busy
