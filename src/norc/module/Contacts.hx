@@ -32,6 +32,9 @@ class Contacts extends Module {
 	/** Nicknames published by contacts (bare jid), their names if the roster has none **/
 	public final nicknames = new Map<String, String>();
 
+	/** The files of the avatars of contacts (and the own) by bare jid (lowercase), set by the avatars module **/
+	public final avatars = new Map<String, String>();
+
 	/** Contacts asking to see the own presence **/
 	final requests = new Array<String>();
 

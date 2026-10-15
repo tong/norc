@@ -237,6 +237,10 @@ class Config {
 		return names;
 	}
 
+	/** Directory for cached data of all accounts (e.g. avatars): `$XDG_CACHE_HOME/norc` **/
+	public static function cacheDir():String
+		return (windows() ? env("LOCALAPPDATA", "AppData/Local") + "/norc/cache" : env("XDG_CACHE_HOME", ".cache") + "/norc");
+
 	/** Directory for received files: `$XDG_DOWNLOAD_DIR` or `Downloads` in the home directory **/
 	public static function downloadDir():String
 		return windows() ? home() + "/Downloads" : env("XDG_DOWNLOAD_DIR", "Downloads");

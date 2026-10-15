@@ -186,7 +186,8 @@ class Messages extends Module {
 			carbon: carbon == received,
 			replaces: replaces,
 			reply_id: reply?.id,
-			reply_to: reply?.to
+			reply_to: reply?.to,
+			avatar: contacts.avatars.get(from.toLowerCase())
 		});
 	}
 
