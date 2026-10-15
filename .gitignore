@@ -2,4 +2,5 @@ build/
 out/
 *.hl
 /norc
+/norc-rtc
 /PLAN.md

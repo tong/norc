@@ -130,10 +130,22 @@ from-c: | $(HASHLINK_SRC)/src/hl.h
 	cp $(STATIC)/$(BIN) $(BIN)
 	strip $(BIN)
 
+# --- norc-rtc: the media of calls (GStreamer webrtcbin), a separate program -----------------------------------
+#
+# Needs GStreamer with webrtcbin (gst-plugins-bad), libnice, opus and vpx, and json-glib.
+# Test it without XMPP: rtc/loopback.py [--video] [--real]
+
+RTC_PKGS := gstreamer-1.0 gstreamer-webrtc-1.0 gstreamer-sdp-1.0 json-glib-1.0
+RTC_CFLAGS ?= -O2 -Wall
+
+norc-rtc$(EXE): rtc/norc-rtc.c
+	$(CC) $(RTC_CFLAGS) -o $@ $< $$(pkg-config --cflags --libs $(RTC_PKGS))
+
 # --- Install (Linux): `make install`, `sudo make install`, `make install PREFIX=~/.local` ---------------
 #
-# Installs the single binary. `make install-completion` installs the shell completion: for the login shell
-# ($SHELL) if it is zsh or bash, or for the shells in COMPLETION (e.g. COMPLETION="zsh bash").
+# Installs the single binary, and norc-rtc if it was built (`make norc-rtc`). `make install-completion` installs
+# the shell completion: for the login shell ($SHELL) if it is zsh or bash, or for the shells in COMPLETION
+# (e.g. COMPLETION="zsh bash").
 # DESTDIR is prepended to all paths (packaging).
 
 PREFIX ?= /usr/local
@@ -143,6 +155,8 @@ BASH_COMPLETION_DIR ?= $(PREFIX)/share/bash-completion/completions
 
 install: $(BIN)
 	install -Dm755 $(BIN) $(DESTDIR)$(BINDIR)/norc
+	@if [ -f norc-rtc$(EXE) ]; then echo install -Dm755 norc-rtc$(EXE) $(DESTDIR)$(BINDIR)/norc-rtc; \
+		install -Dm755 norc-rtc$(EXE) $(DESTDIR)$(BINDIR)/norc-rtc; fi
 
 install-completion:
 	@for sh in $${COMPLETION:-$${SHELL##*/}}; do \
@@ -155,9 +169,9 @@ install-completion:
 	done
 
 uninstall:
-	rm -f $(DESTDIR)$(BINDIR)/norc
+	rm -f $(DESTDIR)$(BINDIR)/norc $(DESTDIR)$(BINDIR)/norc-rtc
 	rm -f $(DESTDIR)$(ZSH_COMPLETION_DIR)/_norc
 	rm -f $(DESTDIR)$(BASH_COMPLETION_DIR)/norc
 
 clean:
-	rm -rf $(BUILD) out norc.hl $(BIN)
+	rm -rf $(BUILD) out norc.hl $(BIN) norc-rtc$(EXE)
