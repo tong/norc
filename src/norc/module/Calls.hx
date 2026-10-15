@@ -14,6 +14,7 @@ import sys.thread.Thread;
 import xmpp.Jid;
 import xmpp.Jingle;
 import xmpp.JingleRtp;
+import xmpp.ServiceDiscovery;
 import xmpp.XML;
 
 using Lambda;
@@ -91,6 +92,9 @@ private typedef Call = {
 
 	/** A file played instead of the microphone **/
 	var ?file:String;
+
+	/** The media share one connection (BUNDLE): the peer supports grouping **/
+	var bundle:Bool;
 
 	/** Where status messages go: of the command which started or accepted the call **/
 	var out:Output;
@@ -203,7 +207,12 @@ class Calls extends Module {
 			c.file = options.file;
 			out.info('#${c.id} calling ${name(c)} (${describeMedia(c)})');
 			event(c, "calling");
-			start(c);
+			// one connection for all media only with clients supporting it (e.g. not Dino)
+			ServiceDiscovery.discoInfo(stream, peer, null, res -> {
+				c.bundle = res.payload != null && ServiceDiscovery.parseInfo(res.payload).features.contains(JingleRtp.XMLNS_GROUPING);
+				if (calls.contains(c))
+					start(c);
+			});
 		});
 	}
 
@@ -234,6 +243,8 @@ class Calls extends Module {
 		}
 		final c = add(session.peer, true, offered("audio"), offered("video"), Ringing, TermOutput.instance);
 		c.session = session;
+		// as offered
+		c.bundle = JingleRtp.group(session.payload) != null;
 		listen(c);
 		session.info([XML.create("ringing").set("xmlns", JingleRtp.XMLNS_INFO)]);
 		// with the terminal bell
@@ -306,7 +317,7 @@ class Calls extends Module {
 	/** Starts the media of `c`: the caller creates an offer, the callee answers the offer of the peer **/
 	function start(c:Call) {
 		try {
-			final options = ['--audio=${c.audio}'].concat(c.video != none ? ['--video=${c.video}'] : []).concat(c.file != null ? ["--audio-file", c.file] : []);
+			final options = (c.bundle ? [] : ["--no-bundle"]).concat(['--audio=${c.audio}']).concat(c.video != none ? ['--video=${c.video}'] : []).concat(c.file != null ? ["--audio-file", c.file] : []);
 			c.rtc = new Rtc(helper.concat(options), context.post, msg -> media(c, msg), code -> stopped(c, code));
 		} catch (e) {
 			c.out.error('cannot start ${helper[0]}: $e');
@@ -470,6 +481,7 @@ class Calls extends Module {
 			localCandidates: [],
 			remoteCandidates: [],
 			described: false,
+			bundle: true,
 			muted: [],
 			out: out
 		};

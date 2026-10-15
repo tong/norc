@@ -6,7 +6,7 @@ between it and the peer.
 
 ```
 norc-rtc [--audio=DIRECTION] [--video[=DIRECTION]] [--stun URI] [--turn URI ...] [--audio-source PIPELINE] [--audio-file PATH] [--audio-sink PIPELINE]
-         [--video-source PIPELINE] [--video-sink PIPELINE] [--test]
+         [--video-source PIPELINE] [--video-sink PIPELINE] [--no-bundle] [--test]
 ```
 
 | Option | |
@@ -18,6 +18,7 @@ norc-rtc [--audio=DIRECTION] [--video[=DIRECTION]] [--stun URI] [--turn URI ...]
 | `--audio-source`, `--audio-sink` | GStreamer elements, default `autoaudiosrc`, `autoaudiosink` |
 | `--audio-file PATH` | play a file instead of the audio source (any format GStreamer decodes, at its speed; silence after its end) |
 | `--video-source`, `--video-sink` | default `autovideosrc`, `autovideosink` |
+| `--no-bundle` | a connection for each media, for peers without BUNDLE (e.g. Dino); by default all media share one |
 | `--test` | test signals as sources (a tone, a test picture), received media is discarded |
 
 The directions apply to the offer, and limit the answer to an offer (e.g. `--video=none` answers a video call without

@@ -32,7 +32,7 @@ static GMutex output_lock;
 typedef enum { NONE, SEND, RECEIVE, BOTH } Direction;
 
 static Direction audio = BOTH, video = NONE;
-static gboolean test = FALSE;
+static gboolean test = FALSE, bundle = TRUE;
 
 static gboolean sends(Direction d);
 static void set_directions(void);
@@ -87,6 +87,8 @@ static GOptionEntry options[] = {
      "Video source (default autovideosrc)", "PIPELINE"},
     {"video-sink", 0, 0, G_OPTION_ARG_STRING, &video_sink,
      "Video sink (default autovideosink)", "PIPELINE"},
+    {"no-bundle", 0, G_OPTION_FLAG_REVERSE, G_OPTION_ARG_NONE, &bundle,
+     "A connection for each media (the peer doesn't support BUNDLE)", NULL},
     {"test", 0, 0, G_OPTION_ARG_NONE, &test,
      "Test signals as sources, discard received media", NULL},
     {NULL}};
@@ -495,7 +497,8 @@ static gboolean start(void) {
   }
   gchar *file = (audio_file != NULL) ? file_source() : NULL;
   GString *desc =
-      g_string_new("webrtcbin name=webrtc bundle-policy=max-bundle ");
+      g_string_new(bundle ? "webrtcbin name=webrtc bundle-policy=max-bundle "
+                          : "webrtcbin name=webrtc bundle-policy=none ");
   if (sends(audio))
     g_string_append_printf(
       desc,
