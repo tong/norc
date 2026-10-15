@@ -30,7 +30,7 @@ function main() {
 	var accountName:Null<String> = null;
 	var jid:Null<String> = null;
 	var host:Null<String> = null;
-	var port:Null<String> = null;
+	var port:Null<Int> = null;
 	var resource:Null<String> = null;
 	var debug = false;
 	var interactive = false;
@@ -60,7 +60,7 @@ function main() {
 			case "--host":
 				host = value();
 			case "--port":
-				port = value();
+				port = try Config.parsePort(value()) catch (e) exit(Std.string(e));
 			case "--resource":
 				resource = value();
 				if (resource.trim().length == 0)
@@ -111,7 +111,6 @@ function main() {
 	switch positional {
 		case []:
 		case ["account", _] | ["account", _, _] | ["account"]:
-			final port = port != null ? (try Config.parsePort(port) catch (e) exit(Std.string(e))) : null;
 			Sys.exit(AccountCommand.run(positional.slice(1), {
 				name: accountName,
 				host: host,
@@ -129,7 +128,6 @@ function main() {
 			final seconds = (timeout != null) ? Std.parseFloat(timeout) : 20.0;
 			if (Math.isNaN(seconds) || seconds <= 0)
 				exit('invalid timeout: $timeout');
-			final port = port != null ? (try Config.parsePort(port) catch (e) exit(Std.string(e))) : null;
 			Sys.exit(norc.Check.run(positional.slice(1), {json: json, timeout: seconds, debug: debug, port: port}));
 		case _:
 			exit('unknown command: ${positional.join(" ")}\n\n$USAGE');
@@ -151,7 +149,7 @@ function main() {
 	if (api)
 		account.api = true;
 	if (port != null)
-		account.port = try Config.parsePort(port) catch (e) exit(Std.string(e));
+		account.port = port;
 	if (stdin) {
 		if (interactive)
 			exit('--stdin and -i both read stdin, use one');
@@ -161,9 +159,7 @@ function main() {
 		Term.stderrOnly = true;
 	}
 	final pidFile = try PidFile.acquire(Config.stateDir(account.name)) catch (e) exit('${account.name}: $e');
-	final password = try {
-		account.passwordCmd != null ? Term.readCommand(account.passwordCmd) : Term.readPassword('Password for ${xmpp.Jid.parseBare(account.jid)}: ');
-	} catch (e) {
+	final password = try AccountCommand.readPassword(account, "Password") catch (e) {
 		pidFile.release();
 		exit('cannot read password: $e');
 	}

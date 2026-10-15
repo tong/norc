@@ -5,7 +5,6 @@ import norc.Module;
 import norc.Output;
 import norc.Term;
 import xmpp.Block;
-import xmpp.Response;
 import xmpp.XML;
 import xmpp.client.Stream;
 
@@ -13,20 +12,18 @@ import xmpp.client.Stream;
 	Blocking communication with other entities (XEP-0191): `/block`.
 	The server blocks, for all clients of the account; changes are pushed to all of them.
 **/
-class Blocking implements Module {
+class Blocking extends Module {
+	final contacts:Contacts;
+
 	/** Blocked jids, as last received from the server **/
 	var blocked = new Array<String>();
 
-	var stream:Null<Stream>;
-
-	/** A contact name to its jid, other input unchanged **/
-	final resolve:String->String;
-
-	public function new(resolve:String->String) {
-		this.resolve = resolve;
+	public function new(context:Context, contacts:Contacts) {
+		super(context);
+		this.contacts = contacts;
 	}
 
-	public function commands():Array<Commands.Command>
+	override public function commands():Array<Commands.Command>
 		return [
 			{
 				name: "block",
@@ -39,24 +36,21 @@ class Blocking implements Module {
 						args: "<jid>",
 						description: "block a jid, contact or domain (on the server, for all your clients)",
 						online: true,
-						run: (args, out) -> block(resolve(args[0]), out)
+						run: (args, out) -> block(contacts.jid(args[0]), out)
 					},
 					{
 						name: "remove",
 						args: "[jid]",
 						description: "unblock a jid, or all without jid",
 						online: true,
-						run: (args, out) -> unblock(args[0] != null ? resolve(args[0]) : null, out)
+						run: (args, out) -> unblock(args[0] != null ? contacts.jid(args[0]) : null, out)
 					}
 				]
 			}
 		];
 
-	public function features():Array<String>
-		return [];
-
-	public function attach(stream:Stream) {
-		this.stream = stream;
+	override public function attach(stream:Stream) {
+		super.attach(stream);
 		Block.handlePushes(stream, (isBlocked, jids) -> {
 			if (isBlocked) {
 				for (jid in jids)
@@ -73,64 +67,28 @@ class Blocking implements Module {
 		});
 	}
 
-	public function online() {
-		// requesting the list also subscribes to the pushes of changes
-		Block.getBlocklist(stream, res -> switch res {
-			case Result(payload):
-				blocked = (payload == null) ? [] : Block.getItems(payload);
-			case Error(e):
-				// the server doesn't support blocking
-				blocked = [];
+	// requesting the list also subscribes to the pushes of changes (an error: the server doesn't support blocking)
+	override public function online()
+		Block.getBlocklist(stream, res -> blocked = items(res.payload));
+
+	function list(out:Output)
+		request(out, "cannot load the block list", handler -> Block.getBlocklist(stream, handler), payload -> {
+			blocked = items(payload);
+			out.data({blocked: blocked.copy()}, () -> {
+				if (blocked.length == 0)
+					out.info("no blocked jids");
+				for (jid in blocked)
+					out.print('  $jid');
+			});
 		});
-	}
 
-	public function detach()
-		stream = null;
+	function block(jid:String, out:Output)
+		request(out, 'cannot block $jid', handler -> Block.block(stream, [jid], handler), _ -> out.info('blocked $jid'));
 
-	function list(out:Output) {
-		final done = out.wait();
-		Block.getBlocklist(stream, res -> {
-			switch res {
-				case Result(payload):
-					blocked = (payload == null) ? [] : Block.getItems(payload);
-					out.data({blocked: blocked.copy()}, () -> {
-						if (blocked.length == 0)
-							out.info("no blocked jids");
-						for (jid in blocked)
-							out.print('  $jid');
-					});
-				case Error(e):
-					out.error('cannot load the block list: ${errorText(e)}');
-			}
-			done();
-		});
-	}
+	function unblock(jid:Null<String>, out:Output)
+		request(out, 'cannot unblock ${jid ?? "all"}', handler -> Block.unblock(stream, (jid != null) ? [jid] : null, handler),
+			_ -> out.info('unblocked ${jid ?? "all"}'));
 
-	function block(jid:String, out:Output) {
-		final done = out.wait();
-		Block.block(stream, [jid], res -> {
-			switch res {
-				case Result(_): out.info('blocked $jid');
-				case Error(e): out.error('cannot block $jid: ${errorText(e)}');
-			}
-			done();
-		});
-	}
-
-	function unblock(jid:Null<String>, out:Output) {
-		final done = out.wait();
-		Block.unblock(stream, jid != null ? [jid] : null, res -> {
-			switch res {
-				case Result(_): out.info(jid != null ? 'unblocked $jid' : 'unblocked all');
-				case Error(e): out.error('cannot unblock ${jid ?? "all"}: ${errorText(e)}');
-			}
-			done();
-		});
-	}
-
-	static function errorText(e:xmpp.Stanza.Error):String
-		return switch (e.condition : String) {
-			case "service-unavailable", "feature-not-implemented": 'your server does not support blocking (XEP-0191)';
-			case c: c + (e.text != null ? ' (${e.text})' : '');
-		}
+	static function items(payload:Null<XML>):Array<String>
+		return (payload == null) ? [] : Block.getItems(payload);
 }

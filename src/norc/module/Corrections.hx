@@ -7,14 +7,13 @@ import norc.module.Messages;
 import xmpp.Jid;
 import xmpp.LastMessageCorrection;
 import xmpp.XML;
-import xmpp.client.Stream;
 
 /**
 	Last Message Correction (XEP-0308): `/correct` replaces your last sent message; corrections of contacts are
 	shown with `✎` (the `message` event has `replaces`, the id of the corrected message).
 	A correction is accepted only for the last message of its sender, else it is shown as a new message.
 **/
-class Corrections implements Module {
+class Corrections extends Module {
 	final messages:Messages;
 
 	/** The last sent message (not a correction), the one `/correct` replaces **/
@@ -23,7 +22,8 @@ class Corrections implements Module {
 	/** Id of the last received message of each contact (bare jid), the only one they can correct **/
 	final received = new Map<String, String>();
 
-	public function new(messages:Messages) {
+	public function new(context:Context, messages:Messages) {
+		super(context);
 		this.messages = messages;
 		messages.outgoing.push(m -> {
 			if (m.body != null && m.id != null && LastMessageCorrection.correction(m) == null)
@@ -32,7 +32,7 @@ class Corrections implements Module {
 		messages.incoming.push(receive);
 	}
 
-	public function commands():Array<Commands.Command>
+	override public function commands():Array<Commands.Command>
 		return [
 			{
 				name: "correct",
@@ -43,14 +43,8 @@ class Corrections implements Module {
 			}
 		];
 
-	public function features():Array<String>
+	override public function features():Array<String>
 		return [LastMessageCorrection.XMLNS];
-
-	public function attach(stream:Stream) {}
-
-	public function online() {}
-
-	public function detach() {}
 
 	function correct(body:String, out:Output) {
 		final l = last;

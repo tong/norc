@@ -7,6 +7,8 @@ import norc.Term;
 import xmpp.Jid;
 import xmpp.LastMessageCorrection;
 import xmpp.Message;
+import xmpp.PubSub;
+import xmpp.XML;
 import xmpp.client.Stream;
 
 using StringTools;
@@ -35,7 +37,7 @@ typedef Incoming = {
 	Other modules extend messages: `outgoing` adds elements to sent messages (e.g. a receipt request),
 	`incoming` handles received messages before they are shown (e.g. receipts, chat states).
 **/
-class Messages implements Module {
+class Messages extends Module {
 	/** Called with each sent message before it is sent, e.g. to add elements **/
 	public final outgoing = new Array<Message->Void>();
 
@@ -45,24 +47,14 @@ class Messages implements Module {
 	**/
 	public final incoming = new Array<Incoming->Bool>();
 
-	var stream:Null<Stream>;
+	final contacts:Contacts;
 
-	/** Emits an event (to hooks and API clients) **/
-	final emit:Emit;
-
-	/** The jid of a contact given by name or jid, `null` (with an error) if unknown **/
-	final resolve:(input:String, out:Output) -> Null<String>;
-
-	/** The name of a contact (bare jid), or the jid **/
-	final name:String->String;
-
-	public function new(emit:Emit, resolve:(input:String, out:Output) -> Null<String>, name:String->String) {
-		this.emit = emit;
-		this.resolve = resolve;
-		this.name = name;
+	public function new(context:Context, contacts:Contacts) {
+		super(context);
+		this.contacts = contacts;
 	}
 
-	public function commands():Array<Commands.Command>
+	override public function commands():Array<Commands.Command>
 		return [
 			{
 				name: "msg",
@@ -73,24 +65,17 @@ class Messages implements Module {
 			}
 		];
 
-	public function features():Array<String>
-		return [];
-
-	public function attach(stream:Stream)
-		this.stream = stream;
-
-	public function online() {}
-
-	public function detach()
-		stream = null;
+	override public function attach(stream:Stream) {
+		super.attach(stream);
+		stream.onMessage = m -> (m.type == error) ? failed(m) : receive(m);
+	}
 
 	/** Sends a chat message with `body` to `to` (a jid), with additional `elements`; returns it **/
-	public function send(to:String, body:String, ?elements:Array<xmpp.XML>):Message {
+	public function send(to:String, body:String, ?elements:Array<XML>):Message {
 		final m = new Message(to, body);
 		m.id = xmpp.Stream.makeRandomId();
-		if (elements != null)
-			for (e in elements)
-				m.properties.push(e);
+		for (e in elements ?? [])
+			m.properties.push(e);
 		for (f in outgoing)
 			f(m);
 		stream.send(m);
@@ -116,15 +101,15 @@ class Messages implements Module {
 			if (m.to == null)
 				return;
 			final to = Jid.parseBare(m.to);
-			show(to, m.body, delay?.date, '→ <${name(to)}>$corrected');
+			show(to, m.body, delay?.date, '→ <${contacts.name(to)}>$corrected');
 			sentEvent(m, true);
 			return;
 		}
 		final from = (m.from != null) ? Jid.parseBare(m.from) : stream.domain;
-		show(from, m.body, delay?.date, (replaces != null) ? '<${name(from)}>$corrected' : null);
+		show(from, m.body, delay?.date, (replaces != null) ? '<${contacts.name(from)}>$corrected' : null);
 		emit("message", [from, m.body], {
 			from: m.from ?? from,
-			name: name(from),
+			name: contacts.name(from),
 			body: m.body,
 			id: m.id,
 			type: m.type ?? "normal",
@@ -134,12 +119,38 @@ class Messages implements Module {
 		});
 	}
 
+	/**
+		Handles the PEP notifications (XEP-0163) of `node` in a received message: `item` is called with the sender
+		(bare jid) and the payload of each item (`null` if empty). Returns `true` if the message is such a notification.
+	**/
+	public static function pep(i:Incoming, node:String, item:(from:String, payload:Null<XML>) -> Void):Bool {
+		final m = i.message;
+		return switch (m.from != null) ?PubSub.getEvent
+		(m) : null
+		{
+			case Items(n, items, _) if (n == node):
+				for (e in items)
+					item(Jid.parseBare(m.from), e.firstElement);
+				true;
+			case _:
+				false;
+		}
+	}
+
+	/** An error returned for a sent message, e.g. the recipient doesn't exist **/
+	function failed(m:Message) {
+		final from = m.from ?? stream.domain;
+		Term.error('message error from ${Jid.parseBare(from)}: ${Term.errorText(m.error)}');
+		final condition:String = m.error?.condition ?? "error";
+		emit("error", ["message", condition], {kind: "message", text: condition, from: from});
+	}
+
 	/** The `sent` event: a message sent by this client, or by another client of the account (`carbon`) **/
 	function sentEvent(m:Message, carbon:Bool) {
 		final to = Jid.parseBare(m.to);
 		emit("sent", [to, m.body], {
 			to: m.to,
-			name: name(to),
+			name: contacts.name(to),
 			body: m.body,
 			id: m.id,
 			carbon: carbon,
@@ -151,9 +162,9 @@ class Messages implements Module {
 		Prints a message of `jid` (bare): `12:03 <alice> text`, continuation lines aligned with the first.
 		`date` is the time it was sent if delayed, `marker` replaces `<name>` (e.g. for sent messages).
 	**/
-	public function show(jid:String, body:String, ?date:Date, ?marker:String) {
+	function show(jid:String, body:String, ?date:Date, ?marker:String) {
 		final time = Term.timestamp(date ?? Date.now());
-		final label = marker ?? '<${name(jid)}>';
+		final label = marker ?? '<${contacts.name(jid)}>';
 		final lines = body.split("\n");
 		Term.println('$time ' + Term.style(label, 36) + ' ' + lines[0]);
 		final indent = "".lpad(" ", time.length + label.length + 2);
@@ -162,7 +173,7 @@ class Messages implements Module {
 	}
 
 	function msg(input:String, body:String, out:Output) {
-		final to = resolve(input, out);
+		final to = contacts.resolve(input, out);
 		if (to == null)
 			return;
 		if (!Jid.isValid(to)) {

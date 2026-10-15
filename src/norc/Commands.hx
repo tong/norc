@@ -103,24 +103,25 @@ class Commands {
 		final existing = entries.get(command.name);
 		if (existing != null && isGroup(existing.command) && isGroup(command)) {
 			for (sub in command.subcommands) {
-				final e = createEntry(sub, '${existing.path} ${sub.name}');
-				for (name in [sub.name].concat(sub.aliases ?? [])) {
-					if (existing.subs.exists(name))
-						throw 'command ${existing.path} $name already registered';
-					existing.subs.set(name, e);
-				}
+				addSub(existing, sub);
 				existing.command.subcommands.push(sub);
 			}
 			return;
 		}
-		final entry = createEntry(command, '/${command.name}');
-		for (name in [command.name].concat(command.aliases ?? [])) {
-			if (entries.exists(name))
-				throw 'command /$name already registered';
-			entries.set(name, entry);
-		}
+		add(entries, createEntry(command, '/${command.name}'), "/");
 		names.push(command.name);
 	}
+
+	/** Adds `entry` by its name and aliases to `map`; throws if one is taken **/
+	static function add(map:Map<String, Entry>, entry:Entry, parent:String)
+		for (name in [entry.command.name].concat(entry.command.aliases ?? [])) {
+			if (map.exists(name))
+				throw 'command $parent$name already registered';
+			map.set(name, entry);
+		}
+
+	static function addSub(entry:Entry, sub:Command)
+		add(entry.subs, createEntry(sub, '${entry.path} ${sub.name}'), entry.path + " ");
 
 	static function isGroup(command:Command):Bool
 		return command.run == null && command.args == null && command.subcommands != null;
@@ -132,15 +133,8 @@ class Commands {
 			path: path,
 			subs: new Map()
 		};
-		if (command.subcommands != null)
-			for (sub in command.subcommands) {
-				final e = createEntry(sub, '$path ${sub.name}');
-				for (name in [sub.name].concat(sub.aliases ?? [])) {
-					if (entry.subs.exists(name))
-						throw 'command $path $name already registered';
-					entry.subs.set(name, e);
-				}
-			}
+		for (sub in command.subcommands ?? [])
+			addSub(entry, sub);
 		return entry;
 	}
 
@@ -353,8 +347,7 @@ class Commands {
 		final names = try FileSystem.readDirectory(path) catch (_) [];
 		return [
 			for (name in names)
-				if (hidden || !name.startsWith("."))
-					dir + name + (FileSystem.isDirectory(haxe.io.Path.join([path, name])) ? "/" : "")
+				if (hidden || !name.startsWith(".")) dir + name + (FileSystem.isDirectory(haxe.io.Path.join([path, name])) ? "/" : "")
 		];
 	}
 
@@ -373,7 +366,8 @@ class Commands {
 		return try {
 			parseArgs(resolved.entry.params, resolved.args);
 			true;
-		} catch (_:String) false;
+		} catch (_:String)
+			false;
 	}
 
 	/**
@@ -556,7 +550,7 @@ class Commands {
 		}
 		skipSpaces();
 		if (pos < input.length)
-			throw (skipped != null && args.length == params.length && args[args.length - 1] == null) ? '${skipped.name} must be a number' : 'too many arguments';
+			throw(skipped != null && args.length == params.length && args[args.length - 1] == null) ? '${skipped.name} must be a number' : 'too many arguments';
 		return args;
 	}
 }

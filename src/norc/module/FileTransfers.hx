@@ -1,9 +1,9 @@
 package norc.module;
 
-import haxe.io.Bytes;
 import haxe.io.Path;
 import norc.Commands;
 import norc.Config;
+import norc.Files;
 import norc.Module;
 import norc.Output;
 import norc.Term;
@@ -11,7 +11,6 @@ import sys.FileSystem;
 import sys.io.File;
 import xmpp.Jid;
 import xmpp.Jingle;
-import xmpp.Response;
 import xmpp.ServiceDiscovery;
 import xmpp.client.Stream;
 
@@ -51,9 +50,8 @@ private typedef Transfer = {
 
 	Files are kept in memory while they are transferred, so their size is limited (`MAX_SIZE`).
 **/
-class FileTransfers implements Module {
-	/** Features to advertise for service discovery **/
-	public static final FEATURES = [
+class FileTransfers extends Module {
+	static final FEATURES = [
 		JingleFileTransfer.XMLNS,
 		JingleS5B.XMLNS,
 		JingleIBB.XMLNS,
@@ -65,40 +63,26 @@ class FileTransfers implements Module {
 	/** Largest file sent or accepted (bytes) **/
 	public static inline var MAX_SIZE = 100 * 1024 * 1024;
 
+	final contacts:Contacts;
 	final downloadDir:String;
 
-	/** The stream and its session manager while attached **/
-	var stream:Null<Stream>;
+	/** The session manager while attached **/
 	var jingle:Null<Jingle>;
-
-	/** Returns the available full jids of a bare jid **/
-	final resources:String->Array<String>;
 
 	final transfers = new Array<Transfer>();
 	var nextId = 1;
 
-	/** SOCKS5 bytestreams: network access and the proxies found (`discoverProxies`) **/
+	/** SOCKS5 bytestreams: network access (its sockets call back on the main thread) and the proxies found **/
 	final s5b:JingleS5BConfig;
 
-	/** Emits an event (to hooks and API clients) **/
-	final emit:Emit;
-
-	/** The jid of a contact given by name or jid, `null` (with an error) if unknown **/
-	final resolve:(input:String, out:Output) -> Null<String>;
-
-	/**
-		`post` runs a callback on the main thread (callbacks of the sockets of transfers).
-	**/
-	public function new(downloadDir:String, emit:Emit, resolve:(input:String, out:Output) -> Null<String>, post:(() -> Void)->Void,
-			resources:String->Array<String>) {
+	public function new(context:Context, contacts:Contacts, downloadDir:String) {
+		super(context);
+		this.contacts = contacts;
 		this.downloadDir = downloadDir;
-		this.emit = emit;
-		this.resolve = resolve;
-		this.resources = resources;
-		s5b = {network: new JingleS5BSysNetwork(post), proxies: []};
+		s5b = {network: new JingleS5BSysNetwork(context.post), proxies: []};
 	}
 
-	public function commands():Array<Commands.Command>
+	override public function commands():Array<Commands.Command>
 		return [
 			{
 				name: "file",
@@ -136,22 +120,22 @@ class FileTransfers implements Module {
 			}
 		];
 
-	public function features():Array<String>
+	override public function features():Array<String>
 		return FEATURES;
 
-	public function attach(stream:Stream) {
-		this.stream = stream;
+	override public function attach(stream:Stream) {
+		super.attach(stream);
 		jingle = new Jingle(stream);
 		jingle.onSessionInitiate = onOffer;
 	}
 
-	public function online()
+	override public function online()
 		discoverProxies();
 
-	public function detach() {
+	override public function detach() {
 		clear();
 		s5b.proxies.resize(0);
-		stream = null;
+		super.detach();
 		jingle = null;
 	}
 
@@ -159,31 +143,22 @@ class FileTransfers implements Module {
 		`/file send <jid> <path>`: offers the file at `path` to `jid`.
 		Without a resource, the first available resource of the contact supporting file transfer is used.
 	**/
-	public function send(input:String, path:String, out:Output) {
-		final jid = resolve(input, out);
-		if (jid == null)
+	function send(input:String, path:String, out:Output) {
+		final jid = contacts.resolve(input, out);
+		final file = (jid != null) ? Files.find(path, MAX_SIZE, out) : null;
+		if (file == null)
 			return;
-		path = expandHome(path);
-		if (!FileSystem.exists(path) || FileSystem.isDirectory(path)) {
-			out.error('no such file: $path');
-			return;
-		}
-		final stat = FileSystem.stat(path);
-		if (stat.size > MAX_SIZE) {
-			out.error('file too large: ${formatSize(stat.size)} (max ${formatSize(MAX_SIZE)})');
-			return;
-		}
 		// done once offered (or failed): a receiver is looked for first
 		final done = out.wait();
 		findReceiver(jid, out, peer -> {
 			if (peer != null)
-				offerFile(peer, path, stat, out);
+				offerFile(peer, file.path, out);
 			done();
 		});
 	}
 
 	/** Offers the file at `path` to `peer` (a full jid) **/
-	function offerFile(peer:String, path:String, stat:sys.FileStat, out:Output) {
+	function offerFile(peer:String, path:String, out:Output) {
 		final data = try File.getBytes(path) catch (e) {
 			out.error('cannot read $path: $e');
 			return;
@@ -191,7 +166,7 @@ class FileTransfers implements Module {
 		final file:JingleFile = {
 			name: Path.withoutDirectory(path),
 			size: data.length,
-			date: xmpp.DelayedDelivery.formatStamp(stat.mtime)
+			date: xmpp.DelayedDelivery.formatStamp(FileSystem.stat(path).mtime)
 		};
 		final t:Transfer = {
 			id: nextId++,
@@ -203,7 +178,12 @@ class FileTransfers implements Module {
 			done: 0,
 			out: out
 		};
-		out.data({id: t.id, to: peer, file: file.name, size: file.size}, () -> out.info('#${t.id} offering ${describe(file)} to $peer'));
+		out.data({
+			id: t.id,
+			to: peer,
+			file: file.name,
+			size: file.size
+		}, () -> out.info('#${t.id} offering ${describe(file)} to $peer'));
 		t.session = JingleFileTransfer.sendFile(jingle, peer, file, data, {s5b: s5b, onProgress: sent -> progress(t, sent)}, reason -> {
 			transfers.remove(t);
 			switch reason.condition {
@@ -236,12 +216,12 @@ class FileTransfers implements Module {
 		`/file accept [id] [path]`: accepts a file offer (the only one, if `id` is not given) and saves the file
 		to `path` (a file or directory), or the download directory.
 	**/
-	public function accept(?id:Int, ?path:String, out:Output) {
+	function accept(?id:Int, ?path:String, out:Output) {
 		final t = offer(id, out);
 		if (t == null)
 			return;
 		if (t.file.size != null && t.file.size > MAX_SIZE) {
-			out.error('#${t.id} file too large: ${formatSize(t.file.size)} (max ${formatSize(MAX_SIZE)})');
+			out.error('#${t.id} file too large: ${Term.size(t.file.size)} (max ${Term.size(MAX_SIZE)})');
 			return;
 		}
 		final target = try destination(t.file, path) catch (e) {
@@ -270,7 +250,7 @@ class FileTransfers implements Module {
 	}
 
 	/** `/file decline [id]`: declines a file offer **/
-	public function decline(?id:Int, out:Output) {
+	function decline(?id:Int, out:Output) {
 		final t = offer(id, out);
 		if (t == null)
 			return;
@@ -284,7 +264,7 @@ class FileTransfers implements Module {
 		return [for (t in transfers) if (t.state == Offered) '${t.id}'];
 
 	/** `/file transfers`: lists offers and running transfers **/
-	public function list(out:Output) {
+	function list(out:Output) {
 		final data = [
 			for (t in transfers)
 				{
@@ -315,27 +295,22 @@ class FileTransfers implements Module {
 		Looks for SOCKS5 bytestreams proxies of the server (e.g. `proxy.example.org`), offered in addition to
 		direct connections: these work if the peers can't connect to each other directly (e.g. behind NAT).
 	**/
-	public function discoverProxies() {
-		ServiceDiscovery.discoItems(stream, null, res -> switch res {
-			case Result(payload) if (payload != null):
-				for (item in ServiceDiscovery.parseItems(payload))
-					ServiceDiscovery.discoInfo(stream, item.jid, res -> switch res {
-						case Result(payload) if (payload != null):
-							final info = ServiceDiscovery.parseInfo(payload);
-							if (info.identities.filter(i -> i.category == "proxy" && i.type == "bytestreams")
-								.length > 0) JingleS5B.requestStreamhost(stream, item.jid, res -> {
-									final host = JingleS5B.parseStreamhost(res.payload);
-									if (host != null && s5b.proxies.filter(p -> p.jid == host.jid).length == 0)
-										s5b.proxies.push(host);
-								});
-						case _:
-					});
-			case _:
+	function discoverProxies()
+		ServiceDiscovery.discoItems(stream, null, res -> {
+			for (item in ((res.payload != null) ? ServiceDiscovery.parseItems(res.payload) : []))
+				ServiceDiscovery.discoInfo(stream, item.jid, res -> {
+					final info = (res.payload != null) ? ServiceDiscovery.parseInfo(res.payload) : null;
+					if (info != null && Lambda.exists(info.identities, i -> i.category == "proxy" && i.type == "bytestreams"))
+						JingleS5B.requestStreamhost(stream, item.jid, res -> {
+							final host = JingleS5B.parseStreamhost(res.payload);
+							if (host != null && !Lambda.exists(s5b.proxies, p -> p.jid == host.jid))
+								s5b.proxies.push(host);
+						});
+				});
 		});
-	}
 
 	/** Ends all transfers (the session ended) **/
-	public function clear() {
+	function clear() {
 		for (t in transfers)
 			if (t.state == Active) {
 				t.out.error('#${t.id} ${t.file.name ?? "file"}: transfer aborted');
@@ -367,7 +342,11 @@ class FileTransfers implements Module {
 					+ (reason.condition != JingleReason.cancel ? ' (${formatReason(reason)})' : ''));
 		}
 		Term.info('#${t.id} ${session.peer} offers ${describe(file)}: /file accept ${t.id} or /file decline ${t.id}');
-		emit("file-offer", [Jid.parseBare(session.peer), file.name ?? "", file.size != null ? Std.string(Std.int(file.size)) : ""], {
+		emit("file-offer", [
+			Jid.parseBare(session.peer),
+			file.name ?? "",
+			file.size != null ? Std.string(Std.int(file.size)) : ""
+		], {
 			from: session.peer,
 			file: file.name,
 			size: file.size,
@@ -405,27 +384,17 @@ class FileTransfers implements Module {
 			callback(jid);
 			return;
 		}
-		final candidates = resources(Jid.parseBare(jid));
+		final candidates = contacts.resources(Jid.parseBare(jid));
 		if (candidates.length == 0) {
 			out.error('$jid is not online');
 			callback(null);
 			return;
 		}
-		function next(i:Int) {
-			if (i >= candidates.length) {
+		Discovery.findFeature(stream, candidates, JingleFileTransfer.XMLNS, peer -> {
+			if (peer == null)
 				out.error('no client of $jid supports file transfer (${candidates.join(", ")})');
-				callback(null);
-				return;
-			}
-			ServiceDiscovery.discoInfo(stream, candidates[i], res -> switch res {
-				case Result(payload) if (payload != null
-					&& ServiceDiscovery.parseInfo(payload).features.contains(JingleFileTransfer.XMLNS)):
-					callback(candidates[i]);
-				case _:
-					next(i + 1);
-			});
-		}
-		next(0);
+			callback(peer);
+		});
 	}
 
 	/** Path to save a received file: in `path` (a directory or file) or the download directory, never overwriting a file **/
@@ -436,7 +405,7 @@ class FileTransfers implements Module {
 		if (name == "" || name == "." || name == "..")
 			name = "file";
 		if (path != null) {
-			path = expandHome(path);
+			path = Config.expandHome(path);
 			if (!FileSystem.exists(path) || !FileSystem.isDirectory(path))
 				return unique(path);
 		}
@@ -472,24 +441,8 @@ class FileTransfers implements Module {
 	}
 
 	static function describe(file:JingleFile):String
-		return (file.name ?? "a file") + (file.size != null ? ' (${formatSize(file.size)})' : '');
+		return (file.name ?? "a file") + (file.size != null ? ' (${Term.size(file.size)})' : '');
 
 	static function formatReason(reason:JingleReasonInfo):String
 		return reason.condition + (reason.text != null ? ': ${reason.text}' : '');
-
-	public static function formatSize(bytes:Float):String {
-		if (bytes < 1024)
-			return '${Std.int(bytes)} B';
-		final units = ["KB", "MB", "GB"];
-		var v = bytes / 1024;
-		var i = 0;
-		while (v >= 1024 && i < units.length - 1) {
-			v /= 1024;
-			i++;
-		}
-		return '${Math.round(v * 10) / 10} ${units[i]}';
-	}
-
-	static inline function expandHome(path:String):String
-		return Config.expandHome(path);
 }

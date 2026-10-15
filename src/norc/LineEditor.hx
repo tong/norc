@@ -196,13 +196,23 @@ class LineEditor {
 		}
 		mutex.acquire();
 		switch [c, params] {
-			case ["A".code, _]: browse(-1);
-			case ["B".code, _]: browse(1);
-			case ["C".code, _]: if (cursor < line.length) cursor++;
-			case ["D".code, _]: if (cursor > 0) cursor--;
-			case ["H".code, _] | ["~".code, "1" | "7"]: cursor = 0;
-			case ["F".code, _] | ["~".code, "4" | "8"]: cursor = line.length;
-			case ["~".code, "3"]: if (cursor < line.length) line.splice(cursor, 1);
+			case ["A".code, _]:
+				browse(-1);
+			case ["B".code, _]:
+				browse(1);
+			case ["C".code, _]:
+				if (cursor < line.length)
+					cursor++;
+			case ["D".code, _]:
+				if (cursor > 0)
+					cursor--;
+			case ["H".code, _] | ["~".code, "1" | "7"]:
+				cursor = 0;
+			case ["F".code, _] | ["~".code, "4" | "8"]:
+				cursor = line.length;
+			case ["~".code, "3"]:
+				if (cursor < line.length)
+					line.splice(cursor, 1);
 			case _:
 		}
 	}
@@ -290,15 +300,8 @@ class LineEditor {
 	}
 
 	/** Runs `stty` on the terminal, returns its output or `null` on failure **/
-	static function stty(args:String):Null<String> {
-		return try {
-			final proc = new sys.io.Process("sh", ["-c", 'stty $args < /dev/tty']);
-			final out = proc.stdout.readAll().toString().trim();
-			final code = proc.exitCode();
-			proc.close();
-			code == 0 ? out : null;
-		} catch (_) null;
-	}
+	static function stty(args:String):Null<String>
+		return Term.output("sh", ["-c", 'stty $args < /dev/tty'])?.trim();
 }
 
 private enum KeyResult {

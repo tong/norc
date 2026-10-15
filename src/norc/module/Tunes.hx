@@ -5,29 +5,32 @@ import norc.Module;
 import norc.Output;
 import norc.Term;
 import norc.module.Messages;
-import xmpp.Jid;
 import xmpp.Pep;
-import xmpp.PubSub;
-import xmpp.Response;
-import xmpp.client.Stream;
 
 using StringTools;
 
 /**
-	User Tune (XEP-0118): publish the music you are listening to (`/tune`, e.g. from a hook of your music player),
+	User Tune (XEP-0118): publish the music you are listening to (`/tune`, e.g. by the script `tune-mpris`),
 	receive the tunes of contacts via PEP (`tune` event).
 **/
-class Tunes implements Module {
+class Tunes extends Module {
 	static final FIELDS = [
-		"artist", "title", "source", "track", "length", "composer", "performer", "lyricist", "genre", "date", "language", "rating", "uri"
+		"artist",
+		"title",
+		"source",
+		"track",
+		"length",
+		"composer",
+		"performer",
+		"lyricist",
+		"genre",
+		"date",
+		"language",
+		"rating",
+		"uri"
 	];
 
-	final emit:Emit;
-
-	/** The name of a contact (bare jid), or the jid **/
-	final name:String->String;
-
-	var stream:Null<Stream>;
+	final contacts:Contacts;
 
 	/** The own tune, as last published **/
 	var tune:Null<Tune>;
@@ -35,56 +38,44 @@ class Tunes implements Module {
 	/** Last received tune of each contact (bare jid), to show only changes **/
 	final tunes = new Map<String, String>();
 
-	public function new(messages:Messages, emit:Emit, name:String->String) {
-		this.emit = emit;
-		this.name = name;
-		messages.incoming.push(receive);
+	public function new(context:Context, messages:Messages, contacts:Contacts) {
+		super(context);
+		this.contacts = contacts;
+		messages.incoming.push(i -> Messages.pep(i, Pep.XMLNS_TUNE, receive));
 	}
 
-	public function commands():Array<Commands.Command>
+	override public function commands():Array<Commands.Command>
 		return [
 			{
 				name: "tune",
 				args: "[tune...]",
-				description: 'show or publish the music you are listening to: "artist - title", or fields as key=value '
-					+ '(${FIELDS.join(", ")}; length in seconds, values with spaces in quotes); - stops publishing it',
+				description: 'show or publish the music you are listening to: "artist - title", or fields as key=value ' +
+				'(${FIELDS.join(", ")}; length in seconds, values with spaces in quotes); - stops publishing it',
 				online: true,
 				run: (args, out) -> publish(args[0], out)
 			}
 		];
 
-	public function features():Array<String>
+	override public function features():Array<String>
 		return [Pep.XMLNS_TUNE + "+notify"];
 
-	public function attach(stream:Stream)
-		this.stream = stream;
-
-	public function online() {}
-
-	public function detach() {
-		stream = null;
+	override public function detach() {
+		super.detach();
 		tunes.clear();
 	}
 
 	function publish(input:Null<String>, out:Output) {
 		if (input == null) {
-			out.data({tune: tune}, () -> out.info('tune: ' + (tune != null ? describe(tune) : "-")));
+			out.data({tune: tune}, () -> out.info('tune: ${describe(tune)}'));
 			return;
 		}
 		final data = if (input == "-") null else try parse(input) catch (e:String) {
 			out.error(e);
 			return;
 		}
-		final done = out.wait();
-		Pep.publishTune(stream, data, res -> {
-			switch res {
-				case Result(_):
-					tune = data;
-					out.info('tune: ' + (data != null ? describe(data) : "-"));
-				case Error(e):
-					out.error('cannot publish the tune: ${e.condition}');
-			}
-			done();
+		request(out, "cannot publish the tune", handler -> Pep.publishTune(stream, data, handler), _ -> {
+			tune = data;
+			out.info('tune: ${describe(data)}');
 		});
 	}
 
@@ -104,7 +95,6 @@ class Tunes implements Module {
 			}
 			return tune;
 		}
-		// a value in quotes may contain \" and \\
 		final re = ~/^([a-z]+)=("((?:[^"\\]|\\.)*)"|(\S*))\s*/;
 		var rest = input;
 		while (rest.length > 0) {
@@ -129,50 +119,35 @@ class Tunes implements Module {
 		return tune;
 	}
 
-	function receive(i:Incoming):Bool {
-		final m = i.message;
-		final event = (m.from == null) ? null : PubSub.getEvent(m);
-		switch event {
-			case Items(node, items, _) if (node == Pep.XMLNS_TUNE):
-				final from = Jid.parseBare(m.from);
-				for (item in items) {
-					final e = item.firstElement;
-					if (e == null)
-						continue;
-					final data = Pep.parseTune(e);
-					final empty = Reflect.fields(data).length == 0;
-					if (stream != null && stream.jid != null && from == Jid.parseBare(stream.jid)) {
-						tune = empty ? null : data;
-						continue;
-					}
-					final text = empty ? null : describe(data);
-					if (tunes.get(from) == text)
-						continue;
-					if (text == null)
-						tunes.remove(from);
-					else
-						tunes.set(from, text);
-					if (text != null)
-						Term.println(Term.timestamp(Date.now()) + ' ' + Term.style('${name(from)} is listening to $text', 2));
-					emit("tune", [from, data.artist ?? "", data.title ?? ""], {
-						from: from,
-						name: name(from),
-						artist: data.artist,
-						title: data.title,
-						source: data.source,
-						track: data.track,
-						length: data.length,
-						uri: data.uri
-					});
-				}
-				return true;
-			case _:
-				return false;
+	function receive(from:String, payload:Null<xmpp.XML>) {
+		if (payload == null)
+			return;
+		final data = Pep.parseTune(payload);
+		final current = (Reflect.fields(data).length > 0) ? data : null;
+		if (isOwn(from)) {
+			tune = current;
+			return;
 		}
+		if (!change(tunes, from, (current != null) ? describe(current) : null))
+			return;
+		if (current != null)
+			Term.notice('${contacts.name(from)} is listening to ${describe(current)}');
+		emit("tune", [from, data.artist ?? "", data.title ?? ""], {
+			from: from,
+			name: contacts.name(from),
+			artist: data.artist,
+			title: data.title,
+			source: data.source,
+			track: data.track,
+			length: data.length,
+			uri: data.uri
+		});
 	}
 
-	/** e.g. `Portishead – Glory Box (Dummy, 5:01)` **/
-	static function describe(tune:Tune):String {
+	/** e.g. `Portishead – Glory Box (Dummy, 5:01)`, `-` without tune **/
+	static function describe(tune:Null<Tune>):String {
+		if (tune == null)
+			return "-";
 		final main = [tune.artist, tune.title].filter(s -> s != null && s.length > 0).join(" – ");
 		final details = [tune.source].filter(s -> s != null && s.length > 0);
 		if (tune.length != null && tune.length > 0)

@@ -8,38 +8,23 @@ import norc.module.Messages;
 import xmpp.Attention;
 import xmpp.Jid;
 import xmpp.Message;
-import xmpp.client.Stream;
 
 /**
 	Attention (XEP-0224): `/buzz` gets the attention of a contact; attention requests of contacts in the roster
 	ring the terminal bell and emit the `attention` event. Disabled with `attention = 0`.
 **/
-class Buzz implements Module {
-	final emit:Emit;
+class Buzz extends Module {
+	final contacts:Contacts;
 	final enabled:Bool;
 
-	/** The jid of a contact given by name or jid, `null` (with an error) if unknown **/
-	final resolve:(input:String, out:Output) -> Null<String>;
-
-	/** The name of a contact (bare jid), or the jid **/
-	final name:String->String;
-
-	/** The bare jid is in the roster **/
-	final isContact:String->Bool;
-
-	var stream:Null<Stream>;
-
-	public function new(messages:Messages, emit:Emit, resolve:(input:String, out:Output) -> Null<String>, name:String->String,
-			isContact:String->Bool, enabled:Bool) {
-		this.emit = emit;
-		this.resolve = resolve;
-		this.name = name;
-		this.isContact = isContact;
+	public function new(context:Context, messages:Messages, contacts:Contacts, enabled:Bool) {
+		super(context);
+		this.contacts = contacts;
 		this.enabled = enabled;
 		messages.incoming.push(receive);
 	}
 
-	public function commands():Array<Commands.Command>
+	override public function commands():Array<Commands.Command>
 		return [
 			{
 				name: "buzz",
@@ -50,36 +35,28 @@ class Buzz implements Module {
 			}
 		];
 
-	public function features():Array<String>
+	override public function features():Array<String>
 		return enabled ? [Attention.XMLNS] : [];
 
-	public function attach(stream:Stream)
-		this.stream = stream;
-
-	public function online() {}
-
-	public function detach()
-		stream = null;
-
 	function buzz(input:String, text:Null<String>, out:Output) {
-		final to = resolve(input, out);
+		final to = contacts.resolve(input, out);
 		if (to == null)
 			return;
 		stream.send(Attention.captureAttention(new Message(to, text)));
-		out.info('buzzed ${name(Jid.parseBare(to))}');
+		out.info('buzzed ${contacts.name(Jid.parseBare(to))}');
 	}
 
-	/** Attention requests of contacts (not delayed, not copies of other own clients) **/
+	/** Attention requests of contacts (not copies of other own clients) **/
 	function receive(i:Incoming):Bool {
 		final m = i.message;
 		if (!enabled || i.carbon != null || m.from == null || !Attention.wantsAttention(m))
 			return false;
 		final from = Jid.parseBare(m.from);
-		if (!isContact(from))
+		if (!contacts.contains(from))
 			return m.body == null;
-		// the terminal bell
-		Term.println('\x07' + Term.timestamp(Date.now()) + ' ' + Term.style('${name(from)} wants your attention' + (m.body != null ? ': ${m.body}' : ''), 1));
-		emit("attention", [from, m.body ?? ""], {from: m.from, name: name(from), text: m.body});
+		// with the terminal bell
+		Term.notice('${contacts.name(from)} wants your attention' + (m.body != null ? ': ${m.body}' : '') + '\x07', 1);
+		emit("attention", [from, m.body ?? ""], {from: m.from, name: contacts.name(from), text: m.body});
 		return true;
 	}
 }

@@ -17,21 +17,24 @@ class Forms {
 			instructions: form.instructions ?? [],
 			fields: [
 				for (f in form.fields)
-					if (DataForm.fieldType(f) != hidden)
-						{
-							name: f.variable,
-							type: (DataForm.fieldType(f) : String),
-							label: f.label,
-							desc: f.desc,
-							required: f.required == true,
-							values: f.values ?? [],
-							options: [for (o in f.options ?? []) {value: o.value, label: o.label}]
-						}
+					if (DataForm.fieldType(f) != hidden) {
+						name: f.variable,
+						type: (DataForm.fieldType(f) : String),
+						label: f.label,
+						desc: f.desc,
+						required: f.required == true,
+						values: f.values ?? [],
+						options: [
+							for (o in f.options ?? []) {
+								value: o.value,
+								label: o.label
+							}
+						]
+					}
 			],
 			reported: [for (f in form.reported ?? []) {name: f.variable, label: f.label}],
 			items: [
-				for (item in form.items ?? [])
-					[for (f in item) {name: f.variable, values: f.values ?? []}]
+				for (item in form.items ?? []) [for (f in item) {name: f.variable, values: f.values ?? []}]
 			]
 		};
 
@@ -63,7 +66,9 @@ class Forms {
 				case boolean: (values[0] == "1" || values[0] == "true") ? "yes" : (values.length > 0 ? "no" : "");
 				case text_private: (values.length > 0) ? "••••" : "";
 				// several values of a result one per line, aligned
-				case _: values.join(editable ? ", " : "\n").replace("\n", "\n" + "".lpad(" ", width + 4 + (f.label != null && f.label != f.variable ? f.label.length + 1 : 0)));
+				case _: values.join(editable ? ", " : "\n")
+						.replace("\n", "\n" + "".lpad(" ", width + 4 + (f.label != null
+							&& f.label != f.variable ? f.label.length + 1 : 0)));
 			}
 			// a field without variable in a result: only its label
 			final label = (f.label != null && f.label != f.variable) ? Term.style(f.label, 2) + ' ' : '';
@@ -71,7 +76,8 @@ class Forms {
 			if (editable && f.options != null && f.options.length > 0)
 				out.print("".lpad(" ", width + 4) + Term.style('options: ' + [
 					for (o in f.options)
-						(o.label != null && o.label != o.value) ? '${o.value} (${o.label})' : o.value
+						(o.label != null && o.label != o.value)
+					?'${o.value} (${o.label})':o.value
 				].join(", "), 2));
 			if (f.desc != null)
 				out.print("".lpad(" ", width + 4) + Term.style(f.desc, 2));
@@ -86,13 +92,12 @@ class Forms {
 		if (reported.length == 0 || items.length == 0)
 			return;
 		final rows = [
-			for (item in items)
-				[
-					for (column in reported) {
-						final field = Lambda.find(item, f -> f.variable == column.variable);
-						(field == null || field.values == null) ? "" : field.values.join(", ");
-					}
-				]
+			for (item in items) [
+				for (column in reported) {
+					final field = Lambda.find(item, f -> f.variable == column.variable);
+					(field == null || field.values == null) ? "" : field.values.join(", ");
+				}
+			]
 		];
 		final header = [for (column in reported) column.label ?? column.variable ?? ""];
 		final widths = [
@@ -105,7 +110,10 @@ class Forms {
 			}
 		];
 		function line(cells:Array<String>)
-			return "  " + [for (i in 0...cells.length) (i < cells.length - 1) ? cells[i].rpad(" ", widths[i]) : cells[i]].join("  ");
+			return "  " + [
+				for (i in 0...cells.length) (i < cells.length - 1)
+				?cells[i].rpad(" ", widths[i]):cells[i]
+			].join("  ");
 		out.print(Term.style(line(header), 1));
 		for (row in rows)
 			out.print(line(row));
@@ -137,8 +145,9 @@ class Forms {
 						case _: throw '$name: expected yes or no';
 					}
 				case list_single, list_multi if (field.options != null && field.options.length > 0):
-					final option = Lambda.find(field.options, o -> o.value == value)
-						?? Lambda.find(field.options, o -> o.label != null && o.label.toLowerCase() == value.toLowerCase());
+					final option = Lambda.find(field.options,
+						o -> o.value == value) ?? Lambda.find(field.options, o -> o.label != null
+							&& o.label.toLowerCase() == value.toLowerCase());
 					if (option == null)
 						throw '$name: not an option: $value (${[for (o in field.options) o.value].join(", ")})';
 					value = option.value;
@@ -160,7 +169,9 @@ class Forms {
 	public static function missing(form:DataForm, values:Map<String, Array<String>>):Array<String>
 		return [
 			for (f in form.fields)
-				if (f.required == true && f.variable != null && !values.exists(f.variable) && (f.values == null || f.values.length == 0))
-					f.variable
+				if (f.required == true
+					&& f.variable != null
+					&& !values.exists(f.variable)
+					&& (f.values == null || f.values.length == 0)) f.variable
 		];
 }

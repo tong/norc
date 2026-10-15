@@ -31,6 +31,25 @@ class Term {
 	public static function info(msg:String)
 		println(style(msg, 2));
 
+	/** A notification of an event (e.g. a presence change) with its time: `12:03 alice is away` **/
+	public static function notice(msg:String, code = 2)
+		println(timestamp(Date.now()) + ' ' + style(msg, code));
+
+	/** The condition and text of a stanza error, e.g. `remote-server-timeout: Server-to-server connection failed` **/
+	public static function errorText(e:Null<xmpp.Stanza.Error>):String
+		return (e == null) ? "error" : [(e.condition : Null<String>), e.text].filter(v -> v != null && v.length > 0).join(": ");
+
+	/** e.g. `512 B`, `1.5 MB` **/
+	public static function size(bytes:Float):String {
+		final units = ["B", "KB", "MB", "GB"];
+		var i = 0;
+		while (bytes >= 1024 && i < units.length - 1) {
+			bytes /= 1024;
+			i++;
+		}
+		return '${i == 0 ? Std.int(bytes) : Math.round(bytes * 10) / 10} ${units[i]}';
+	}
+
 	/** Time of an event: `12:03` today, else `2026-10-13 12:03` **/
 	public static function timestamp(date:Date):String {
 		final now = Date.now();
@@ -96,13 +115,22 @@ class Term {
 		Runs `cmd` with the shell (`cmd` on Windows) and returns the first line of its output.
 	**/
 	public static function readCommand(cmd:String):String {
-		final proc = Sys.systemName() == "Windows" ? new sys.io.Process("cmd", ["/c", cmd]) : new sys.io.Process("sh", ["-c", cmd]);
-		final out = proc.stdout.readAll().toString();
-		final code = proc.exitCode();
-		proc.close();
-		if (code != 0)
-			throw 'command failed ($code): $cmd';
+		final out = Sys.systemName() == "Windows" ? output("cmd", ["/c", cmd]) : output("sh", ["-c", cmd]);
+		if (out == null)
+			throw 'command failed: $cmd';
 		final line = out.split("\n")[0];
 		return line.endsWith("\r") ? line.substr(0, line.length - 1) : line;
+	}
+
+	/** Runs a program and returns its output, `null` if it can't be started or fails (exit code) **/
+	public static function output(cmd:String, args:Array<String>):Null<String> {
+		return try {
+			final proc = new sys.io.Process(cmd, args);
+			final out = proc.stdout.readAll().toString();
+			final code = proc.exitCode();
+			proc.close();
+			(code == 0) ? out : null;
+		} catch (_)
+			null;
 	}
 }

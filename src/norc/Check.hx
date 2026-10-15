@@ -97,13 +97,25 @@ whether in-band registration is open (the registration form is requested, nothin
 
 	function check(domain:String):CheckResult {
 		final port = options.port ?? xmpp.client.Stream.PORT;
-		final r:CheckResult = {domain: domain, host: domain, port: port, tls: false, mechanisms: [], features: []};
+		final r:CheckResult = {
+			domain: domain,
+			host: domain,
+			port: port,
+			tls: false,
+			mechanisms: [],
+			features: []
+		};
 		if (!Jid.isValid(domain) || domain.contains("@") || domain.contains("/")) {
 			r.error = 'invalid domain';
 			return r;
 		}
 		// an account only to connect: the stream is not authenticated
-		final account:Account = {name: domain, jid: 'check@$domain', port: port, resource: Config.DEFAULT_RESOURCE};
+		final account:Account = {
+			name: domain,
+			jid: 'check@$domain',
+			port: port,
+			resource: Config.DEFAULT_RESOURCE
+		};
 		final session = new Session(events, account, options.debug);
 		session.verbose = false;
 		var done = false;
@@ -145,7 +157,9 @@ whether in-band registration is open (the registration form is requested, nothin
 				r.port = session.address.port;
 			}
 			r.mechanisms = Authentication.getMechanisms(features);
-			r.features = [for (e in features.elements) e.name + (e.get("xmlns") != null ? ' ${e.get("xmlns")}' : '')];
+			r.features = [
+				for (e in features.elements) e.name + (e.get("xmlns") != null ? ' ${e.get("xmlns")}' : '')
+			];
 			if (!Registration.isOffered(features))
 				r.registration = "unsupported";
 			registering = true;
@@ -158,7 +172,9 @@ whether in-band registration is open (the registration form is requested, nothin
 						case Result(payload) if (payload != null):
 							final info = ServiceDiscovery.parseInfo(payload);
 							r.disco = {
-								identities: [for (i in info.identities) '${i.category}/${i.type}' + (i.name != null ? ' (${i.name})' : '')],
+								identities: [
+									for (i in info.identities) '${i.category}/${i.type}' + (i.name != null ? ' (${i.name})' : '')
+								],
 								features: info.features
 							};
 						case Result(_):
@@ -201,29 +217,27 @@ whether in-band registration is open (the registration form is requested, nothin
 				// registration on a website (XEP-0077: out of band data instead of fields)
 				final x = payload.elements.first(e -> e.name == "x" && e.is(xmpp.Oob.XMLNS_X));
 				final oob = (x == null) ? null : xmpp.Oob.parse(x);
-				final url = oob?.url ?? findUrl(info.instructions);
-				if (info.form != null) {
-					final fields = [
-						for (f in info.form.fields)
-							if (f.variable != null && xmpp.DataForm.fieldType(f) != hidden && xmpp.DataForm.fieldType(f) != fixed) f.variable
-					];
-					r.registrationFields = fields;
-					// a CAPTCHA (XEP-0158): an `ocr`, `qa`, … field or the captcha form type
-					final captcha = info.form.formType == "urn:xmpp:captcha"
-						|| Lambda.exists(fields, f -> ["ocr", "qa", "audio_recog", "picture_recog", "picture_q", "speech_q", "speech_recog", "video_q", "video_recog"].contains(f));
-					r.registration = captcha ? "captcha" : "open";
-				} else if (info.fields.length > 0) {
-					r.registrationFields = info.fields;
-					r.registration = "open";
-				} else
-					r.registration = (url != null) ? "web" : "unknown";
-				if (url != null) {
-					r.url = url;
-					if (r.registrationFields == null || r.registrationFields.length == 0)
-						r.registration = "web";
-				}
+				r.url = oob?.url ?? findUrl(info.instructions);
+				final fields = (info.form == null) ? info.fields : [
+					for (f in info.form.fields)
+						if (f.variable != null && xmpp.DataForm.fieldType(f) != hidden && xmpp.DataForm.fieldType(f) != fixed) f.variable
+				];
+				// a CAPTCHA (XEP-0158): an `ocr`, `qa`, … field or the captcha form type
+				final captcha = info.form?.formType == "urn:xmpp:captcha" || Lambda.exists(fields, f -> [
+					"ocr",
+					"qa",
+					"audio_recog",
+					"picture_recog",
+					"picture_q",
+					"speech_q",
+					"speech_recog",
+					"video_q",
+					"video_recog"
+				].contains(f));
+				r.registrationFields = (fields.length > 0) ? fields : null;
+				r.registration = (fields.length > 0) ? (captcha ? "captcha" : "open") : (r.url != null) ? "web" : "unknown";
 			case Error(e):
-				r.registrationError = e.condition + (e.text != null ? ': ${e.text}' : '');
+				r.registrationError = Term.errorText(e);
 				r.url = findUrl(e.text);
 				r.registration = switch (e.condition : String) {
 					case "not-allowed", "forbidden", "not-authorized", "registration-required": (r.url != null) ? "web" : "closed";

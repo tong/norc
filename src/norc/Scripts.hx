@@ -69,27 +69,29 @@ class Scripts {
 
 	final scripts = new Array<Script>();
 
-	/** `global`: the scripts of the config directory, `account`: of the account directory (`null` if none) **/
-	public function new(global:String, account:Null<String>, api:Api, env:Map<String, String>, post:(() -> Void)->Void) {
+	/**
+		`dirs`: the scripts of the config directory, then those of the account directory (if any).
+		`env`: the variables of the scripts (`NORC_<NAME>`).
+	**/
+	public function new(dirs:Array<String>, api:Api, env:Map<String, String>, post:(() -> Void)->Void) {
 		this.api = api;
 		this.env = env;
 		this.post = post;
-		for (dir in [global, account])
-			if (dir != null) {
-				final names = Hooks.executables(dir);
-				names.sort(Reflect.compare);
-				for (name in names)
-					scripts.push({
-						name: name,
-						path: '$dir/$name',
-						account: dir == account,
-						state: Stopped,
-						restarts: 0,
-						started: 0,
-						run: 0,
-						finished: 0
-					});
-			}
+		for (dir in dirs) {
+			final names = Hooks.executables(dir);
+			names.sort(Reflect.compare);
+			for (name in names)
+				scripts.push({
+					name: name,
+					path: '$dir/$name',
+					account: dir != dirs[0],
+					state: Stopped,
+					restarts: 0,
+					started: 0,
+					run: 0,
+					finished: 0
+				});
+		}
 	}
 
 	public function commands():Array<Commands.Command>
@@ -127,8 +129,10 @@ class Scripts {
 		final running = [
 			for (s in scripts)
 				switch s.state {
-					case Running(proc): {s: s, proc: proc, run: s.run};
-					case _: null;
+					case Running(proc):
+						{s: s, proc: proc, run: s.run};
+					case _:
+						null;
 				}
 		].filter(r -> r != null);
 		for (r in running) {
@@ -143,24 +147,19 @@ class Scripts {
 			while (Sys.time() < end && r.s.finished != r.run)
 				Sys.sleep(0.05);
 			if (r.s.finished != r.run)
-				try r.proc.kill() catch (_) {};
+				try
+					r.proc.kill()
+				catch (_) {};
 		}
 	}
 
 	function start(s:Script) {
 		final run = ++s.run;
-		final values = env.copy();
-		for (k => v in values)
-			Sys.putEnv('NORC_$k', v);
-		final proc = try Hooks.start(s.path, [], true) catch (e) {
-			for (k in values.keys())
-				Sys.putEnv('NORC_$k', null);
+		final proc = try Hooks.withEnv(env, () -> Hooks.start(s.path, [], true)) catch (e) {
 			Term.error('script ${s.name}: $e');
 			s.state = Failed(-1, 0);
 			return;
 		}
-		for (k in values.keys())
-			Sys.putEnv('NORC_$k', null);
 		s.state = Running(proc);
 		s.started = Sys.time();
 		// the api over its stdout and stdin
@@ -232,7 +231,9 @@ class Scripts {
 					case Failed(code, delay): 'failed ($code), restarting (after ${delay}s)';
 					case Stopped: "stopped";
 				}
-				out.print('  ${s.name}' + (s.account ? Term.style(" (account)", 2) : "") + '  $state'
+				out.print('  ${s.name}'
+					+ (s.account ? Term.style(" (account)", 2) : "")
+					+ '  $state'
 					+ (s.restarts > 0 ? Term.style('  ${s.restarts} restarts', 2) : ""));
 			}
 		});
@@ -262,7 +263,9 @@ class Scripts {
 			case Running(proc):
 				if (s.close != null)
 					s.close();
-				try proc.kill() catch (_) {};
+				try
+					proc.kill()
+				catch (_) {};
 			case _:
 		}
 		s.state = Stopped;

@@ -34,6 +34,7 @@ class Session {
 
 	final account:Account;
 	final conn:Connection;
+
 	/** Print the XMPP stream (passwords hidden) **/
 	public var debug:Bool;
 
@@ -42,6 +43,7 @@ class Session {
 
 	/** The host and port connected to, once connected **/
 	public var address(default, null):Null<{host:String, port:Int}>;
+
 	var failed = false;
 
 	/** Seconds without received data before pinging the server, `0` to disable (call `tick` regularly) **/
@@ -186,7 +188,7 @@ class Session {
 		}
 		stream.authenticate(account.jid.node, account.resource, password, mechanism, (?error) -> {
 			if (error != null) {
-				fail('login failed: ${error.condition}' + (error.text != null ? ' (${error.text})' : ''));
+				fail('login failed: ${Term.errorText(error)}');
 				return;
 			}
 			enableStreamManagement();
@@ -201,7 +203,7 @@ class Session {
 	function resume(password:String, mechanism:sasl.Mechanism) {
 		Authentication.saslAuthentication(stream, account.jid.node, password, mechanism, (?error, _) -> {
 			if (error != null) {
-				fail('login failed: ${error.condition}' + (error.text != null ? ' (${error.text})' : ''));
+				fail('login failed: ${Term.errorText(error)}');
 				return;
 			}
 			sm.resume((?error, ?unacked) -> {

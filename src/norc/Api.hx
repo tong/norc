@@ -137,7 +137,9 @@ class Api {
 		if (line.length == 0)
 			return;
 		final request:Dynamic = if (line.startsWith("{")) {
-			try Json.parse(line) catch (e) {
+			try
+				Json.parse(line)
+			catch (e) {
 				client.send(Json.stringify({type: "error", text: 'invalid request: $e'}));
 				return;
 			}
@@ -169,7 +171,10 @@ class Api {
 		}
 		final list:Null<Array<Null<String>>> = (args == null) ? null : [
 			for (a in (args : Array<Dynamic>))
-				(a == null) ? null : Std.isOfType(a, String) ? a : Json.stringify(a)
+				(a == null)
+			?null:Std.isOfType
+			(a, String)
+			? a : Json.stringify(a)
 		];
 		final ran = try dispatch(cmd, list, out) catch (e) {
 			// a bug in a command must not end the client

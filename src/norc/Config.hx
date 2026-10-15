@@ -53,6 +53,17 @@ typedef Account = {
 	var ?prompt:String;
 }
 
+/** A config key: its value in the config of an account **/
+private typedef Key = {
+	var name:String;
+
+	/** The value as written in the config, `null` if not set **/
+	var get:Account->Null<String>;
+
+	/** Sets the value; throws a message if it is invalid **/
+	var set:(Account, String) -> Void;
+}
+
 /**
 	Configuration files (`key = value` lines, `#` comments) in the config directory
 	(`$XDG_CONFIG_HOME/norc`, Windows: `%APPDATA%\norc`, or `--config`):
@@ -78,6 +89,28 @@ typedef Account = {
 class Config {
 	public static final DEFAULT_RESOURCE = "norc";
 
+	/** The keys of an account, in the order they are shown and written (`account` is only in the base config) **/
+	static final KEYS:Array<Key> = [
+		{name: "jid", get: a -> Jid.parseBare(a.jid), set: (a, v) -> {}},
+		{name: "host", get: a -> a.host, set: (a, v) -> a.host = v},
+		{name: "port", get: a -> Std.string(a.port), set: (a, v) -> a.port = parsePort(v)},
+		{name: "resource", get: a -> a.resource, set: (a, v) -> a.resource = v},
+		{name: "password_cmd", get: a -> a.passwordCmd, set: (a, v) -> a.passwordCmd = v},
+		{name: "download_dir", get: a -> (a.downloadDir != null) ? contractHome(a.downloadDir) : null, set: (a, v) -> a.downloadDir = expandHome(v)},
+		{name: "keepalive", get: a -> (a.keepalive != null) ? Std.string(a.keepalive) : null, set: (a, v) -> a.keepalive = parseSeconds(v)},
+		flag("api", a -> a.api, (a, v) -> a.api = v),
+		{name: "api_host", get: a -> a.apiHost, set: (a, v) -> a.apiHost = v},
+		{name: "api_port", get: a -> (a.apiPort != null) ? Std.string(a.apiPort) : null, set: (a, v) -> a.apiPort = parsePort(v)},
+		flag("last_activity", a -> a.lastActivity, (a, v) -> a.lastActivity = v),
+		flag("carbons", a -> a.carbons, (a, v) -> a.carbons = v),
+		flag("chat_states", a -> a.chatStates, (a, v) -> a.chatStates = v),
+		flag("entity_time", a -> a.entityTime, (a, v) -> a.entityTime = v),
+		flag("attention", a -> a.attention, (a, v) -> a.attention = v),
+		flag("stream_management", a -> a.streamManagement, (a, v) -> a.streamManagement = v),
+		// in quotes: spaces at the start or end are kept
+		{name: "prompt", get: a -> (a.prompt != null) ? '"${a.prompt}"' : null, set: (a, v) -> a.prompt = unquote(v)}
+	];
+
 	/** Overrides the config directory (`--config`) **/
 	public static var dir:Null<String>;
 
@@ -100,8 +133,8 @@ class Config {
 		if (!FileSystem.exists(dir) || !FileSystem.isDirectory(dir))
 			return [];
 		// a file, or a directory with the config in conf
-		final names = FileSystem.readDirectory(dir).filter(f -> !f.startsWith(".")
-			&& (!FileSystem.isDirectory('$dir/$f') || FileSystem.exists('$dir/$f/conf')));
+		final names = FileSystem.readDirectory(dir)
+			.filter(f -> !f.startsWith(".") && (!FileSystem.isDirectory('$dir/$f') || FileSystem.exists('$dir/$f/conf')));
 		names.sort(Reflect.compare);
 		return names;
 	}
@@ -135,31 +168,8 @@ class Config {
 	/**
 		The config values of `account` in the order of the keys, `null` if not set.
 	**/
-	public static function values(account:Account):Array<{key:String, value:Null<String>}> {
-		inline function str<T>(v:Null<T>):Null<String>
-			return v != null ? Std.string(v) : null;
-		inline function bool(v:Null<Bool>):Null<String>
-			return v != null ? (v ? "1" : "0") : null;
-		return [
-			{key: "jid", value: Jid.parseBare(account.jid)},
-			{key: "host", value: account.host},
-			{key: "port", value: str(account.port)},
-			{key: "resource", value: account.resource},
-			{key: "password_cmd", value: account.passwordCmd},
-			{key: "download_dir", value: account.downloadDir != null ? contractHome(account.downloadDir) : null},
-			{key: "keepalive", value: str(account.keepalive)},
-			{key: "api", value: bool(account.api)},
-			{key: "api_host", value: account.apiHost},
-			{key: "api_port", value: str(account.apiPort)},
-			{key: "last_activity", value: bool(account.lastActivity)},
-			{key: "carbons", value: bool(account.carbons)},
-			{key: "chat_states", value: bool(account.chatStates)},
-			{key: "entity_time", value: bool(account.entityTime)},
-			{key: "attention", value: bool(account.attention)},
-			{key: "stream_management", value: bool(account.streamManagement)},
-			{key: "prompt", value: account.prompt != null ? '"${account.prompt}"' : null}
-		];
-	}
+	public static function values(account:Account):Array<{key:String, value:Null<String>}>
+		return [for (k in KEYS) {key: k.name, value: k.get(account)}];
 
 	/**
 		The values of `account` differing from its config file (with the base config), `[]` if saved.
@@ -290,70 +300,58 @@ class Config {
 
 	/** Sets the config `values` (from file `source`) **/
 	static function apply(account:Account, values:Map<String, String>, source:String) {
-		for (key => value in values) {
-			switch key {
-				case "account":
-					// the default account, only in the base config
-					if (source != basePath())
-						throw '$source: account is only allowed in ${basePath()}';
-				case "jid":
-				case "host":
-					account.host = value;
-				case "port":
-					account.port = parsePort(value, source);
-				case "resource":
-					// the base config doesn't override a resource given with the jid
-					if (source != basePath() || account.jid.resource == null)
-						account.resource = value;
-				case "password_cmd":
-					account.passwordCmd = value;
-				case "download_dir":
-					account.downloadDir = expandHome(value);
-				case "api":
-					account.api = parseBool(value, key, source);
-				case "stream_management":
-					account.streamManagement = parseBool(value, key, source);
-				case "attention":
-					account.attention = parseBool(value, key, source);
-				case "entity_time":
-					account.entityTime = parseBool(value, key, source);
-				case "chat_states":
-					account.chatStates = parseBool(value, key, source);
-				case "carbons":
-					account.carbons = parseBool(value, key, source);
-				case "last_activity":
-					account.lastActivity = parseBool(value, key, source);
-				case "api_host":
-					account.apiHost = value;
-				case "api_port":
-					account.apiPort = parsePort(value, source);
-				case "prompt":
-					// quoted to keep spaces
-					account.prompt = (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) ? value.substr(1, value.length - 2) : value;
-				case "keepalive":
-					final v = Std.parseFloat(value);
-					if (Math.isNaN(v) || v < 0)
-						throw '$source: invalid keepalive: $value (seconds, 0 to disable)';
-					account.keepalive = v;
-				case _:
-					throw '$source: unknown key: $key';
+		final base = source == basePath();
+		for (name => value in values) {
+			// the default account, only in the base config
+			if (name == "account") {
+				if (!base)
+					throw '$source: account is only allowed in ${basePath()}';
+				continue;
 			}
+			final key = Lambda.find(KEYS, k -> k.name == name);
+			if (key == null)
+				throw '$source: unknown key: $name';
+			// the base config doesn't override a resource given with the jid
+			if (name == "resource" && base && account.jid.resource != null)
+				continue;
+			try
+				key.set(account, value)
+			catch (e:String)
+				throw '$source: $e';
 		}
 	}
 
-	static function parseBool(value:String, key:String, source:String):Bool
-		return switch value.toLowerCase() {
-			case "1", "true", "yes", "on": true;
-			case "0", "false", "no", "off": false;
-			case _: throw '$source: invalid $key: $value (1 or 0)';
-		}
+	/** A key of a boolean: `1` or `0` (`true`/`false`, `yes`/`no`, `on`/`off` are read too) **/
+	static function flag(name:String, get:Account->Null<Bool>, set:(Account, Bool) -> Void):Key
+		return {
+			name: name,
+			get: a -> {
+				final v = get(a);
+				(v == null) ? null : v ? "1" : "0";
+			},
+			set: (a, v) -> set(a, switch v.toLowerCase() {
+				case "1", "true", "yes", "on": true;
+				case "0", "false", "no", "off": false;
+				case _: throw 'invalid $name: $v (1 or 0)';
+			})
+		};
 
-	public static function parsePort(value:String, ?source:String):Int {
+	public static function parsePort(value:String):Int {
 		final port = Std.parseInt(value);
 		if (port == null || port < 1 || port > 65535)
-			throw(source != null ? '$source: ' : '') + 'invalid port: $value';
+			throw 'invalid port: $value';
 		return port;
 	}
+
+	static function parseSeconds(value:String):Float {
+		final v = Std.parseFloat(value);
+		if (Math.isNaN(v) || v < 0)
+			throw 'invalid keepalive: $value (seconds, 0 to disable)';
+		return v;
+	}
+
+	static function unquote(value:String):String
+		return (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) ? value.substr(1, value.length - 2) : value;
 
 	static function parse(content:String, path:String):Map<String, String> {
 		final values = new Map<String, String>();

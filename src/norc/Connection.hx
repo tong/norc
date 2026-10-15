@@ -63,91 +63,74 @@ class Connection {
 
 	/** Connects to the first reachable target, then sends and receives until closed **/
 	function run(targets:Array<{host:String, port:Int}>) {
-		var socket:Null<Socket> = null;
-		var host:Null<Host> = null;
 		final errors = [];
 		for (t in targets) {
-			final h = try new Host(t.host) catch (e) {
+			final host = try new Host(t.host) catch (_) {
 				errors.push('cannot resolve ${t.host}');
 				continue;
 			}
-			final s = new Socket();
+			final socket = new Socket();
 			try {
-				s.setTimeout(CONNECT_TIMEOUT);
-				s.connect(h, t.port);
+				socket.setTimeout(CONNECT_TIMEOUT);
+				socket.connect(host, t.port);
 			} catch (e) {
-				s.close();
+				socket.close();
 				errors.push('cannot connect to ${t.host}:${t.port}: $e');
 				continue;
 			}
-			socket = s;
-			host = h;
 			post(Connected(t.host, t.port));
-			break;
-		}
-		if (socket == null) {
-			post(ConnectFailed(errors.join(", ")));
+			serve(socket, host);
 			return;
 		}
+		post(ConnectFailed(errors.join(", ")));
+	}
+
+	/** Runs the commands and posts the received data until the connection ends, then closes it **/
+	function serve(socket:Socket, host:Host) {
 		socket.setBlocking(false);
 		final buf = Bytes.alloc(16384);
-		while (true) {
-			var cmd:Null<Command>;
-			while ((cmd = commands.pop(false)) != null) {
-				switch cmd {
-					case Send(str):
-						final error = write(socket, Bytes.ofString(str));
-						if (error != null) {
-							socket.close();
-							post(Disconnected(error));
-							return;
-						}
-					case StartTls(servername):
-						try {
-							socket.setBlocking(true);
-							final tls = xmpp.StartTLS.upgrade(socket, host, servername);
-							tls.handshake();
-							tls.setBlocking(false);
-							socket = tls;
-						} catch (e) {
-							socket.close();
-							post(TlsFailed(Std.string(e)));
-							return;
-						}
-						post(TlsReady);
-					case Close:
-						socket.close();
-						post(Disconnected());
-						return;
-				}
-			}
-			if (Socket.select([socket], [], [], POLL_INTERVAL).read.length == 0)
-				continue;
-			// Read everything available, including data buffered by the TLS layer
+		/** The event ending the connection **/
+		function loop():NetEvent {
 			while (true) {
-				final len = try socket.input.readBytes(buf, 0, buf.length) catch (e:Error) {
-					if (e == Blocked)
-						break;
-					socket.close();
-					post(Disconnected(Std.string(e)));
-					return;
-				} catch (e:haxe.io.Eof) {
-					socket.close();
-					post(Disconnected("connection closed by server"));
-					return;
-				} catch (e) {
-					socket.close();
-					post(Disconnected(Std.string(e)));
-					return;
+				var cmd:Null<Command>;
+				while ((cmd = commands.pop(false)) != null)
+					switch cmd {
+						case Send(str):
+							final error = write(socket, Bytes.ofString(str));
+							if (error != null)
+								return Disconnected(error);
+						case StartTls(servername):
+							try {
+								socket.setBlocking(true);
+								final tls = xmpp.StartTLS.upgrade(socket, host, servername);
+								tls.handshake();
+								tls.setBlocking(false);
+								socket = tls;
+							} catch (e)
+								return TlsFailed(Std.string(e));
+							post(TlsReady);
+						case Close:
+							return Disconnected();
+					}
+				if (Socket.select([socket], [], [], POLL_INTERVAL).read.length == 0)
+					continue;
+				// Read everything available, including data buffered by the TLS layer
+				while (true) {
+					final len = try socket.input.readBytes(buf, 0, buf.length) catch (e:Error) {
+						if (e == Blocked)
+							break;
+						return Disconnected(Std.string(e));
+					} catch (_:haxe.io.Eof)
+						0 catch (e) return Disconnected(Std.string(e));
+					if (len == 0)
+						return Disconnected("connection closed by server");
+					post(Data(buf.sub(0, len)));
 				}
-				if (len == 0) {
-					socket.close();
-					post(Disconnected("connection closed by server"));
-					return;
-				}
-				post(Data(buf.sub(0, len)));
 			}
 		}
+		final end = loop();
+		socket.close();
+		post(end);
 	}
 
 	/** Writes all bytes to the non-blocking socket, returns an error message on failure **/

@@ -20,6 +20,7 @@ using StringTools;
 class Hooks {
 	/** Directories of hooks, in the order their hooks run **/
 	final dirs:Array<String>;
+
 	final account:String;
 
 	/** Returns the own jid (empty while offline) **/
@@ -43,30 +44,26 @@ class Hooks {
 		final hooks = find(event);
 		if (hooks.length == 0)
 			return;
-		final env = new Map<String, String>();
-		if (values != null)
-			for (k => v in values)
-				// matching a Dynamic against true would cast it to Bool
-				env.set(k, (v == null) ? "" : Std.isOfType(v, Bool) ? ((v : Bool) ? "1" : "0") : Std.string(v));
-		final started = withEnv(event, env, () -> [
+		final started = withEnv(environment(event, values), () -> [
 			for (h in hooks) {
 				final proc = try start(h.path, args) catch (e) {
 					Term.error('hook ${h.name}: $e');
 					null;
 				}
-				if (proc != null)
-					{name: h.name, proc: proc};
+				if (proc != null) {name: h.name, proc: proc};
 			}
 		]);
 		for (h in started)
 			// read the output (the hook would block on a full pipe), report failures
 			Thread.create(() -> {
 				final err = try h.proc.stderr.readAll().toString() catch (_) "";
-				try h.proc.stdout.readAll() catch (_) {}
+				try
+					h.proc.stdout.readAll()
+				catch (_) {}
 				final code = h.proc.exitCode();
 				h.proc.close();
 				if (code != 0)
-					post(() -> Term.error('hook ${h.name} failed ($code)' + (err.trim().length > 0 ? ': ${err.trim().split("\n")[0]}' : '')));
+					post(() -> Term.error('hook ${h.name} ${failed(code, err)}'));
 			});
 	}
 
@@ -83,7 +80,7 @@ class Hooks {
 		final hooks = find(event);
 		if (hooks.length == 0)
 			return data;
-		return withEnv(event, null, () -> {
+		return withEnv(environment(event), () -> {
 			var result:Null<String> = data;
 			for (h in hooks) {
 				final name = h.name;
@@ -105,28 +102,38 @@ class Hooks {
 		});
 	}
 
-	/**
-		Runs `f` with the `NORC_*` variables of `event` and `values` set, inherited by the processes it starts.
-		Only on the main thread: the environment is shared by all threads.
-	**/
-	function withEnv<T>(event:String, values:Null<Map<String, String>>, f:() -> T):T {
-		final env = values?.copy() ?? new Map<String, String>();
+	/** The variables of the hooks of `event`: its `values`, `event`, `account` and `jid` **/
+	function environment(event:String, ?values:haxe.DynamicAccess<Dynamic>):Map<String, String> {
+		final env = new Map<String, String>();
+		for (k => v in values ?? {})
+			// matching a Dynamic against true would cast it to Bool
+			env.set(k, (v == null) ? "" : Std.isOfType(v, Bool) ? ((v : Bool) ? "1" : "0") : Std.string(v));
 		env.set("event", event);
 		env.set("account", account);
 		env.set("jid", jid());
-		for (k => v in env)
-			Sys.putEnv('NORC_${k.toUpperCase()}', v ?? "");
+		return env;
+	}
+
+	/**
+		Runs `f` with the variables `env` set as `NORC_<NAME>` (uppercased), inherited by the processes it starts.
+		Only on the main thread: the environment is shared by all threads.
+	**/
+	public static function withEnv<T>(env:Map<String, String>, f:() -> T):T {
+		function set(unset:Bool)
+			for (k => v in env)
+				Sys.putEnv('NORC_${k.toUpperCase()}', unset ? null : v);
+		set(false);
 		final result = try f() catch (e) {
-			unset(env);
+			set(true);
 			throw e;
 		}
-		unset(env);
+		set(true);
 		return result;
 	}
 
-	static function unset(env:Map<String, String>)
-		for (k in env.keys())
-			Sys.putEnv('NORC_${k.toUpperCase()}', null);
+	/** e.g. `failed (1): the first line of the error output` **/
+	static function failed(code:Int, err:String):String
+		return 'failed ($code)' + (err.trim().length > 0 ? ': ${err.trim().split("\n")[0]}' : '');
 
 	/** Runs a filter hook: `input` on stdin, returns stdout; throws on failure or timeout **/
 	static function runFilter(path:String, input:String):String {
@@ -155,7 +162,7 @@ class Hooks {
 		}
 		proc.close();
 		if (code != 0)
-			throw 'failed ($code)' + (err.trim().length > 0 ? ': ${err.trim().split("\n")[0]}' : '');
+			throw failed(code, err);
 		return out;
 	}
 
@@ -169,8 +176,7 @@ class Hooks {
 		for (dir in dirs) {
 			final names = [
 				for (name in executables(dir))
-					if ((name == prefix || name.startsWith('$prefix.')) && !name.endsWith("~"))
-						name
+					if ((name == prefix || name.startsWith('$prefix.')) && !name.endsWith("~")) name
 			];
 			names.sort(Reflect.compare);
 			for (name in names)
@@ -187,8 +193,7 @@ class Hooks {
 		return [
 			for (name in FileSystem.readDirectory(dir)) {
 				final path = '$dir/$name';
-				if (!name.startsWith(".") && !FileSystem.isDirectory(path) && (windows || FileSystem.stat(path).mode & 0x49 != 0))
-					name;
+				if (!name.startsWith(".") && !FileSystem.isDirectory(path) && (windows || FileSystem.stat(path).mode & 0x49 != 0)) name;
 			}
 		];
 	}

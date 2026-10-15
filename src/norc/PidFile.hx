@@ -72,23 +72,13 @@ class PidFile {
 				} catch (_)
 					"";
 			case "Windows":
-				output("powershell", [
+				Term.output("powershell", [
 					"-NoProfile",
 					"-Command",
 					'(Get-CimInstance Win32_Process -Filter "ProcessId=$pid").CommandLine'
-				]);
+				]) ?? "";
 			case _:
-				output("ps", ["-p", '$pid', "-o", "command="]);
+				Term.output("ps", ["-p", '$pid', "-o", "command="]) ?? "";
 		}
-	}
-
-	static function output(cmd:String, args:Array<String>):String {
-		return try {
-			final proc = new sys.io.Process(cmd, args);
-			final out = proc.stdout.readAll().toString();
-			proc.close();
-			out;
-		} catch (_)
-			"";
 	}
 }

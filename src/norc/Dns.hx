@@ -44,7 +44,9 @@ class Dns {
 		if (!FileSystem.exists(path))
 			return [];
 		final re = ~/^\s*nameserver\s+([0-9.]+)\s*$/;
-		return [for (line in (try File.getContent(path) catch (_) "").split("\n")) if (re.match(line)) re.matched(1)];
+		return [
+			for (line in (try File.getContent(path) catch (_) "").split("\n")) if (re.match(line)) re.matched(1)
+		];
 	}
 
 	/** The SRV records of `name` from the name server `server`, `null` if it gave no answer **/

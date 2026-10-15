@@ -1,6 +1,7 @@
 package norc;
 
 import norc.Config.Account;
+import norc.Module;
 import norc.Output;
 import norc.module.AdHoc;
 import norc.module.Blocking;
@@ -24,12 +25,9 @@ import sys.thread.Deque;
 import sys.thread.Lock;
 import sys.thread.Thread;
 import xmpp.EntityCapabilities;
-import xmpp.Jid;
 import xmpp.Ping;
-import xmpp.Message;
 import xmpp.Presence;
 import xmpp.XML;
-import xmpp.Response;
 
 using StringTools;
 
@@ -60,6 +58,7 @@ class Client {
 
 	/** Own presence, sent on login and with `/presence` **/
 	var show:Null<Show>;
+
 	var status:Null<String>;
 
 	/** Creates the capabilities element of the current session **/
@@ -77,25 +76,10 @@ class Client {
 	final scripts:Scripts;
 
 	/** Features of the client, each with its commands and part of the session **/
-	final modules = new Array<Module>();
+	final modules:Array<Module>;
 
 	/** Failed connection attempts since the last login, for the reconnect delay **/
 	var attempt = 0;
-
-	/** Roster and presence subscriptions **/
-	final contacts:Contacts;
-
-	/** Chat messages, extended by other modules **/
-	final messages:Messages;
-
-	/** Last printed presence of each available full jid **/
-	final presences = new Map<String, String>();
-
-	/** State (`available`, `away`, …) of each available full jid, for the presence hook **/
-	final states = new Map<String, String>();
-
-	/** Time of the login, presences shortly after are the initial ones of the contacts **/
-	var onlineSince = 0.0;
 
 	/** Time of the last input of the user (commands from the terminal or api), for last activity requests **/
 	var lastInput = Sys.time();
@@ -110,18 +94,18 @@ class Client {
 		this.password = password;
 		// the hooks and scripts of all accounts, then those of this account (if its config is a directory)
 		final accountDir = Config.accountDir(account.name);
-		hooks = new Hooks([Config.configDir() + "/hooks"].concat(accountDir != null ? ['$accountDir/hooks'] : []), account.name,
-			() -> session?.stream.jid ?? "", f -> events.add(Call(f)));
+		final dirs = [Config.configDir()].concat(accountDir != null ? [accountDir] : []);
+		hooks = new Hooks([for (dir in dirs) '$dir/hooks'], account.name, () -> session?.stream.jid ?? "", post);
 		commands = new Commands(online);
 		// the socket is only opened with api = 1 (run), stdin/stdout (--stdin) and scripts use it too
 		api = new Api((line, args, out) -> {
 			lastInput = Sys.time();
 			return (args == null) ? commands.run(line, out, false) : commands.call(line, args, out);
-		}, f -> events.add(Call(f)));
-		final env = ["ACCOUNT" => account.name, "CONFIG" => Config.configDir()];
+		}, post);
+		final env = ["account" => account.name, "config" => Config.configDir()];
 		if (accountDir != null)
-			env.set("ACCOUNT_DIR", accountDir);
-		scripts = new Scripts(Config.configDir() + "/scripts", accountDir != null ? '$accountDir/scripts' : null, api, env, f -> events.add(Call(f)));
+			env.set("account_dir", accountDir);
+		scripts = new Scripts([for (dir in dirs) '$dir/scripts'], api, env, post);
 		commands.registerAll(scripts.commands());
 		commands.registerAll([
 			{
@@ -170,37 +154,31 @@ class Client {
 				run: (args, out) -> quit()
 			}
 		]);
-		contacts = new Contacts(emit, bare -> {
-			// the presence of the first available resource
-			for (jid => state in presences)
-				if (Jid.parseBare(jid) == bare)
-					return state;
-			return null;
-		});
-		addModule(contacts);
+		final context:Context = {emit: emit, post: post};
+		final contacts = new Contacts(context);
+		final messages = new Messages(context, contacts);
 		commands.completers.set("jid", _ -> contacts.completions());
-		messages = new Messages(emit, contacts.resolve, contacts.name);
-		addModule(messages);
-		addModule(new Carbons(messages, account.carbons != false));
-		addModule(new Receipts(messages, emit, contacts.name, contacts.seesPresence));
-		addModule(new ChatStates(messages, emit, contacts.resolve, contacts.name, account.chatStates != false));
-		addModule(new Profile(messages, emit, contacts.resolveOptional, contacts.name, contacts.nicknames));
-		addModule(new Moods(messages, emit, contacts.name));
-		addModule(new Tunes(messages, emit, contacts.name));
-		addModule(new Time(contacts.resolveOptional, resourcesOf, account.entityTime == true));
-		addModule(new AdHoc(contacts.resolveOptional));
-		addModule(new Pings(contacts.resolveOptional, resourcesOf));
-		addModule(new Corrections(messages));
-		addModule(new Buzz(messages, emit, contacts.resolve, contacts.name, contacts.contains, account.attention != false));
-		addModule(new Blocking(contacts.resolveOptional));
-		addModule(new Discovery(contacts.resolveOptional, resourcesOf, account.lastActivity == true ? () -> Std.int(Sys.time() - lastInput) : null));
-		addModule(new FileTransfers(account.downloadDir ?? Config.downloadDir(), emit, contacts.resolve, f -> events.add(Call(f)), resourcesOf));
-		addModule(new Upload(messages, contacts.resolve, f -> events.add(Call(f))));
-	}
-
-	public function addModule(module:Module) {
-		modules.push(module);
-		commands.registerAll(module.commands());
+		modules = [
+			contacts,
+			messages,
+			new Carbons(context, messages, account.carbons != false),
+			new Receipts(context, messages, contacts),
+			new ChatStates(context, messages, contacts, account.chatStates != false),
+			new Profile(context, messages, contacts),
+			new Moods(context, messages, contacts),
+			new Tunes(context, messages, contacts),
+			new Corrections(context, messages),
+			new Buzz(context, messages, contacts, account.attention != false),
+			new Time(context, contacts, account.entityTime == true),
+			new Pings(context, contacts),
+			new AdHoc(context, contacts),
+			new Blocking(context, contacts),
+			new Discovery(context, contacts, account.lastActivity == true ? () -> Std.int(Sys.time() - lastInput) : null),
+			new FileTransfers(context, contacts, account.downloadDir ?? Config.downloadDir()),
+			new Upload(context, messages, contacts)
+		];
+		for (m in modules)
+			commands.registerAll(m.commands());
 	}
 
 	/**
@@ -212,7 +190,7 @@ class Client {
 		// regular checks, e.g. the keepalive of the session
 		Thread.create(() -> while (true) {
 			Sys.sleep(5);
-			events.add(Call(() -> session?.tick()));
+			post(() -> session?.tick());
 		});
 		if (stdio)
 			api.stdio(quit);
@@ -249,10 +227,10 @@ class Client {
 	function complete(before:String):Null<{word:String, candidates:Array<String>}> {
 		var result = null;
 		final lock = new Lock();
-		events.add(Call(() -> {
+		post(() -> {
 			result = commands.complete(before);
 			lock.release();
-		}));
+		});
 		// nothing if the main thread is busy
 		return lock.wait(1) ? result : null;
 	}
@@ -300,8 +278,6 @@ class Client {
 		session.filterSend = xml -> hooks.filter("stanza-send", xml, validStanza);
 		session.filterRecv = xml -> hooks.filter("stanza-recv", xml, validStanza);
 		final stream = session.stream;
-		stream.onMessage = onMessage;
-		stream.onPresence = onPresence;
 		Ping.handleRequests(stream);
 		final features = new Array<String>();
 		for (m in modules) {
@@ -323,10 +299,6 @@ class Client {
 				return;
 			}
 			Term.info('online as ${stream.jid}');
-			onlineSince = Sys.time();
-			// the presences kept for resuming are sent again by the server
-			presences.clear();
-			states.clear();
 			emit("login", [stream.jid], {jid: stream.jid, resumed: false});
 			for (m in modules)
 				m.online();
@@ -355,11 +327,6 @@ class Client {
 		session.onClosed = (?msg) -> {
 			this.session = null;
 			resumable = (!quitting && session.resumable()) ? session : null;
-			// kept if the session is resumed
-			if (resumable == null) {
-				presences.clear();
-				states.clear();
-			}
 			for (m in modules)
 				m.detach();
 			if (quitting) {
@@ -386,68 +353,9 @@ class Client {
 		});
 	}
 
-	function onMessage(m:Message) {
-		if (m.type == error) {
-			final from = m.from != null ? Jid.parseBare(m.from) : account.jid.domain;
-			final condition:Null<String> = m.error?.condition;
-			Term.error('message error from $from' + describeError(m.error));
-			errorEvent("message", condition ?? "error", {from: m.from ?? from});
-			return;
-		}
-		messages.receive(m);
-	}
-
-	function onPresence(p:Presence) {
-		if (p.from == null)
-			return;
-		final who = displayName(Jid.parseBare(p.from));
-		final res = Jid.parseResource(p.from);
-		final full = res != null ? '$who/$res' : who;
-		final status = p.status != null ? ' (${p.status})' : '';
-		final msg = switch p.type {
-			case null:
-				if (p.from == session?.stream.jid)
-					return;
-				final state = '${p.show ?? "available"}$status';
-				// Only print changes
-				if (presences.get(p.from) == state)
-					return;
-				presences.set(p.from, state);
-				presenceHook(p.from, p.show ?? "available", p.status);
-				'$full is $state';
-			case unavailable:
-				// Ignore contacts which were not seen online (servers send these on login)
-				if (!presences.exists(p.from))
-					return;
-				presences.remove(p.from);
-				presenceHook(p.from, "offline", p.status);
-				'$full is offline$status';
-			case subscribe:
-				contacts.request(p.from);
-				emit("subscribe", [Jid.parseBare(p.from)], {from: p.from, name: who});
-				'$who wants to see your presence: /contacts accept ${Jid.parseBare(p.from)} or /contacts deny ${Jid.parseBare(p.from)}';
-			case subscribed:
-				subscriptionEvent(p.from, "subscribed", who);
-				'$who allowed you to see their presence';
-			case unsubscribed:
-				subscriptionEvent(p.from, "unsubscribed", who);
-				'$who removed your presence subscription';
-			case unsubscribe:
-				subscriptionEvent(p.from, "unsubscribe", who);
-				'$who unsubscribed from your presence';
-			case error:
-				Term.error('presence error from $full' + describeError(p.error));
-				return;
-			case _: return;
-		}
-		Term.println(Term.timestamp(Date.now()) + ' ' + Term.style(msg, 2));
-	}
-
 	function setPresence(state:Null<String>, status:Null<String>, out:Output) {
-		if (state == null) {
-			presenceData(out, () -> out.info('presence: ${describePresence()}' + (online() ? '' : ' (not connected)')));
-			return;
-		}
+		if (state == null)
+			return showPresence(out, false);
 		switch state {
 			case "available", "online":
 				show = null;
@@ -460,9 +368,7 @@ class Client {
 				show = s;
 		}
 		this.status = status;
-		if (online())
-			sendPresence();
-		presenceData(out, () -> out.info('presence: ${describePresence()}' + (online() ? '' : ' (sent once connected)')));
+		updatePresence(out);
 	}
 
 	function setStatus(text:Null<String>, out:Output) {
@@ -471,13 +377,21 @@ class Client {
 			return;
 		}
 		status = (text == "-") ? null : text;
-		if (online())
-			sendPresence();
-		presenceData(out, () -> out.info('presence: ${describePresence()}' + (online() ? '' : ' (sent once connected)')));
+		updatePresence(out);
 	}
 
-	function presenceData(out:Output, show:() -> Void)
-		out.data({state: (this.show : Null<String>) ?? "available", status: status, online: online()}, show);
+	/** Sends the changed presence (if online) and shows it **/
+	function updatePresence(out:Output) {
+		if (online())
+			sendPresence();
+		showPresence(out, true);
+	}
+
+	function showPresence(out:Output, changed:Bool) {
+		final presence = {state: (show : Null<String>) ?? "available", status: status};
+		final note = online() ? '' : changed ? ' (sent once connected)' : ' (not connected)';
+		out.data({state: presence.state, status: status, online: online()}, () -> out.info('presence: ${Contacts.describe(presence)}$note'));
+	}
 
 	function sendPresence() {
 		final presence = new Presence(show, status);
@@ -485,9 +399,6 @@ class Client {
 			presence.properties.push(caps());
 		session.stream.send(presence);
 	}
-
-	function describePresence():String
-		return (show ?? "available") + (status != null ? ' ($status)' : '');
 
 	function showConfig(out:Output) {
 		final path = Config.accountPath(account.name);
@@ -500,7 +411,13 @@ class Client {
 		final map:haxe.DynamicAccess<Null<String>> = {};
 		for (v in values)
 			map.set(v.key, v.value);
-		out.data({account: account.name, path: path, exists: exists, values: map, unsaved: unsaved}, () -> {
+		out.data({
+			account: account.name,
+			path: path,
+			exists: exists,
+			values: map,
+			unsaved: unsaved
+		}, () -> {
 			out.print('account ${account.name}' + Term.style(exists ? ' ($path)' : ' (no config file: /config save creates $path)', 2));
 			var width = 0;
 			for (v in values)
@@ -557,23 +474,13 @@ class Client {
 		emit("error", [kind, text], v);
 	}
 
-	/** The condition and text of a stanza error, e.g. `: remote-server-timeout: Server-to-server connection failed` **/
-	static function describeError(e:Null<xmpp.Stanza.Error>):String {
-		if (e == null)
-			return '';
-		final parts = [(e.condition : Null<String>), e.text].filter(v -> v != null && v.length > 0);
-		return parts.length > 0 ? ': ${parts.join(": ")}' : '';
-	}
-
-	function subscriptionEvent(from:String, type:String, name:String)
-		emit("subscription", [Jid.parseBare(from), type], {from: from, name: name, type: type});
-
 	/** Output of a stanza filter hook: one well-formed element **/
 	static function validStanza(xml:String):Bool
 		return try {
 			final x = Xml.parse(xml);
 			[for (e in x.elements()) e].length == 1;
-		} catch (_) false;
+		} catch (_)
+			false;
 
 	/** An online session ended: the logout event (once per session) **/
 	function logout(reason:String, reconnect:Bool) {
@@ -596,10 +503,6 @@ class Client {
 		out.info('xmpp debug: ${debug ? "on" : "off"}');
 	}
 
-	/** The available full jids of a contact (bare jid) **/
-	function resourcesOf(bare:String):Array<String>
-		return [for (jid in presences.keys()) if (Jid.parseBare(jid) == bare) jid];
-
 	function online():Bool
 		return session != null && session.online;
 
@@ -612,30 +515,7 @@ class Client {
 		api.event(event, values);
 	}
 
-	function presenceHook(from:String, state:String, status:Null<String>) {
-		final bare = Jid.parseBare(from);
-		final previous = states.get(from) ?? "offline";
-		if (state == "offline")
-			states.remove(from);
-		else
-			states.set(from, state);
-		// available resources of the contact after this change
-		var resources = 0;
-		for (jid in states.keys())
-			if (Jid.parseBare(jid) == bare)
-				resources++;
-		emit("presence", [bare, state, status ?? ""], {
-			from: from,
-			name: displayName(bare),
-			state: state,
-			status: status,
-			previous: previous,
-			resources: resources,
-			// the server sends the presences of all available contacts after the login
-			initial: Sys.time() - onlineSince < 5
-		});
-	}
-
-	inline function displayName(bare:String):String
-		return contacts.name(bare);
+	/** Runs `f` on the main thread **/
+	function post(f:() -> Void)
+		events.add(Call(f));
 }

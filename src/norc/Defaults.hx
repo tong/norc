@@ -34,7 +34,9 @@ class Defaults {
 	public static function install(dir:String):Array<String> {
 		if (FileSystem.exists(dir))
 			return [];
-		final names = [for (name in haxe.Resource.listNames()) if (name.startsWith(PREFIX)) name.substr(PREFIX.length)];
+		final names = [
+			for (name in haxe.Resource.listNames()) if (name.startsWith(PREFIX)) name.substr(PREFIX.length)
+		];
 		names.sort(Reflect.compare);
 		for (name in names) {
 			final path = '$dir/$name';

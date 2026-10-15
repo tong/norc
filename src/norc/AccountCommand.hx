@@ -9,6 +9,7 @@ import xmpp.Jid;
 import xmpp.Response;
 import xmpp.XML;
 import xmpp.client.Account as Registration;
+import xmpp.client.Stream;
 
 using StringTools;
 
@@ -150,10 +151,8 @@ or the only configured one.';
 			});
 		}
 		session.onClosed = (?msg) -> {
-			if (!registered) {
-				finish(1, 'disconnected' + (msg != null ? ': $msg' : ''));
-				return;
-			}
+			if (!registered)
+				return closed(false, msg);
 			if (options.save) {
 				Config.saveAccount(account);
 				Term.info('saved account config: ${Config.accountPath(account.name)}');
@@ -172,22 +171,8 @@ or the only configured one.';
 			final bare = Jid.parseBare(account.jid);
 			if (!options.yes && !Term.confirm('Delete the account $bare on the server? This can not be undone.'))
 				return 1;
-			final password = readPassword(account, "Password");
-			var removed = false;
-			final session = connect(account);
-			session.onSecured = features -> session.login(password, features);
-			session.onOnline = () -> Registration.unregister(session.stream, res -> switch res {
-				case Result(_):
-					removed = true;
-					Term.info('deleted $bare');
-					session.close();
-				case Error(e):
-					finish(1, 'unregister failed: ${formError(e)}');
-			});
-			// The server closes the stream after removing the account
-			session.onStreamError = condition -> if (!removed) Term.error('stream error: $condition');
-			session.onClosed = (?msg) -> finish(removed ? 0 : 1, removed ? null : 'disconnected' + (msg != null ? ': $msg' : ''));
-			return loop(session);
+			return request(account, readPassword(account, "Password"), "unregister failed", (stream, handler) -> Registration.unregister(stream, handler),
+				() -> Term.info('deleted $bare'));
 		});
 		// after the lock is released: purge removes the state directory
 		if (code == 0 && options.purge)
@@ -200,23 +185,39 @@ or the only configured one.';
 		return locked(account, () -> {
 			final password = readPassword(account, "Current password");
 			final newPassword = readNewPassword("New password");
-			var changed = false;
-			final session = connect(account);
-			session.onSecured = features -> session.login(password, features);
-			session.onOnline = () -> Registration.changePassword(session.stream, account.jid.node, newPassword, res -> switch res {
-				case Result(_):
-					changed = true;
+			return request(account, password, "password change failed",
+				(stream, handler) -> Registration.changePassword(stream, account.jid.node, newPassword, handler), () -> {
 					Term.info('changed the password of ${Jid.parseBare(account.jid)}');
 					if (account.passwordCmd != null)
 						Term.info('update the password returned by password_cmd: ${account.passwordCmd}');
-					session.close();
-				case Error(e):
-					finish(1, 'password change failed: ${formError(e)}');
-			});
-			session.onClosed = (?msg) -> finish(changed ? 0 : 1, changed ? null : 'disconnected' + (msg != null ? ': $msg' : ''));
-			return loop(session);
+				});
 		});
 	}
+
+	/**
+		Logs in and sends a request with `send`; `done` is called if it succeeds. Returns the exit code.
+	**/
+	function request(account:Account, password:String, failed:String, send:(Stream, Response<XML>->Void) -> Void, done:() -> Void):Int {
+		var succeeded = false;
+		final session = connect(account);
+		session.onSecured = features -> session.login(password, features);
+		session.onOnline = () -> send(session.stream, res -> switch res {
+			case Result(_):
+				succeeded = true;
+				done();
+				session.close();
+			case Error(e):
+				finish(1, '$failed: ${formError(e)}');
+		});
+		// e.g. the server closes the stream after removing the account
+		session.onStreamError = condition -> if (!succeeded) Term.error('stream error: $condition');
+		session.onClosed = (?msg) -> closed(succeeded, msg);
+		return loop(session);
+	}
+
+	/** The session closed: done if `ok` **/
+	function closed(ok:Bool, ?msg:String)
+		finish(ok ? 0 : 1, ok ? null : 'disconnected' + (msg != null ? ': $msg' : ''));
 
 	/** Runs `f` holding the pid file of `account`: it must not be in use by a running norc **/
 	static function locked(account:Account, f:() -> Int):Int {
@@ -233,21 +234,15 @@ or the only configured one.';
 
 	/** The account `jid` (config name, local part or jid), else the one given with `-a` or the only configured one **/
 	function resolve(jid:Null<String>):Account {
-		final names = Config.listAccounts();
 		final account = if (jid != null && !jid.contains("@")) {
 			// an account name, or the local part of a configured account
 			Config.findAccount(jid);
 		} else if (jid != null) {
 			// a configured account (by name or jid), or an unconfigured jid
-			var found:Null<Account> = null;
-			for (name in names) {
-				final a = try Config.loadAccount(name) catch (_) continue;
-				if (name == jid || Jid.parseBare(a.jid) == Jid.parseBare(jid)) {
-					found = a;
-					break;
-				}
-			}
-			found ?? Config.createAccount(options.name ?? Jid.parseBare(jid), jid);
+			try
+				Config.findAccount(Jid.parseBare(jid))
+			catch (_)
+				Config.createAccount(options.name ?? Jid.parseBare(jid), jid);
 		} else if (options.name != null) {
 			Config.findAccount(options.name);
 		} else {
@@ -320,7 +315,8 @@ or the only configured one.';
 		}
 	}
 
-	static function readPassword(account:Account, prompt:String):String
+	/** The password of `account`: the output of its `password_cmd`, else asked for (with `prompt`) **/
+	public static function readPassword(account:Account, prompt:String):String
 		return account.passwordCmd != null ? Term.readCommand(account.passwordCmd) : Term.readPassword('$prompt for ${Jid.parseBare(account.jid)}: ');
 
 	static function readNewPassword(prompt:String):String {
@@ -437,22 +433,21 @@ or the only configured one.';
 	}
 
 	static function registrationError(e:xmpp.Stanza.Error):String {
-		final reason:String = switch (e.condition : String) {
+		final reason = switch (e.condition : String) {
 			case "conflict": "the username is taken";
 			case "not-acceptable": "missing or invalid data";
 			case "not-allowed", "forbidden": "the server doesn't allow registration (from clients)";
 			case "service-unavailable", "feature-not-implemented": "the server doesn't support in-band registration";
 			case "resource-constraint": "too many registrations, try again later";
-			case c: c;
+			case _: null;
 		}
-		return reason + (e.text != null ? ' (${e.text})' : '');
+		return (reason != null) ? reason + (e.text != null ? ' (${e.text})' : '') : Term.errorText(e);
 	}
 
 	/** Error message, mentioning a data form the server asks to fill in (not supported) **/
 	static function formError(e:xmpp.Stanza.Error):String {
 		final form = e.payload != null ? Registration.parseFields(e.payload).form : null;
-		return '${e.condition}'
-			+ (e.text != null ? ' (${e.text})' : '')
+		return Term.errorText(e)
 			+ (form != null ? ': the server asks for more information (${form.title ?? form.formType}), which norc does not support yet' : '');
 	}
 }
