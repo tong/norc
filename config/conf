@@ -34,6 +34,11 @@
 # (e.g. after a network change); without answer within 30 seconds norc reconnects. 0 disables it.
 # keepalive = 60
 
+# STUN and TURN servers for calls (/call), needed when the other side isn't on the same network: in addition to
+# those of your server (XEP-0215, e.g. Prosody's mod_turn_external with coturn). Several TURN servers separated by ,
+# stun = stun://stun.example.org:3478
+# turn = turn://user:password@turn.example.org:3478?transport=udp
+
 # Join the rooms bookmarked with autojoin after the login (/bookmarks), 0 disables it.
 # autojoin_bookmarks = 1
 

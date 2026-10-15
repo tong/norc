@@ -13,6 +13,7 @@ import sys.io.Process;
 import sys.thread.Thread;
 import xmpp.Jid;
 import xmpp.Jingle;
+import xmpp.ExternalServices;
 import xmpp.JingleRtp;
 import xmpp.ServiceDiscovery;
 import xmpp.XML;
@@ -117,11 +118,18 @@ class Calls extends Module {
 	final calls = new Array<Call>();
 	var nextId = 1;
 
-	public function new(context:Context, contacts:Contacts, sessions:JingleSessions, helper:String) {
+	/** The settings of calls (call_* keys, stun, turn) **/
+	final account:Config.Account;
+
+	/** The server offers its STUN and TURN servers (XEP-0215), `null` while unknown **/
+	var externalServices:Null<Bool>;
+
+	public function new(context:Context, contacts:Contacts, sessions:JingleSessions, account:Config.Account) {
 		super(context);
 		this.contacts = contacts;
 		this.sessions = sessions;
-		final command = words(helper);
+		this.account = account;
+		final command = words(account.callHelper ?? "norc-rtc");
 		final path = Files.which(command[0] ?? "");
 		this.helper = (path != null) ? [path].concat(command.slice(1)) : null;
 		sessions.handle(JingleRtp.XMLNS, incoming);
@@ -191,6 +199,8 @@ class Calls extends Module {
 	override public function detach() {
 		for (c in calls.copy())
 			finish(c, "disconnected");
+		// another server may offer other services
+		externalServices = null;
 		super.detach();
 	}
 
@@ -327,13 +337,49 @@ class Calls extends Module {
 	}
 
 	/** Starts the media of `c`: the caller creates an offer, the callee answers the offer of the peer **/
-	function start(c:Call) {
-		try {
-			final options = (c.bundle ? [] : ["--no-bundle"]).concat(['--audio=${c.audio}']).concat(c.video != none ? ['--video=${c.video}'] : []).concat(c.file != null ? ["--audio-file", c.file] : []);
-			c.rtc = new Rtc(helper.concat(options), context.post, msg -> media(c, msg), code -> stopped(c, code));
-		} catch (e) {
-			c.out.error('cannot start ${helper[0]}: $e');
-			end(c, failed_application, "failed");
+	function start(c:Call)
+		servers(servers -> {
+			if (!calls.contains(c))
+				return;
+			try {
+				final options = servers.concat(c.bundle ? [] : ["--no-bundle"])
+					.concat(['--audio=${c.audio}'])
+					.concat(c.video != none ? ['--video=${c.video}'] : [])
+					.concat(c.file != null ? ["--audio-file", c.file] : []);
+				c.rtc = new Rtc(helper.concat(options), context.post, msg -> media(c, msg), code -> stopped(c, code));
+			} catch (e) {
+				c.out.error('cannot start ${helper[0]}: $e');
+				end(c, failed_application, "failed");
+			}
+		});
+
+	/**
+		The options of norc-rtc for the STUN and TURN servers: of the config, and of the server (XEP-0215, requested
+		for each call: TURN credentials expire). Without any, calls connect only on the same network or with a public
+		address.
+	**/
+	function servers(callback:Array<String>->Void) {
+		function options(stun:Array<String>, turn:Array<String>):Array<String> {
+			final first = (account.stun != null) ? account.stun : stun[0];
+			return (first != null ? ["--stun", first] : []).concat([for (t in (account.turn ?? []).concat(turn)) for (o in ["--turn", t]) o]);
+		}
+		function request() {
+			ExternalServices.request(stream, res -> {
+				final services = [for (s in ExternalServices.parse(res.payload)) {type: s.type.toLowerCase(), uri: ExternalServices.uri(s)}];
+				callback(options([for (s in services) if (s.type == "stun" && s.uri != null) s.uri], [
+					for (s in services)
+						if (s.type != "stun" && s.uri != null) s.uri
+				]));
+			});
+		}
+		switch externalServices {
+			case true: request();
+			case false: callback(options([], []));
+			case null:
+				ServiceDiscovery.discoInfo(stream, stream.domain, null, res -> {
+					externalServices = res.payload != null && ServiceDiscovery.parseInfo(res.payload).features.contains(ExternalServices.XMLNS);
+					externalServices ? request() : callback(options([], []));
+				});
 		}
 	}
 

@@ -58,6 +58,12 @@ typedef Account = {
 	/** Join the rooms bookmarked with autojoin after the login, `true` if not set **/
 	var ?autojoinBookmarks:Bool;
 
+	/** STUN server for calls (`stun://host:port`), in addition to those of the server **/
+	var ?stun:String;
+
+	/** TURN servers for calls (`turn://user:password@host:port`, `turns://…`), in addition to those of the server **/
+	var ?turn:Array<String>;
+
 	/** Program for the media of calls with its options, `norc-rtc` if not set **/
 	var ?callHelper:String;
 
@@ -110,6 +116,7 @@ private typedef Key = {
 	`attention` (`0`: ignore attention requests),
 	`stream_management` (`0`: no acknowledgements and resumption of the session),
 	`call_helper` (program for the media of calls, with options),
+	`stun`, `turn` (servers for calls, `stun://host:port`, `turn://user:password@host:port`, several separated by `,`),
 	`autojoin_bookmarks` (`0`: don't join bookmarked rooms after the login),
 	`priority` (of the presence, -128 to 127),
 	`alias.<name>` (an alias of a command, e.g. `alias.h = help`, `alias.away = presence away`),
@@ -144,6 +151,16 @@ class Config {
 		flag("stream_management", a -> a.streamManagement, (a, v) -> a.streamManagement = v),
 		{name: "priority", get: a -> (a.priority != null) ? Std.string(a.priority) : null, set: (a, v) -> a.priority = parsePriority(v)},
 		flag("autojoin_bookmarks", a -> a.autojoinBookmarks, (a, v) -> a.autojoinBookmarks = v),
+		{
+			name: "stun",
+			get: a -> a.stun,
+			set: (a, v) -> a.stun = serverUri(v, ["stun"])
+		},
+		{
+			name: "turn",
+			get: a -> (a.turn != null) ? a.turn.join(", ") : null,
+			set: (a, v) -> a.turn = [for (s in v.split(",")) if (s.trim().length > 0) serverUri(s.trim(), ["turn", "turns"])]
+		},
 		{name: "call_helper", get: a -> a.callHelper, set: (a, v) -> a.callHelper = v},
 		{name: "chat_history", get: a -> (a.chatHistory != null) ? Std.string(a.chatHistory) : null, set: (a, v) -> a.chatHistory = parseCount(v)},
 		flag("persistent_command_history", a -> a.persistentCommandHistory, (a, v) -> a.persistentCommandHistory = v),
@@ -401,6 +418,14 @@ class Config {
 		if (Math.isNaN(v) || v < 0)
 			throw 'invalid keepalive: $value (seconds, 0 to disable)';
 		return v;
+	}
+
+	/** A server URI with one of `schemes` (e.g. `stun://host:port`) **/
+	static function serverUri(value:String, schemes:Array<String>):String {
+		final i = value.indexOf("://");
+		if (i == -1 || !schemes.contains(value.substr(0, i)) || value.length <= i + 3)
+			throw 'invalid server: $value (${[for (s in schemes) '$s://…'].join(", ")})';
+		return value;
 	}
 
 	static function parsePriority(value:String):Int {

@@ -216,7 +216,7 @@ class Client {
 			new Discovery(context, contacts, account.lastActivity == true ? () -> Std.int(Sys.time() - lastInput) : null),
 			sessions,
 			new FileTransfers(context, contacts, sessions, account.downloadDir ?? Config.downloadDir()),
-			new Calls(context, contacts, sessions, account.callHelper ?? "norc-rtc"),
+			new Calls(context, contacts, sessions, account),
 			new Upload(context, messages, contacts)
 		];
 		for (m in modules)
