@@ -10,9 +10,11 @@ import xmpp.Message;
 import xmpp.Muc;
 import xmpp.Presence;
 import xmpp.Response;
+import xmpp.ServiceDiscovery;
 import xmpp.XML;
 import xmpp.client.Stream;
 
+using Lambda;
 using StringTools;
 using xmpp.DelayedDelivery;
 
@@ -52,6 +54,9 @@ class Rooms extends Module {
 	/** Called when a room was left (also when removed by the room), or the own nick in it changed **/
 	public var changed:Null<(room:String) -> Void>;
 
+	/** Rooms listed by `/rooms find` at most (each is queried for its information) **/
+	static inline var MAX_FOUND = 50;
+
 	/** The chat service of the server, once found (`null`: not searched yet) **/
 	var service:Null<{jid:Null<String>}>;
 
@@ -72,6 +77,13 @@ class Rooms extends Module {
 				description: "list the rooms (group chats) you are in",
 				run: (args, out) -> list(out),
 				subcommands: [
+					{
+						name: "find",
+						args: "[service]",
+						description: "list the public rooms of the chat service of your server, or of another service (e.g. conference.example.org)",
+						online: true,
+						run: (args, out) -> findRooms(args[0], out)
+					},
 					{
 						name: "leave",
 						description: "leave all rooms",
@@ -263,12 +275,62 @@ class Rooms extends Module {
 	function jidOf(input:String, callback:Null<String>->Void) {
 		if (input.contains("@"))
 			return callback(Jid.parseBare(input));
+		chatService(jid -> callback(jid != null ? '$input@$jid' : null));
+	}
+
+	/** The chat service of the server, `null` if it has none **/
+	function chatService(callback:Null<String>->Void) {
 		if (service != null)
-			return callback(service.jid != null ? '$input@${service.jid}' : null);
+			return callback(service.jid);
 		Discovery.findService(stream, Muc.XMLNS, jid -> {
 			service = {jid: jid};
-			callback(jid != null ? '$input@$jid' : null);
+			callback(jid);
 		});
+	}
+
+	/** Lists the public rooms of a chat service (the items), with their names, occupants and descriptions **/
+	function findRooms(input:Null<String>, out:Output) {
+		final done = out.wait();
+		function list(service:Null<String>) {
+			if (service == null) {
+				out.error("your server has no chat service: give one, e.g. /rooms find conference.example.org");
+				return done();
+			}
+			request(out, 'cannot list the rooms of $service', h -> ServiceDiscovery.discoItems(stream, service, null, h), payload -> {
+				final items = (payload == null) ? [] : ServiceDiscovery.parseItems(payload).slice(0, MAX_FOUND);
+				final found = new Array<{jid:String, ?name:String, ?occupants:Int, ?description:String}>();
+				// the information of each room, in parallel
+				var pending = items.length;
+				function show() {
+					found.sort((a, b) -> (b.occupants ?? 0) - (a.occupants ?? 0));
+					out.data({service: service, rooms: found}, () -> {
+						out.info('$service: ${found.length} public rooms' + (found.length > 0 ? " (/room join <jid>)" : ""));
+						for (r in found)
+							out.print('  ${r.jid}' + (r.name != null && r.name != Jid.parseNode(r.jid) ? ' ${r.name}' : '')
+								+ Term.style(r.occupants != null ? ' (${r.occupants} occupants)' : '', 2)
+								+ (r.description != null && r.description.length > 0 ? ': ${r.description}' : ''));
+					});
+					done();
+				}
+				if (items.length == 0)
+					return show();
+				for (item in items)
+					ServiceDiscovery.discoInfo(stream, item.jid, null, res -> {
+						final info = (res.payload == null) ? null : ServiceDiscovery.parseInfo(res.payload);
+						final form = info?.forms.find(f -> f.getValues("FORM_TYPE")[0] == "http://jabber.org/protocol/muc#roominfo");
+						final occupants = Std.parseInt(form?.getValues("muc#roominfo_occupants")[0] ?? "");
+						found.push({
+							jid: item.jid,
+							name: item.name ?? info?.identities.find(i -> i.category == "conference")?.name,
+							occupants: occupants,
+							description: form?.getValues("muc#roominfo_description")[0]
+						});
+						if (--pending == 0)
+							show();
+					});
+			});
+		}
+		(input != null) ? list(input) : chatService(list);
 	}
 
 	function leave(input:String, out:Output) {

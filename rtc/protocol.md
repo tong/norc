@@ -13,15 +13,15 @@ norc-rtc [--audio=DIRECTION] [--video[=DIRECTION]] [--stun URI] [--turn URI ...]
 |---|---|
 | `--audio=DIRECTION` | audio (Opus): `both` (default), `send`, `receive` or `none` |
 | `--video[=DIRECTION]` | video too (VP8): without value `both`, or `send`, `receive`, `none` (default) |
-
-The directions apply to the offer, and limit the answer to an offer (e.g. `--video=none` answers a video call without
-video). Only what was negotiated is sent, media of the peer which isn't received is discarded.
 | `--stun stun://host:port` | STUN server |
 | `--turn turn://user:password@host:port` | TURN server, repeatable (`turns://` for TLS) |
 | `--audio-source`, `--audio-sink` | GStreamer elements, default `autoaudiosrc`, `autoaudiosink` |
 | `--audio-file PATH` | play a file instead of the audio source (any format GStreamer decodes, at its speed; silence after its end) |
 | `--video-source`, `--video-sink` | default `autovideosrc`, `autovideosink` |
 | `--test` | test signals as sources (a tone, a test picture), received media is discarded |
+
+The directions apply to the offer, and limit the answer to an offer (e.g. `--video=none` answers a video call without
+video). Only what was negotiated is sent, media of the peer which isn't received is discarded.
 
 Messages are JSON objects, one per line, with a `type`. norc-rtc reads them on stdin and writes them on stdout;
 diagnostics go to stderr. It exits at the end of its input or after `hangup`: exit code 0, or 1 after an `error`.
