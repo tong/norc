@@ -108,7 +108,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: msys2 {0}
         run: |
-          make norc-rtc.exe CC=gcc
+          make norc-rtc CC=gcc
           rtc/bundle-windows.sh dist/norc
           cp norc.exe dist/norc/bin/
 

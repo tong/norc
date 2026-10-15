@@ -138,8 +138,17 @@ from-c: | $(HASHLINK_SRC)/src/hl.h
 RTC_PKGS := gstreamer-1.0 gstreamer-webrtc-1.0 gstreamer-sdp-1.0 json-glib-1.0
 RTC_CFLAGS ?= -O2 -Wall
 
+# a plain target name (for completion): norc-rtc, on Windows also for norc-rtc.exe
+ifeq ($(EXE),)
+norc-rtc: rtc/norc-rtc.c
+	$(CC) $(RTC_CFLAGS) -o $@ $< $$(pkg-config --cflags --libs $(RTC_PKGS))
+else
 norc-rtc$(EXE): rtc/norc-rtc.c
 	$(CC) $(RTC_CFLAGS) -o $@ $< $$(pkg-config --cflags --libs $(RTC_PKGS))
+
+.PHONY: norc-rtc
+norc-rtc: norc-rtc$(EXE)
+endif
 
 # --- Install (Linux): `make install`, `sudo make install`, `make install PREFIX=~/.local` ---------------
 #
