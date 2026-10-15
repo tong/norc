@@ -5,6 +5,7 @@ import norc.Module;
 import norc.Output;
 import norc.Term;
 import norc.module.Messages;
+import xmpp.Bookmarks;
 import xmpp.Jid;
 import xmpp.Message;
 import xmpp.Muc;
@@ -26,6 +27,8 @@ private typedef Room = {
 	/** The own nick in the room **/
 	var nick:String;
 
+	var ?password:String;
+
 	/** The room in the current session, `null` while disconnected **/
 	var muc:Null<Muc>;
 
@@ -40,6 +43,9 @@ private typedef Room = {
 	Messages of rooms are shown as `12:03:41 room <nick> text` and emitted as `room` events; messages to a joined
 	room (`/msg`, chat mode) go to all occupants. Rooms are joined again after a reconnect.
 	Invitations to rooms are shown with the command to join (`room-invite` event).
+
+	Bookmarks (XEP-0402, stored on the server, shared with the other clients of the account): `/bookmarks`; rooms
+	bookmarked with autojoin are joined after the login, also when another client adds them.
 **/
 class Rooms extends Module {
 	final messages:Messages;
@@ -54,6 +60,9 @@ class Rooms extends Module {
 	/** Called when a room was left (also when removed by the room), or the own nick in it changed **/
 	public var changed:Null<(room:String) -> Void>;
 
+	/** The bookmarks by room jid (lowercase), loaded after the login **/
+	final bookmarks = new Map<String, Bookmark>();
+
 	/** Rooms listed by `/rooms find` at most (each is queried for its information) **/
 	static inline var MAX_FOUND = 50;
 
@@ -67,6 +76,7 @@ class Rooms extends Module {
 		// before other modules add elements for chats (e.g. receipt requests)
 		messages.outgoing.push(m -> if (m.to != null && Jid.parseResource(m.to) == null && joined(m.to)) m.type = groupchat);
 		messages.incoming.push(invitation);
+		messages.incoming.push(bookmarkChanges);
 	}
 
 	override public function commands():Array<Commands.Command> {
@@ -89,6 +99,30 @@ class Rooms extends Module {
 						description: "leave all rooms",
 						online: true,
 						run: (args, out) -> for (r in [for (r in rooms) r]) leave(r.jid, out)
+					}
+				]
+			},
+			{
+				name: "bookmarks",
+				description: "list the bookmarked rooms (stored on the server, shared with your other clients)",
+				run: (args, out) -> listBookmarks(out),
+				subcommands: [
+					{
+						name: "add",
+						args: "<jid> [nick]",
+						description: "bookmark a room: joined after the login, by your other clients too",
+						online: true,
+						run: (args, out) -> addBookmark(args[0], args[1], out),
+						complete: complete
+					},
+					{
+						name: "remove",
+						aliases: ["rm"],
+						args: "<jid>",
+						description: "remove the bookmark of a room (the room is not left)",
+						online: true,
+						run: (args, out) -> removeBookmark(args[0], out),
+						complete: ["jid" => _ -> [for (b in bookmarks) b.jid]]
 					}
 				]
 			},
@@ -147,6 +181,9 @@ class Rooms extends Module {
 		];
 	}
 
+	override public function features():Array<String>
+		return [Bookmarks.XMLNS_NOTIFY];
+
 	override public function attach(stream:Stream) {
 		super.attach(stream);
 		// the traffic of rooms, before the contacts and messages
@@ -169,6 +206,14 @@ class Rooms extends Module {
 			r.occupants.clear();
 			enter(r, error -> if (error != null) Term.error('cannot join ${r.jid} again: $error'));
 		}
+		// item-not-found: no bookmarks
+		Bookmarks.load(stream, res -> {
+			bookmarks.clear();
+			for (b in Bookmarks.parseItems(res.payload))
+				bookmarks.set(b.jid.toLowerCase(), b);
+			for (b in bookmarks)
+				autojoin(b);
+		});
 	}
 
 	override public function detach() {
@@ -215,32 +260,46 @@ class Rooms extends Module {
 				out.info('already in $jid');
 				return done();
 			}
-			final r:Room = {
-				jid: jid.toLowerCase(),
-				nick: nick ?? Jid.parseNode(stream.jid),
-				muc: null,
-				occupants: new Map()
-			};
-			// before the presences of the occupants arrive
-			rooms.set(r.jid, r);
-			r.muc = create(r);
-			enter(r, error -> {
-				if (error != null) {
-					rooms.remove(r.jid);
-					out.error('cannot join $jid: $error');
-				} else {
-					out.info('joined ${r.jid} as ${r.nick} (${Lambda.count(r.occupants)} occupants)');
-					if (entered != null)
-						entered(r.jid, out);
-				}
+			joinRoom(jid, nick, null, r -> {
+				if (r == null)
+					return done();
+				out.info('joined ${r.jid} as ${r.nick} (${Lambda.count(r.occupants)} occupants)');
+				if (entered != null)
+					entered(r.jid, out);
 				done();
-			});
+			}, out);
 		});
 	}
 
+	/** Joins room `jid`; `callback` gets the room, or `null` after an error (written to `out`, else shown) **/
+	function joinRoom(jid:String, nick:Null<String>, password:Null<String>, callback:Null<Room>->Void, ?out:Output) {
+		final r:Room = {
+			jid: jid.toLowerCase(),
+			nick: nick ?? Jid.parseNode(stream.jid),
+			password: password,
+			muc: null,
+			occupants: new Map()
+		};
+		// before the presences of the occupants arrive
+		rooms.set(r.jid, r);
+		r.muc = create(r);
+		enter(r, error -> {
+			if (error != null) {
+				rooms.remove(r.jid);
+				(out ?? TermOutput.instance).error('cannot join $jid: $error');
+			}
+			callback(error == null ? r : null);
+		});
+	}
+
+	/** Joins the room of bookmark `b` if it is marked autojoin and not joined **/
+	function autojoin(b:Bookmark)
+		if (b.autojoin && !joined(b.jid))
+			joinRoom(b.jid, b.nick, b.password, r -> if (r != null) Term.notice('joined ${r.jid} as ${r.nick} (bookmark)'));
+
 	/** Enters room `r` (again), `callback` gets the error or `null` **/
 	function enter(r:Room, callback:Null<String>->Void) {
-		r.muc.join(r.nick, null, res -> switch res {
+		r.muc.join(r.nick, r.password, res -> switch res {
 			case Result(presence):
 				r.nick = r.muc.nick;
 				// the own presence, answering the join
@@ -417,6 +476,73 @@ class Rooms extends Module {
 	/** The room in output: its local part **/
 	public static function label(jid:String):String
 		return Jid.parseNode(jid) ?? jid;
+
+	function listBookmarks(out:Output) {
+		final list = [for (b in bookmarks) b];
+		list.sort((a, b) -> Reflect.compare(a.jid, b.jid));
+		out.data({
+			bookmarks: [
+				for (b in list)
+					{jid: b.jid, name: b.name, nick: b.nick, autojoin: b.autojoin, joined: joined(b.jid)}
+			]
+		}, () -> {
+			if (list.length == 0)
+				out.info("no bookmarks (/bookmarks add <room>)");
+			for (b in list)
+				out.print('  ${b.jid}' + (b.name != null ? ' ${b.name}' : '')
+					+ Term.style([
+						for (s in [b.nick != null ? 'as ${b.nick}' : null, b.autojoin ? "autojoin" : null, joined(b.jid) ? "joined" : null]) if (s != null) s
+					].map(s -> ' $s').join(","), 2));
+		});
+	}
+
+	function addBookmark(input:String, nick:Null<String>, out:Output) {
+		final done = out.wait();
+		jidOf(input, jid -> {
+			if (jid == null) {
+				out.error('no room $input: give its jid (room@service)');
+				return done();
+			}
+			// changes of an existing bookmark keep its name and the data of other clients
+			final b:Bookmark = Reflect.copy(bookmarks.get(jid.toLowerCase())) ?? {jid: jid, autojoin: true};
+			b.autojoin = true;
+			b.nick = nick ?? nickIn(jid) ?? b.nick;
+			request(out, 'cannot bookmark $jid', h -> Bookmarks.set(stream, b, h), _ -> {
+				bookmarks.set(jid.toLowerCase(), b);
+				out.info('bookmarked $jid: joined after the login' + (b.nick != null ? ' as ${b.nick}' : ''));
+			});
+			done();
+		});
+	}
+
+	function removeBookmark(input:String, out:Output) {
+		final b = bookmarks.get(input.toLowerCase()) ?? [for (b in bookmarks) if (Jid.parseNode(b.jid) == input.toLowerCase()) b][0];
+		if (b == null) {
+			out.error('no bookmark of $input (/bookmarks lists them)');
+			return;
+		}
+		request(out, 'cannot remove the bookmark of ${b.jid}', h -> Bookmarks.remove(stream, b.jid, h), _ -> {
+			bookmarks.remove(b.jid.toLowerCase());
+			out.info('removed the bookmark of ${b.jid}');
+		});
+	}
+
+	/** Bookmarks changed (also by other clients): new rooms with autojoin are joined **/
+	function bookmarkChanges(i:Incoming):Bool {
+		final changes = (i.carbon == null) ? Bookmarks.getChanges(stream, i.message) : null;
+		if (changes == null)
+			return false;
+		for (jid in changes.removed)
+			if (jid == "*")
+				bookmarks.clear();
+			else
+				bookmarks.remove(jid.toLowerCase());
+		for (b in changes.set) {
+			bookmarks.set(b.jid.toLowerCase(), b);
+			autojoin(b);
+		}
+		return true;
+	}
 
 	/** An invitation to a room (direct, or through the room): shown with the command to join **/
 	function invitation(i:Incoming):Bool {
