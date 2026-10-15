@@ -11,8 +11,11 @@ import sys.FileSystem;
 import sys.io.File;
 import xmpp.Jid;
 import xmpp.Jingle;
+import xmpp.JingleFileTransfer;
+import xmpp.JingleIBB;
+import xmpp.JingleS5B;
+import xmpp.JingleS5BNetwork;
 import xmpp.ServiceDiscovery;
-import xmpp.client.Stream;
 
 using StringTools;
 
@@ -64,10 +67,14 @@ class FileTransfers extends Module {
 	public static inline var MAX_SIZE = 100 * 1024 * 1024;
 
 	final contacts:Contacts;
+	final sessions:JingleSessions;
 	final downloadDir:String;
 
 	/** The session manager while attached **/
-	var jingle:Null<Jingle>;
+	var jingle(get, never):Null<Jingle>;
+
+	inline function get_jingle()
+		return sessions.jingle;
 
 	final transfers = new Array<Transfer>();
 	var nextId = 1;
@@ -75,10 +82,12 @@ class FileTransfers extends Module {
 	/** SOCKS5 bytestreams: network access (its sockets call back on the main thread) and the proxies found **/
 	final s5b:JingleS5BConfig;
 
-	public function new(context:Context, contacts:Contacts, downloadDir:String) {
+	public function new(context:Context, contacts:Contacts, sessions:JingleSessions, downloadDir:String) {
 		super(context);
 		this.contacts = contacts;
+		this.sessions = sessions;
 		this.downloadDir = downloadDir;
+		sessions.handle(JingleFileTransfer.XMLNS, onOffer);
 		s5b = {network: new JingleS5BSysNetwork(context.post), proxies: []};
 	}
 
@@ -123,12 +132,6 @@ class FileTransfers extends Module {
 	override public function features():Array<String>
 		return FEATURES;
 
-	override public function attach(stream:Stream) {
-		super.attach(stream);
-		jingle = new Jingle(stream);
-		jingle.onSessionInitiate = onOffer;
-	}
-
 	override public function online()
 		discoverProxies();
 
@@ -136,7 +139,6 @@ class FileTransfers extends Module {
 		clear();
 		s5b.proxies.resize(0);
 		super.detach();
-		jingle = null;
 	}
 
 	/**

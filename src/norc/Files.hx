@@ -3,7 +3,9 @@ package norc;
 import haxe.io.Path;
 import sys.FileSystem;
 
-/** Local files to send, upload or publish **/
+using StringTools;
+
+/** Local files: to send, upload or publish, and programs **/
 class Files {
 	/** Content types by file extension, e.g. for clients to show images inline **/
 	static final TYPES = [
@@ -42,6 +44,18 @@ class Files {
 			return null;
 		}
 		return {path: path, size: size};
+	}
+
+	/** The path of program `name` (a path, or a name searched in `PATH`), `null` if there is none **/
+	public static function which(name:String):Null<String> {
+		final windows = Sys.systemName() == "Windows";
+		if (name.contains("/") || (windows && name.contains("\\")))
+			return FileSystem.exists(Config.expandHome(name)) ? Config.expandHome(name) : null;
+		for (dir in (Sys.getEnv("PATH") ?? "").split(windows ? ";" : ":"))
+			for (file in (windows ? ['$name.exe', name] : [name]))
+				if (dir.length > 0 && FileSystem.exists('$dir/$file') && !FileSystem.isDirectory('$dir/$file'))
+					return '$dir/$file';
+		return null;
 	}
 
 	/** The content type of a file by its extension, `null` if unknown **/

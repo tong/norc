@@ -34,12 +34,20 @@
 # (e.g. after a network change); without answer within 30 seconds norc reconnects. 0 disables it.
 # keepalive = 60
 
+# Program for the audio and video of calls (/call), with its options (see norc-rtc --help), e.g. other devices:
+# call_helper = norc-rtc --audio-source "pipewiresrc target-object=alsa_input.usb-headset"
+# call_helper = norc-rtc
+
 # Prompt of the input line (-i), in "" to keep spaces at the start or end.
 # prompt = "> "
 
 # Prompt in chat mode (/chat): {name} is the name of the contact (in its color), {jid} its jid,
 # {state} its chat state unless active, e.g. " (typing)".
 # chat_prompt = "{name}{state}> "
+
+# Prompt in group chat mode (in a room, after /room join or /chat <room>): {name} is the room's local part (in its
+# color), {jid} its jid, {nick} your nick in it.
+# room_prompt = "#{name}> "
 
 # --- Privacy: what others can learn about you ---
 

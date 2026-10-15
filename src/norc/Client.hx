@@ -6,12 +6,14 @@ import norc.Output;
 import norc.module.AdHoc;
 import norc.module.Blocking;
 import norc.module.Buzz;
+import norc.module.Calls;
 import norc.module.Carbons;
 import norc.module.ChatStates;
 import norc.module.Corrections;
 import norc.module.Contacts;
 import norc.module.Discovery;
 import norc.module.FileTransfers;
+import norc.module.JingleSessions;
 import norc.module.Messages;
 import norc.module.Moods;
 import norc.module.Pings;
@@ -170,6 +172,7 @@ class Client {
 			room: account.roomPrompt ?? "#{name}> "
 		});
 		commands.completers.set("jid", _ -> contacts.completions());
+		final sessions = new JingleSessions(context);
 		modules = [
 			contacts,
 			messages,
@@ -187,7 +190,9 @@ class Client {
 			new AdHoc(context, contacts),
 			new Blocking(context, contacts),
 			new Discovery(context, contacts, account.lastActivity == true ? () -> Std.int(Sys.time() - lastInput) : null),
-			new FileTransfers(context, contacts, account.downloadDir ?? Config.downloadDir()),
+			sessions,
+			new FileTransfers(context, contacts, sessions, account.downloadDir ?? Config.downloadDir()),
+			new Calls(context, contacts, sessions, account.callHelper ?? "norc-rtc"),
 			new Upload(context, messages, contacts)
 		];
 		for (m in modules)

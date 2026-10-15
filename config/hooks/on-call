@@ -1,0 +1,22 @@
+#!/bin/sh
+#
+# norc hook: desktop notification for incoming and missed calls
+#
+# Run on the call event, when a call rings, connects or ends (/call).
+# Enable it with `chmod +x on-call`. Several hooks per event: on-call.<anything> (e.g. on-call.log).
+#
+# Arguments: from (bare jid) state
+# NORC_FROM      full jid of the other side
+# NORC_NAME      name of the contact
+# NORC_STATE     ringing (a contact calls you), calling (you call), connected, ended
+# NORC_MEDIA     audio or video
+# NORC_INCOMING  1: the contact called you
+# NORC_REASON    why the call ended (e.g. hung up, missed), when ended
+# NORC_DURATION  seconds connected, when ended
+# Always set: NORC_EVENT NORC_ACCOUNT (the account name) NORC_JID (your jid)
+
+command -v notify-send >/dev/null || exit 0
+case $NORC_STATE in
+ringing) exec notify-send --app-name=norc --urgency=critical "$NORC_NAME is calling" "$NORC_MEDIA call: /call accept" ;;
+ended) [ "$NORC_REASON" = missed ] && exec notify-send --app-name=norc "Missed call from $NORC_NAME" ;;
+esac
