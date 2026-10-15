@@ -87,6 +87,9 @@ typedef Account = {
 	/** Program for the media of calls with its options, `norc-rtc` if not set **/
 	var ?callHelper:String;
 
+	/** PubSub service of shared documents (`/share`), discovered on the server if not set **/
+	var ?shareService:String;
+
 	/** Keep the history of the input line (`-i`) in the state directory, `true` if not set **/
 	var ?persistentCommandHistory:Bool;
 
@@ -197,6 +200,7 @@ class Config {
 			set: (a, v) -> a.turn = [for (s in v.split(",")) if (s.trim().length > 0) serverUri(s.trim(), ["turn", "turns"])]
 		},
 		{name: "call_helper", get: a -> a.callHelper, set: (a, v) -> a.callHelper = v},
+		{name: "share_service", get: a -> a.shareService, set: (a, v) -> a.shareService = v},
 		{name: "chat_history", get: a -> (a.chatHistory != null) ? Std.string(a.chatHistory) : null, set: (a, v) -> a.chatHistory = parseCount(v)},
 		flag("persistent_command_history", a -> a.persistentCommandHistory, (a, v) -> a.persistentCommandHistory = v),
 		// in quotes: spaces at the start or end are kept

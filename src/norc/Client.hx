@@ -23,6 +23,7 @@ import norc.module.Receipts;
 import norc.module.Rooms;
 import norc.module.Time;
 import norc.module.Tunes;
+import norc.module.Share;
 import norc.module.Upload;
 import sys.FileSystem;
 import sys.thread.Deque;
@@ -218,6 +219,8 @@ class Client {
 			new FileTransfers(context, contacts, sessions, account.downloadDir ?? Config.downloadDir()),
 			new Calls(context, contacts, sessions, account),
 			new Upload(context, messages, contacts)
+			// disabled for now (shared documents, /share)
+			// new Share(context, messages, contacts, account.shareService)
 		];
 		for (m in modules)
 			commands.registerAll(m.commands());
