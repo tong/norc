@@ -5,13 +5,17 @@
 between it and the peer.
 
 ```
-norc-rtc [--video] [--stun URI] [--turn URI ...] [--audio-source PIPELINE] [--audio-file PATH] [--audio-sink PIPELINE]
+norc-rtc [--audio=DIRECTION] [--video[=DIRECTION]] [--stun URI] [--turn URI ...] [--audio-source PIPELINE] [--audio-file PATH] [--audio-sink PIPELINE]
          [--video-source PIPELINE] [--video-sink PIPELINE] [--test]
 ```
 
 | Option | |
 |---|---|
-| `--video` | send and receive video too (VP8) |
+| `--audio=DIRECTION` | audio (Opus): `both` (default), `send`, `receive` or `none` |
+| `--video[=DIRECTION]` | video too (VP8): without value `both`, or `send`, `receive`, `none` (default) |
+
+The directions apply to the offer, and limit the answer to an offer (e.g. `--video=none` answers a video call without
+video). Only what was negotiated is sent, media of the peer which isn't received is discarded.
 | `--stun stun://host:port` | STUN server |
 | `--turn turn://user:password@host:port` | TURN server, repeatable (`turns://` for TLS) |
 | `--audio-source`, `--audio-sink` | GStreamer elements, default `autoaudiosrc`, `autoaudiosink` |

@@ -28,13 +28,50 @@ static int exit_code = 0;
 /* Guards stdout, written by the main loop and the threads of webrtcbin */
 static GMutex output_lock;
 
-static gboolean video = FALSE, test = FALSE;
+/* The direction of a media, from the own side */
+typedef enum { NONE, SEND, RECEIVE, BOTH } Direction;
+
+static Direction audio = BOTH, video = NONE;
+static gboolean test = FALSE;
+
+static gboolean sends(Direction d);
+static void set_directions(void);
+static void update_sending(void);
+static const char *transceiver_media(GstWebRTCRTPTransceiver *t);
 static gchar *stun = NULL, **turn = NULL;
 static gchar *audio_source = NULL, *audio_sink = NULL, *video_source = NULL,
              *video_sink = NULL, *audio_file = NULL;
 
+static gboolean parse_direction(const char *value, Direction *d,
+                                GError **error) {
+  const char *names[] = {"none", "send", "receive", "both"};
+  for (int i = 0; i < 4; i++)
+    if (g_strcmp0(value, names[i]) == 0) {
+      *d = (Direction)i;
+      return TRUE;
+    }
+  g_set_error(error, G_OPTION_ERROR, G_OPTION_ERROR_BAD_VALUE,
+              "invalid direction: %s (both, send, receive, none)", value);
+  return FALSE;
+}
+
+static gboolean audio_option(const char *name, const char *value,
+                             gpointer data, GError **error) {
+  return parse_direction(value, &audio, error);
+}
+
+/* --video: both directions */
+static gboolean video_option(const char *name, const char *value,
+                             gpointer data, GError **error) {
+  return parse_direction(value ? value : "both", &video, error);
+}
+
 static GOptionEntry options[] = {
-    {"video", 0, 0, G_OPTION_ARG_NONE, &video, "Send and receive video", NULL},
+    {"audio", 0, 0, G_OPTION_ARG_CALLBACK, audio_option,
+     "Audio: both directions (default), send, receive or none", "DIRECTION"},
+    {"video", 0, G_OPTION_FLAG_OPTIONAL_ARG, G_OPTION_ARG_CALLBACK,
+     video_option, "Video: both directions (without value), send, receive or none",
+     "DIRECTION"},
     {"stun", 0, 0, G_OPTION_ARG_STRING, &stun, "STUN server",
      "stun://HOST:PORT"},
     {"turn", 0, 0, G_OPTION_ARG_STRING_ARRAY, &turn, "TURN server (repeatable)",
@@ -122,6 +159,12 @@ static void send_description(GstWebRTCSessionDescription *desc) {
 
 /* The offer or answer created by webrtcbin: set as local description, sent to
  * the peer */
+/* The answer is set (own or of the peer): the negotiated directions apply */
+static void on_answer_set(GstPromise *promise, gpointer user_data) {
+  gst_promise_unref(promise);
+  update_sending();
+}
+
 static void on_description_created(GstPromise *promise, gpointer user_data) {
   const char *kind = user_data;
   GstWebRTCSessionDescription *desc = NULL;
@@ -138,7 +181,12 @@ static void on_description_created(GstPromise *promise, gpointer user_data) {
   gst_promise_unref(promise);
   if (desc == NULL)
     return;
-  g_signal_emit_by_name(webrtc, "set-local-description", desc, NULL);
+  // the answer negotiated the directions
+  g_signal_emit_by_name(
+      webrtc, "set-local-description", desc,
+      (desc->type == GST_WEBRTC_SDP_TYPE_ANSWER)
+          ? gst_promise_new_with_change_func(on_answer_set, NULL, NULL)
+          : NULL);
   send_description(desc);
   gst_webrtc_session_description_free(desc);
 }
@@ -163,8 +211,11 @@ static void on_remote_set(GstPromise *promise, gpointer user_data) {
       gst_structure_get(reply, "error", G_TYPE_ERROR, &error, NULL)) {
     fail("invalid sdp: %s", error->message);
     g_error_free(error);
-  } else if (offer)
+  } else if (offer) {
+    set_directions();
     create("answer");
+  } else
+    update_sending();
   gst_promise_unref(promise);
 }
 
@@ -280,6 +331,21 @@ static void on_decoded(GstElement *decodebin, GstPad *pad, gpointer user_data) {
 static void on_incoming(GstElement *webrtc, GstPad *pad, gpointer user_data) {
   if (GST_PAD_DIRECTION(pad) != GST_PAD_SRC)
     return;
+  GstWebRTCRTPTransceiver *t = NULL;
+  g_object_get(pad, "transceiver", &t, NULL);
+  const char *media = (t != NULL) ? transceiver_media(t) : NULL;
+  gst_clear_object(&t);
+  const Direction d = (g_strcmp0(media, "audio") == 0) ? audio : video;
+  if (media != NULL && d != RECEIVE && d != BOTH) {
+    // a media not received (the peer sends it anyway): discarded
+    GstElement *sink = gst_element_factory_make("fakesink", NULL);
+    gst_bin_add(GST_BIN(pipeline), sink);
+    gst_element_sync_state_with_parent(sink);
+    GstPad *sinkpad = gst_element_get_static_pad(sink, "sink");
+    gst_pad_link(pad, sinkpad);
+    gst_object_unref(sinkpad);
+    return;
+  }
   GstElement *decodebin = gst_element_factory_make("decodebin", NULL);
   g_signal_connect(decodebin, "pad-added", G_CALLBACK(on_decoded), NULL);
   gst_bin_add(GST_BIN(pipeline), decodebin);
@@ -290,11 +356,11 @@ static void on_incoming(GstElement *webrtc, GstPad *pad, gpointer user_data) {
 }
 
 static void mute(const char *media, gboolean muted) {
-  if (g_strcmp0(media, "audio") == 0) {
+  if (g_strcmp0(media, "audio") == 0 && sends(audio)) {
     GstElement *volume = gst_bin_get_by_name(GST_BIN(pipeline), "audio-mute");
     g_object_set(volume, "mute", muted, NULL);
     gst_object_unref(volume);
-  } else if (g_strcmp0(media, "video") == 0 && video) {
+  } else if (g_strcmp0(media, "video") == 0 && sends(video)) {
     GstElement *valve = gst_bin_get_by_name(GST_BIN(pipeline), "video-mute");
     g_object_set(valve, "drop", muted, NULL);
     gst_object_unref(valve);
@@ -310,6 +376,98 @@ static gboolean on_bus_message(GstBus *bus, GstMessage *msg,
     g_error_free(error);
   }
   return TRUE;
+}
+
+static gboolean sends(Direction d) { return d == SEND || d == BOTH; }
+
+/* The media (`audio`, `video`) of a transceiver: marked when created, else its
+ * kind (of a transceiver created for a media of the peer) */
+static const char *transceiver_media(GstWebRTCRTPTransceiver *t) {
+  const char *media = g_object_get_data(G_OBJECT(t), "media");
+  if (media != NULL)
+    return media;
+  GstWebRTCKind kind;
+  g_object_get(t, "kind", &kind, NULL);
+  return kind == GST_WEBRTC_KIND_AUDIO   ? "audio"
+         : kind == GST_WEBRTC_KIND_VIDEO ? "video"
+                                         : NULL;
+}
+
+/* Marks the transceiver of a sink pad with the media of the linked branch */
+static gboolean mark_transceiver(GstElement *element, GstPad *pad,
+                                 gpointer data) {
+  GstCaps *caps = gst_pad_peer_query_caps(pad, NULL);
+  const char *media =
+      gst_caps_is_empty(caps)
+          ? NULL
+          : gst_structure_get_string(gst_caps_get_structure(caps, 0), "media");
+  GstWebRTCRTPTransceiver *t = NULL;
+  g_object_get(pad, "transceiver", &t, NULL);
+  if (t != NULL && media != NULL)
+    g_object_set_data(G_OBJECT(t), "media",
+                      g_strcmp0(media, "audio") == 0 ? "audio" : "video");
+  gst_clear_object(&t);
+  gst_caps_unref(caps);
+  return TRUE;
+}
+
+/* A transceiver only receiving `media`, with the codec to offer */
+static void add_transceiver(const char *media, const char *codec) {
+  GstCaps *caps = gst_caps_from_string(codec);
+  GstWebRTCRTPTransceiver *t = NULL;
+  g_signal_emit_by_name(webrtc, "add-transceiver",
+                        GST_WEBRTC_RTP_TRANSCEIVER_DIRECTION_RECVONLY, caps, &t);
+  if (t != NULL)
+    g_object_set_data(G_OBJECT(t), "media", (gpointer)media);
+  gst_clear_object(&t);
+  gst_caps_unref(caps);
+}
+
+/* Sets the direction of each transceiver from the options: before the offer,
+ * and before the answer (also of transceivers created for the offer) */
+static void set_directions(void) {
+  GArray *transceivers = NULL;
+  g_signal_emit_by_name(webrtc, "get-transceivers", &transceivers);
+  for (guint i = 0; i < transceivers->len; i++) {
+    GstWebRTCRTPTransceiver *t =
+        g_array_index(transceivers, GstWebRTCRTPTransceiver *, i);
+    const char *media = transceiver_media(t);
+    if (media == NULL)
+      continue;
+    const Direction d = (strcmp(media, "audio") == 0) ? audio : video;
+    const GstWebRTCRTPTransceiverDirection directions[] = {
+        GST_WEBRTC_RTP_TRANSCEIVER_DIRECTION_INACTIVE,
+        GST_WEBRTC_RTP_TRANSCEIVER_DIRECTION_SENDONLY,
+        GST_WEBRTC_RTP_TRANSCEIVER_DIRECTION_RECVONLY,
+        GST_WEBRTC_RTP_TRANSCEIVER_DIRECTION_SENDRECV};
+    g_object_set(t, "direction", directions[d], NULL);
+  }
+  g_array_unref(transceivers);
+}
+
+/* Stops sending media which the negotiation doesn't allow to send (webrtcbin
+ * would send it anyway), e.g. the peer only receives or declined video */
+static void update_sending(void) {
+  GArray *transceivers = NULL;
+  g_signal_emit_by_name(webrtc, "get-transceivers", &transceivers);
+  for (guint i = 0; i < transceivers->len; i++) {
+    GstWebRTCRTPTransceiver *t =
+        g_array_index(transceivers, GstWebRTCRTPTransceiver *, i);
+    const char *media = transceiver_media(t);
+    gchar *name = g_strdup_printf("%s-send", media ? media : "");
+    GstElement *valve = gst_bin_get_by_name(GST_BIN(pipeline), name);
+    g_free(name);
+    if (valve == NULL)
+      continue;
+    GstWebRTCRTPTransceiverDirection d;
+    g_object_get(t, "current-direction", &d, NULL);
+    g_object_set(valve, "drop",
+                 d != GST_WEBRTC_RTP_TRANSCEIVER_DIRECTION_SENDRECV &&
+                     d != GST_WEBRTC_RTP_TRANSCEIVER_DIRECTION_SENDONLY,
+                 NULL);
+    gst_object_unref(valve);
+  }
+  g_array_unref(transceivers);
 }
 
 /* The pipeline: the own audio (and video) into webrtcbin, Opus (payload 111)
@@ -331,13 +489,18 @@ static gchar *file_source(void) {
 }
 
 static gboolean start(void) {
+  if (audio == NONE && video == NONE) {
+    fail("no media (--audio none without --video)");
+    return FALSE;
+  }
   gchar *file = (audio_file != NULL) ? file_source() : NULL;
   GString *desc =
       g_string_new("webrtcbin name=webrtc bundle-policy=max-bundle ");
-  g_string_append_printf(
+  if (sends(audio))
+    g_string_append_printf(
       desc,
       "%s ! queue ! audioconvert ! audioresample ! volume name=audio-mute ! "
-      "opusenc ! rtpopuspay pt=111 "
+      "valve name=audio-send ! opusenc ! rtpopuspay pt=111 "
       "! application/x-rtp,media=audio,encoding-name=OPUS,payload=111,encoding-params=(string)2 ! "
       "webrtc. ",
       file           ? file
@@ -345,10 +508,11 @@ static gboolean start(void) {
       : audio_source ? audio_source
                      : "autoaudiosrc");
   g_free(file);
-  if (video)
+  if (sends(video))
     g_string_append_printf(
         desc,
-        "%s ! queue ! videoconvert ! valve name=video-mute ! vp8enc deadline=1 "
+        "%s ! queue ! videoconvert ! valve name=video-mute ! valve name=video-send ! "
+        "vp8enc deadline=1 "
         "keyframe-max-dist=60 ! rtpvp8pay pt=96 "
         "! application/x-rtp,media=video,encoding-name=VP8,payload=96 ! "
         "webrtc. ",
@@ -357,13 +521,21 @@ static gboolean start(void) {
         : video_source ? video_source
                        : "autovideosrc");
   GError *error = NULL;
-  pipeline = gst_parse_launch(desc->str, &error);
+  GstElement *parsed = gst_parse_launch(desc->str, &error);
   g_string_free(desc, TRUE);
   // also an error for a missing element, with a pipeline without it
   if (error != NULL) {
     fail("cannot create the media: %s", error->message);
     g_error_free(error);
+    gst_clear_object(&parsed);
     return FALSE;
+  }
+  // only webrtcbin (nothing sent) is no pipeline
+  if (GST_IS_PIPELINE(parsed))
+    pipeline = parsed;
+  else {
+    pipeline = gst_pipeline_new(NULL);
+    gst_bin_add(GST_BIN(pipeline), parsed);
   }
   webrtc = gst_bin_get_by_name(GST_BIN(pipeline), "webrtc");
   if (stun != NULL)
@@ -381,6 +553,15 @@ static gboolean start(void) {
   g_signal_connect(webrtc, "notify::connection-state",
                    G_CALLBACK(on_connection_state), NULL);
   g_signal_connect(webrtc, "pad-added", G_CALLBACK(on_incoming), NULL);
+  // the media of the transceivers of the sent media, and those only receiving
+  gst_element_foreach_sink_pad(webrtc, mark_transceiver, NULL);
+  if (audio == RECEIVE)
+    add_transceiver("audio", "application/x-rtp,media=audio,encoding-name=OPUS,"
+                             "payload=111,clock-rate=48000,encoding-params=(string)2");
+  if (video == RECEIVE)
+    add_transceiver("video", "application/x-rtp,media=video,encoding-name=VP8,"
+                             "payload=96,clock-rate=90000");
+  set_directions();
   GstBus *bus = gst_pipeline_get_bus(GST_PIPELINE(pipeline));
   gst_bus_add_watch(bus, on_bus_message, NULL);
   gst_object_unref(bus);

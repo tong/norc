@@ -32,6 +32,21 @@ private enum CallState {
 	Connected;
 }
 
+/** The direction of a media, from the own side (also the values of norc-rtc) **/
+private enum abstract Direction(String) to String {
+	var both;
+	var send;
+	var receive;
+	var none;
+
+	public function sends():Bool
+		return this == both || this == send;
+
+	/** What both directions allow, e.g. `both` and `receive`: `receive` **/
+	public function and(other:Direction):Direction
+		return (this == other || other == both) ? cast this : (this == both) ? other : none;
+}
+
 private typedef Call = {
 	var id:Int;
 
@@ -39,7 +54,12 @@ private typedef Call = {
 	var peer:String;
 
 	var incoming:Bool;
-	var video:Bool;
+
+	/** The own directions of the media (the callee: what the caller offers, until accepted) **/
+	var audio:Direction;
+
+	var video:Direction;
+
 	var state:CallState;
 
 	/** The session, once requested **/
@@ -107,18 +127,19 @@ class Calls extends Module {
 		return [
 			{
 				name: "call",
-				args: "<jid> [media...]",
-				description: "call a contact (audio; with video: /call <jid> video; playing a file instead of the microphone: /call <jid> <file>)",
+				args: "<jid> [options...]",
+				description: "call a contact; options: video, send or receive (only one direction), a file to play instead of the microphone",
 				online: true,
 				run: (args, out) -> call(args[0], args[1], out),
-				complete: ["media" => arg -> ["video"].concat(Commands.completePath(arg))],
+				complete: ["options" => completeOptions],
 				subcommands: [
 					{
 						name: "accept",
-						args: "[#id] [path...]",
-						description: "accept a call (the only one if no number is given), playing the file at path instead of the microphone",
+						args: "[#id] [options...]",
+						description: "accept a call (the only one if no number is given); options: audio (without video), send or receive, a file to play",
 						online: true,
-						run: (args, out) -> accept(find(args[0], Ringing, out), args[1], out)
+						run: (args, out) -> accept(find(args[0], Ringing, out), args[1], out),
+						complete: ["options" => completeOptions]
 					},
 					{
 						name: "decline",
@@ -157,14 +178,13 @@ class Calls extends Module {
 		super.detach();
 	}
 
-	function call(input:String, media:Null<String>, out:Output) {
+	function call(input:String, words:Null<String>, out:Output) {
 		if (helper == null) {
 			out.error("calls need norc-rtc (not found, see call_helper)");
 			return;
 		}
-		// a file to play, else the media
-		final file = (media != null && media != "video" && media != "audio") ? audioFile(media, out) : null;
-		if (file == null && media != null && media != "video" && media != "audio")
+		final options = parseOptions(words, out);
+		if (options == null)
 			return;
 		if (calls.length > 0) {
 			out.error("already in a call (/calls, /call hangup)");
@@ -173,14 +193,14 @@ class Calls extends Module {
 		final jid = contacts.resolve(input, out);
 		if (jid == null)
 			return;
-		final video = media == "video";
+		final video = options.video == true;
 		final done = out.wait();
 		findCallee(jid, video, out, peer -> {
 			done();
 			if (peer == null || calls.length > 0)
 				return;
-			final c = add(peer, false, video, Calling, out);
-			c.file = file;
+			final c = add(peer, false, options.direction, video ? options.direction : none, Calling, out);
+			c.file = options.file;
 			out.info('#${c.id} calling ${name(c)} (${describeMedia(c)})');
 			event(c, "calling");
 			start(c);
@@ -202,20 +222,45 @@ class Calls extends Module {
 			session.terminate(busy);
 			return;
 		}
-		final c = add(session.peer, true, media.contains("video"), Ringing, TermOutput.instance);
+		// what the caller offers: the senders of each media
+		function offered(media:String):Direction {
+			final content = session.contents.find(c -> JingleRtp.media(c) == media);
+			return (content == null) ? none : switch content.senders ?? JingleSenders.both {
+				case JingleSenders.initiator: receive;
+				case JingleSenders.responder: send;
+				case JingleSenders.none: none;
+				case _: both;
+			}
+		}
+		final c = add(session.peer, true, offered("audio"), offered("video"), Ringing, TermOutput.instance);
 		c.session = session;
 		listen(c);
 		session.info([XML.create("ringing").set("xmlns", JingleRtp.XMLNS_INFO)]);
 		// with the terminal bell
-		Term.notice('#${c.id} ${name(c)} is calling (${c.video ? "video" : "audio"}): /call accept ${c.id} or /call decline ${c.id}\x07', 1);
+		Term.notice('#${c.id} ${name(c)} is calling (${describeMedia(c)}): /call accept ${c.id} or /call decline ${c.id}\x07', 1);
 		event(c, "ringing");
 	}
 
-	function accept(c:Null<Call>, path:Null<String>, out:Output) {
+	function accept(c:Null<Call>, words:Null<String>, out:Output) {
 		if (c == null)
 			return;
-		if (path != null && (c.file = audioFile(path, out)) == null)
+		final options = parseOptions(words, out);
+		if (options == null)
 			return;
+		// what is offered, as far as wanted
+		final audio = c.audio.and(options.direction);
+		final video = (options.video == false) ? none : c.video.and(options.direction);
+		if (audio == none && video == none) {
+			out.error('nothing left to accept: in this call you can only do ${describeMedia(c)}');
+			return;
+		}
+		if (options.file != null && !audio.sends()) {
+			out.error("the file can't be played: you don't send audio");
+			return;
+		}
+		c.audio = audio;
+		c.video = video;
+		c.file = options.file;
 		c.out = out;
 		c.state = Connecting;
 		start(c);
@@ -247,6 +292,10 @@ class Calls extends Module {
 			out.error((c == null) ? "no call" : 'unknown media: $media (audio, video)');
 			return;
 		}
+		if (!(media == "video" ? c.video : c.audio).sends()) {
+			out.error('you send no $media');
+			return;
+		}
 		final muted = !c.muted.remove(media);
 		if (muted)
 			c.muted.push(media);
@@ -257,7 +306,7 @@ class Calls extends Module {
 	/** Starts the media of `c`: the caller creates an offer, the callee answers the offer of the peer **/
 	function start(c:Call) {
 		try {
-			final options = (c.video ? ["--video"] : []).concat(c.file != null ? ["--audio-file", c.file] : []);
+			final options = ['--audio=${c.audio}'].concat(c.video != none ? ['--video=${c.video}'] : []).concat(c.file != null ? ["--audio-file", c.file] : []);
 			c.rtc = new Rtc(helper.concat(options), context.post, msg -> media(c, msg), code -> stopped(c, code));
 		} catch (e) {
 			c.out.error('cannot start ${helper[0]}: $e');
@@ -312,6 +361,20 @@ class Calls extends Module {
 		listen(c);
 		session.onAccept = contents -> {
 			c.state = Connecting;
+			// the directions the callee accepted
+			for (media in ["audio", "video"]) {
+				final content = contents.find(content -> JingleRtp.media(content) == media);
+				final d:Direction = (content == null) ? none : switch content.senders ?? JingleSenders.both {
+					case JingleSenders.initiator: send;
+					case JingleSenders.responder: receive;
+					case JingleSenders.none: none;
+					case _: both;
+				}
+				if (media == "audio")
+					c.audio = c.audio.and(d);
+				else
+					c.video = c.video.and(d);
+			}
 			describe(c, "answer", JingleRtp.toSdp(contents, JingleRtp.group(session.payload), false));
 		}
 		session.initiate(offer.contents, offer.payload);
@@ -395,11 +458,12 @@ class Calls extends Module {
 			case _: (reason.condition : String) + (reason.text != null ? ' (${reason.text})' : '');
 		}
 
-	function add(peer:String, incoming:Bool, video:Bool, state:CallState, out:Output):Call {
+	function add(peer:String, incoming:Bool, audio:Direction, video:Direction, state:CallState, out:Output):Call {
 		final c:Call = {
 			id: nextId++,
 			peer: peer,
 			incoming: incoming,
+			audio: audio,
 			video: video,
 			state: state,
 			local: [],
@@ -446,7 +510,7 @@ class Calls extends Module {
 					id: c.id,
 					peer: c.peer,
 					incoming: c.incoming,
-					media: c.video ? "video" : "audio",
+					media: describeMedia(c),
 					file: c.file,
 					state: (c.state : CallState).getName().toLowerCase(),
 					duration: (c.connected != null) ? Std.int(Sys.time() - c.connected) : null
@@ -467,7 +531,9 @@ class Calls extends Module {
 		v.set("from", c.peer);
 		v.set("name", name(c));
 		v.set("state", state);
-		v.set("media", c.video ? "video" : "audio");
+		v.set("media", (c.video != none) ? "video" : "audio");
+		v.set("audio", (c.audio : String));
+		v.set("video", (c.video : String));
 		v.set("incoming", c.incoming);
 		emit("call", [Jid.parseBare(c.peer), state], v);
 	}
@@ -479,14 +545,62 @@ class Calls extends Module {
 	static function audioFile(path:String, out:Output):Null<String> {
 		final file = Config.expandHome(path);
 		if (!FileSystem.exists(file) || FileSystem.isDirectory(file)) {
-			out.error('no such file: $path (media: video, or a file to play)');
+			out.error('no such file: $path (options: video, audio, send, receive, a file to play)');
 			return null;
 		}
 		return FileSystem.absolutePath(file);
 	}
 
-	static function describeMedia(c:Call):String
-		return (c.video ? "video" : "audio") + (c.file != null ? ', playing ${Path.withoutDirectory(c.file)}' : '');
+	/** e.g. `audio`, `video` (both directions), `audio, receiving video`, `sending audio, playing song.ogg` **/
+	static function describeMedia(c:Call):String {
+		final media = (c.audio == both && c.video == both) ? ["video"] : [
+			for (m in [{name: "audio", d: c.audio}, {name: "video", d: c.video}])
+				switch m.d {
+					case both: m.name;
+					case send: 'sending ${m.name}';
+					case receive: 'receiving ${m.name}';
+					case none: continue;
+				}
+		];
+		return media.join(", ") + (c.file != null ? ', playing ${Path.withoutDirectory(c.file)}' : '');
+	}
+
+	/**
+		The options of `/call` and `/call accept`: words (`video`, `audio`: without video, `send`, `receive`), then a file
+		to play; `null` with an error if the file doesn't exist
+	**/
+	static function parseOptions(input:Null<String>, out:Output):Null<{video:Null<Bool>, direction:Direction, file:Null<String>}> {
+		final words = (input ?? "").split(" ");
+		var video:Null<Bool> = null;
+		var direction = both;
+		var i = 0;
+		while (i < words.length) {
+			switch words[i] {
+				case "video": video = true;
+				case "audio": video = false;
+				case "send": direction = send;
+				case "receive": direction = receive;
+				case "":
+				case _: break;
+			}
+			i++;
+		}
+		final path = words.slice(i).join(" ");
+		final file = (path.length > 0) ? audioFile(path, out) : null;
+		if (path.length > 0 && file == null)
+			return null;
+		if (file != null && direction == receive) {
+			out.error("a file is played to the other side: not with receive");
+			return null;
+		}
+		return {video: video, direction: direction, file: file};
+	}
+
+	static function completeOptions(arg:String):Array<String> {
+		final i = arg.lastIndexOf(" ") + 1;
+		final word = arg.substr(i);
+		return [for (v in ["video", "audio", "send", "receive"].concat(Commands.completePath(word))) arg.substr(0, i) + v];
+	}
 
 	/** The words of a command line, `"…"` for words with spaces **/
 	static function words(line:String):Array<String> {
