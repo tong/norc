@@ -64,7 +64,13 @@ class ChatStates extends Module {
 			return;
 		}
 		final to = contacts.resolve(input, out);
-		if (to == null || sent.get(to) == state)
+		if (to != null)
+			set(to, state);
+	}
+
+	/** Sends `state` to `to` (a jid) while online, unless disabled or it was the last state sent to it **/
+	public function set(to:String, state:String) {
+		if (!enabled || sent.get(to) == state)
 			return;
 		sent.set(to, state);
 		stream.send(ChatState.createChatStateMessage(to, state));

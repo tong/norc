@@ -37,6 +37,9 @@
 # Prompt of the input line (-i), in "" to keep spaces at the start or end.
 # prompt = "> "
 
+# Prompt in chat mode (/chat): {name} is the name of the contact (in its color), {jid} its jid.
+# chat_prompt = "{name}> "
+
 # --- Privacy: what others can learn about you ---
 
 # Answer last activity requests with the time since your last input in norc (reveals when you were

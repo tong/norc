@@ -31,7 +31,7 @@ class Term {
 	public static function info(msg:String)
 		println(style(msg, 2));
 
-	/** A notification of an event (e.g. a presence change) with its time: `12:03 alice is away` **/
+	/** A notification of an event (e.g. a presence change) with its time: `12:03:41 alice is away` **/
 	public static function notice(msg:String, code = 2)
 		println(timestamp(Date.now()) + ' ' + style(msg, code));
 
@@ -50,11 +50,27 @@ class Term {
 		return '${i == 0 ? Std.int(bytes) : Math.round(bytes * 10) / 10} ${units[i]}';
 	}
 
-	/** Time of an event: `12:03` today, else `2026-10-13 12:03` **/
+	/** Time of an event: `12:03:41` today, else `2026-10-13 12:03:41` **/
 	public static function timestamp(date:Date):String {
 		final now = Date.now();
 		final today = date.getFullYear() == now.getFullYear() && date.getMonth() == now.getMonth() && date.getDate() == now.getDate();
-		return DateTools.format(date, today ? "%H:%M" : "%Y-%m-%d %H:%M");
+		return DateTools.format(date, today ? "%H:%M:%S" : "%Y-%m-%d %H:%M:%S");
+	}
+
+	/** Colors of names, distinct from red (errors) **/
+	static final NAME_COLORS = [32, 33, 34, 35, 36, 92, 93, 94, 95, 96];
+
+	/**
+		`name` in the color of `jid` (bare): each contact gets one of the name colors, always the same.
+		Without `jid`: the own name (bold, in no name color).
+	**/
+	public static function name(name:String, ?jid:String):String {
+		if (jid == null)
+			return style(name, 1);
+		var hash = 0;
+		for (i in 0...jid.length)
+			hash = (hash * 31 + StringTools.fastCodeAt(jid, i)) & 0xFFFFFF;
+		return style(name, NAME_COLORS[hash % NAME_COLORS.length]);
 	}
 
 	public static function style(str:String, code:Int):String

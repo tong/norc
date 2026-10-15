@@ -79,6 +79,7 @@ class Messages extends Module {
 		for (f in outgoing)
 			f(m);
 		stream.send(m);
+		showSent(m);
 		sentEvent(m, false);
 		return m;
 	}
@@ -94,19 +95,17 @@ class Messages extends Module {
 		if (m.body == null)
 			return;
 		final delay = m.delay();
-		// a correction of the last message (XEP-0308), checked by the module of corrections
-		final replaces = LastMessageCorrection.correction(m);
-		final corrected = (replaces != null) ? " ✎" : "";
 		if (carbon == sent) {
 			if (m.to == null)
 				return;
-			final to = Jid.parseBare(m.to);
-			show(to, m.body, delay?.date, '→ <${contacts.name(to)}>$corrected');
+			showSent(m, delay?.date);
 			sentEvent(m, true);
 			return;
 		}
+		// a correction of the last message (XEP-0308), checked by the module of corrections
+		final replaces = LastMessageCorrection.correction(m);
 		final from = (m.from != null) ? Jid.parseBare(m.from) : stream.domain;
-		show(from, m.body, delay?.date, (replaces != null) ? '<${contacts.name(from)}>$corrected' : null);
+		show('<${contacts.name(from)}>' + corrected(m), from, m.body, delay?.date);
 		emit("message", [from, m.body], {
 			from: m.from ?? from,
 			name: contacts.name(from),
@@ -158,15 +157,22 @@ class Messages extends Module {
 		});
 	}
 
+	/** Prints a message sent by this client or another of the account: `12:03:41 → <alice> text`, in the own color **/
+	function showSent(m:Message, ?date:Date)
+		show('→ <${contacts.name(Jid.parseBare(m.to))}>' + corrected(m), null, m.body, date);
+
+	/** ` ✎` for a correction of the last message (XEP-0308) **/
+	static function corrected(m:Message):String
+		return (LastMessageCorrection.correction(m) != null) ? " ✎" : "";
+
 	/**
-		Prints a message of `jid` (bare): `12:03 <alice> text`, continuation lines aligned with the first.
-		`date` is the time it was sent if delayed, `marker` replaces `<name>` (e.g. for sent messages).
+		Prints a message: `12:03:41 <alice> text`, continuation lines aligned with the first. `label` is in the color
+		of `from` (bare jid, `null`: own message), `date` is the time it was sent if delayed.
 	**/
-	function show(jid:String, body:String, ?date:Date, ?marker:String) {
+	function show(label:String, from:Null<String>, body:String, ?date:Date) {
 		final time = Term.timestamp(date ?? Date.now());
-		final label = marker ?? '<${contacts.name(jid)}>';
 		final lines = body.split("\n");
-		Term.println('$time ' + Term.style(label, 36) + ' ' + lines[0]);
+		Term.println('$time ' + Term.name(label, from) + ' ' + lines[0]);
 		final indent = "".lpad(" ", time.length + label.length + 2);
 		for (i in 1...lines.length)
 			Term.println(indent + lines[i]);

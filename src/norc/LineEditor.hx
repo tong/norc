@@ -12,15 +12,18 @@ using StringTools;
 	Ctrl-C included. Only on Unix terminals (`start` returns `null` otherwise); call `stop` to restore the terminal.
 
 	Keys: Tab (complete), ←/→, Home/End, Backspace/Delete, ↑/↓ history, Ctrl-A/E (start/end), Ctrl-U/K (delete to start/end),
-	Ctrl-W (delete word), Ctrl-L (clear screen), Ctrl-C (clear the line, quit on an empty line), Ctrl-D (quit on an empty line).
+	Ctrl-W (delete word), Ctrl-L (clear screen), Ctrl-C (clear the line; on an empty line `INTERRUPT`), Ctrl-D (quit on an empty line).
 **/
 class LineEditor {
-	/** Returned for Ctrl-C and Ctrl-D on an empty line **/
+	/** Returned for Ctrl-D on an empty line **/
 	public static inline var QUIT = "/quit";
+
+	/** Returned for Ctrl-C on an empty line **/
+	public static inline var INTERRUPT = "\x03";
 
 	static inline var MAX_HISTORY = 1000;
 
-	final prompt:String;
+	var prompt:String;
 
 	/** Terminal settings to restore (`stty -g`) **/
 	final saved:String;
@@ -50,10 +53,16 @@ class LineEditor {
 	**/
 	public var complete:Null<(before:String) -> Null<{word:String, candidates:Array<String>}>>;
 
+	/** Whether a line read stays on the screen (after the prompt), all if not set; on the input thread **/
+	public var echo:Null<(line:String) -> Bool>;
+
+	/** Called with the input line after each change by a key, on the input thread while holding the editor's lock **/
+	public var changed:Null<(line:String) -> Void>;
+
 	/**
 		Switches the terminal to the editor's mode; returns `null` if stdin is no terminal or on Windows.
 	**/
-	public static function start(prompt = "> "):Null<LineEditor> {
+	public static function start(prompt:String):Null<LineEditor> {
 		// only if stdin is the terminal (not e.g. piped input of a command run in a terminal)
 		if (Sys.systemName() == "Windows" || Sys.command("test -t 0") != 0)
 			return null;
@@ -76,6 +85,15 @@ class LineEditor {
 		active = false;
 		mutex.release();
 		stty(saved);
+	}
+
+	/** Replaces the prompt, also of the line being read **/
+	public function setPrompt(prompt:String) {
+		mutex.acquire();
+		this.prompt = prompt;
+		if (active)
+			redraw();
+		mutex.release();
 	}
 
 	/**
@@ -110,7 +128,10 @@ class LineEditor {
 		while (true) {
 			final c = try input.readByte() catch (_:haxe.io.Eof) -1;
 			mutex.acquire();
+			final before = line.join("");
 			final result = key(c, input);
+			if (result.match(Continue) && changed != null && line.join("") != before)
+				changed(line.join(""));
 			mutex.release();
 			switch result {
 				case Continue:
@@ -134,7 +155,7 @@ class LineEditor {
 				return finish(text);
 			case 3: // ctrl-c
 				if (line.length == 0)
-					return finish(QUIT);
+					return finish(INTERRUPT);
 				line = [];
 				cursor = 0;
 			case 4: // ctrl-d
@@ -269,7 +290,7 @@ class LineEditor {
 
 	function finish(text:Null<String>):KeyResult {
 		active = false;
-		write("\r\x1B[K" + (text != null ? prompt + line.join("") : "") + "\n");
+		write("\r\x1B[K" + ((text != null && (echo == null || echo(text))) ? prompt + line.join("") + "\n" : ""));
 		return Done(text);
 	}
 

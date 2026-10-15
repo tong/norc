@@ -22,7 +22,6 @@ import norc.module.Tunes;
 import norc.module.Upload;
 import sys.FileSystem;
 import sys.thread.Deque;
-import sys.thread.Lock;
 import sys.thread.Thread;
 import xmpp.EntityCapabilities;
 import xmpp.Ping;
@@ -74,6 +73,9 @@ class Client {
 
 	/** Programs started with norc, connected to the api (`<config dir>/scripts/`, `<account dir>/scripts/`) **/
 	final scripts:Scripts;
+
+	/** The interactive input (`-i`) **/
+	final console:Console;
 
 	/** Features of the client, each with its commands and part of the session **/
 	final modules:Array<Module>;
@@ -157,13 +159,15 @@ class Client {
 		final context:Context = {emit: emit, post: post};
 		final contacts = new Contacts(context);
 		final messages = new Messages(context, contacts);
+		final chatStates = new ChatStates(context, messages, contacts, account.chatStates != false);
+		console = new Console(context, commands, contacts, chatStates, account.prompt ?? "> ", account.chatPrompt ?? "{name}> ");
 		commands.completers.set("jid", _ -> contacts.completions());
 		modules = [
 			contacts,
 			messages,
 			new Carbons(context, messages, account.carbons != false),
 			new Receipts(context, messages, contacts),
-			new ChatStates(context, messages, contacts, account.chatStates != false),
+			chatStates,
 			new Profile(context, messages, contacts),
 			new Moods(context, messages, contacts),
 			new Tunes(context, messages, contacts),
@@ -205,49 +209,18 @@ class Client {
 			} catch (e)
 				Term.error('cannot start the api: $e');
 		}
-		final editor = interactive ? LineEditor.start(account.prompt) : null;
-		Term.editor = editor;
-		if (editor != null)
-			editor.complete = complete;
 		// before the connection: the scripts get the login event
 		scripts.startAll();
 		connect();
+		// after connecting: reading piped input from the start hangs the client
 		if (interactive)
-			Thread.create(() -> readStdin(editor));
+			console.start(line -> events.add(line != null ? Line(line) : InputClosed));
 		while (exitCode == null)
 			handle(events.pop(true));
 		scripts.stopAll();
 		api.stop();
-		Term.editor = null;
-		editor?.stop();
+		console.stop();
 		return exitCode;
-	}
-
-	/** Completes the input of the editor (on the input thread): on the main thread, as the commands use its state **/
-	function complete(before:String):Null<{word:String, candidates:Array<String>}> {
-		var result = null;
-		final lock = new Lock();
-		post(() -> {
-			result = commands.complete(before);
-			lock.release();
-		});
-		// nothing if the main thread is busy
-		return lock.wait(1) ? result : null;
-	}
-
-	function readStdin(editor:Null<LineEditor>) {
-		final stdin = Sys.stdin();
-		while (true) {
-			final line = if (editor != null) editor.readLine() else try stdin.readLine() catch (_:haxe.io.Eof) null;
-			if (line == null) {
-				events.add(InputClosed);
-				return;
-			}
-			events.add(Line(line));
-			// Stop reading: exit() waits for the lock of stdin, held while a read blocks
-			if (commands.exits(line))
-				return;
-		}
 	}
 
 	function handle(e:Event) {
@@ -257,7 +230,7 @@ class Client {
 					session.handle(e);
 			case Line(line):
 				lastInput = Sys.time();
-				commands.run(line);
+				console.input(line);
 			case InputClosed:
 			case Reconnect:
 				if (session == null && !quitting)

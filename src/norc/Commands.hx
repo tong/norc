@@ -77,7 +77,7 @@ class Commands {
 	final names = new Array<String>();
 
 	/** Returns `true` if connected (for commands requiring a connection) **/
-	final isOnline:() -> Bool;
+	public final isOnline:() -> Bool;
 
 	/** Completions of arguments by name for all commands (e.g. `jid`), unless a command has its own **/
 	public final completers = new Map<String, Completion>();
