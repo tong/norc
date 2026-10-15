@@ -77,6 +77,13 @@ class Discovery extends Module {
 	/**
 		The first of `jids` supporting `feature` (by service discovery), `null` if none does.
 	**/
+	/** The server, or the first of its items (e.g. `upload.example.org`) supporting `feature`; `null` if there is none **/
+	public static function findService(stream:Stream, feature:String, callback:Null<String>->Void)
+		ServiceDiscovery.discoItems(stream, null, null, res -> {
+			final items = (res.payload == null) ? [] : [for (i in ServiceDiscovery.parseItems(res.payload)) i.jid];
+			findFeature(stream, [stream.domain].concat(items), feature, callback);
+		});
+
 	public static function findFeature(stream:Stream, jids:Array<String>, feature:String, callback:Null<String>->Void) {
 		if (jids.length == 0)
 			return callback(null);

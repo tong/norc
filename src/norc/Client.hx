@@ -17,6 +17,7 @@ import norc.module.Moods;
 import norc.module.Pings;
 import norc.module.Profile;
 import norc.module.Receipts;
+import norc.module.Rooms;
 import norc.module.Time;
 import norc.module.Tunes;
 import norc.module.Upload;
@@ -159,12 +160,20 @@ class Client {
 		final context:Context = {emit: emit, post: post};
 		final contacts = new Contacts(context);
 		final messages = new Messages(context, contacts);
+		// before the modules adding elements to sent chat messages
+		final rooms = new Rooms(context, messages, contacts);
 		final chatStates = new ChatStates(context, messages, contacts, account.chatStates != false);
-		console = new Console(context, commands, contacts, chatStates, account.prompt ?? "> ", account.chatPrompt ?? "{name}{state}> ");
+		chatStates.isRoom = rooms.joined;
+		console = new Console(context, commands, contacts, chatStates, rooms, {
+			normal: account.prompt ?? "> ",
+			chat: account.chatPrompt ?? "{name}{state}> ",
+			room: account.roomPrompt ?? "#{name}> "
+		});
 		commands.completers.set("jid", _ -> contacts.completions());
 		modules = [
 			contacts,
 			messages,
+			rooms,
 			new Carbons(context, messages, account.carbons != false),
 			new Receipts(context, messages, contacts),
 			chatStates,

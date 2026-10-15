@@ -11,7 +11,6 @@ import sys.thread.Thread;
 import xmpp.HttpFileUpload;
 import xmpp.Oob;
 import xmpp.Response;
-import xmpp.ServiceDiscovery;
 import xmpp.XML;
 
 /**
@@ -139,12 +138,9 @@ class Upload extends Module {
 	function findService(callback:Null<String>->Void) {
 		if (service != null)
 			return callback(service.jid);
-		ServiceDiscovery.discoItems(stream, null, null, res -> {
-			final items = (res.payload == null) ? [] : [for (i in ServiceDiscovery.parseItems(res.payload)) i.jid];
-			Discovery.findFeature(stream, [stream.domain].concat(items), HttpFileUpload.XMLNS, jid -> {
-				service = {jid: jid};
-				callback(jid);
-			});
+		Discovery.findService(stream, HttpFileUpload.XMLNS, jid -> {
+			service = {jid: jid};
+			callback(jid);
 		});
 	}
 }

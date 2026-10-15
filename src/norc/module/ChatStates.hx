@@ -21,6 +21,9 @@ class ChatStates extends Module {
 	/** Called with the chat states of contacts (bare jid): received states, `active` for a message without state **/
 	public var received:Null<(from:String, state:String) -> Void>;
 
+	/** The jid is a room: states are sent to its occupants (groupchat) **/
+	public var isRoom:String->Bool = _ -> false;
+
 	/** Last state sent to each jid, a state is not sent twice in a row **/
 	final sent = new Map<String, String>();
 
@@ -80,7 +83,7 @@ class ChatStates extends Module {
 		if (!enabled || sent.get(to) == state)
 			return;
 		sent.set(to, state);
-		stream.send(ChatState.createChatStateMessage(to, state));
+		stream.send(ChatState.createChatStateMessage(to, state, isRoom(to) ? groupchat : chat));
 	}
 
 	/** The state of a contact (not of copies of messages of other own clients) **/

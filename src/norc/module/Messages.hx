@@ -79,7 +79,9 @@ class Messages extends Module {
 		for (f in outgoing)
 			f(m);
 		stream.send(m);
-		showSent(m);
+		// a room sends messages back to all occupants
+		if (m.type != groupchat)
+			showSent(m);
 		sentEvent(m, false);
 		return m;
 	}
@@ -167,13 +169,14 @@ class Messages extends Module {
 
 	/**
 		Prints a message: `12:03:41 <alice> text`, continuation lines aligned with the first. `label` is in the color
-		of `from` (bare jid, `null`: own message), `date` is the time it was sent if delayed.
+		of `from` (a jid, `null`: own message), `date` is the time it was sent if delayed, `prefix` is printed before
+		the label (e.g. the room), `prefixLength` is its length without styles.
 	**/
-	function show(label:String, from:Null<String>, body:String, ?date:Date) {
+	public static function show(label:String, from:Null<String>, body:String, ?date:Date, prefix = "", prefixLength = 0) {
 		final time = Term.timestamp(date ?? Date.now());
 		final lines = body.split("\n");
-		Term.println('$time ' + Term.name(label, from) + ' ' + lines[0]);
-		final indent = "".lpad(" ", time.length + label.length + 2);
+		Term.println('$time $prefix' + Term.name(label, from) + ' ' + lines[0]);
+		final indent = "".lpad(" ", time.length + prefixLength + label.length + 2);
 		for (i in 1...lines.length)
 			Term.println(indent + lines[i]);
 	}

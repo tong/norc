@@ -57,6 +57,9 @@ typedef Account = {
 		active (e.g. ` (typing)`); `{name}{state}> ` if not set
 	**/
 	var ?chatPrompt:String;
+
+	/** Prompt in group chat mode (in a room): `{name}` is the room's local part, `{jid}` its jid, `{nick}` the own nick; `#{name}> ` if not set **/
+	var ?roomPrompt:String;
 }
 
 /** A config key: its value in the config of an account **/
@@ -89,7 +92,8 @@ private typedef Key = {
 	`attention` (`0`: ignore attention requests),
 	`stream_management` (`0`: no acknowledgements and resumption of the session),
 	`prompt` (of the input line, in `"` to keep spaces at the start or end),
-	`chat_prompt` (in chat mode, `{name}`, `{jid}` and `{state}` of the contact).
+	`chat_prompt` (in chat mode, `{name}`, `{jid}` and `{state}` of the contact),
+	`room_prompt` (in a room, `{name}`, `{jid}` and `{nick}`).
 
 	The runtime state of an account (pid file) is in `$XDG_STATE_HOME/norc/<name>/` (Windows: `%LOCALAPPDATA%\norc\<name>\`).
 **/
@@ -116,7 +120,8 @@ class Config {
 		flag("stream_management", a -> a.streamManagement, (a, v) -> a.streamManagement = v),
 		// in quotes: spaces at the start or end are kept
 		{name: "prompt", get: a -> (a.prompt != null) ? '"${a.prompt}"' : null, set: (a, v) -> a.prompt = unquote(v)},
-		{name: "chat_prompt", get: a -> (a.chatPrompt != null) ? '"${a.chatPrompt}"' : null, set: (a, v) -> a.chatPrompt = unquote(v)}
+		{name: "chat_prompt", get: a -> (a.chatPrompt != null) ? '"${a.chatPrompt}"' : null, set: (a, v) -> a.chatPrompt = unquote(v)},
+		{name: "room_prompt", get: a -> (a.roomPrompt != null) ? '"${a.roomPrompt}"' : null, set: (a, v) -> a.roomPrompt = unquote(v)}
 	];
 
 	/** Overrides the config directory (`--config`) **/

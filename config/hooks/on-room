@@ -1,0 +1,20 @@
+#!/bin/sh
+#
+# norc hook: desktop notification when someone mentions your nick in a room
+#
+# Run on the room event, for each message in a room you are in (/room join).
+# Enable it with `chmod +x on-room`. Several hooks per event: on-room.<anything> (e.g. on-room.log).
+#
+# Arguments: room (bare jid) nick body
+# NORC_ROOM     jid of the room
+# NORC_NICK     nick of the sender
+# NORC_BODY     the message
+# NORC_ID       message id
+# NORC_OWN      1: your own message, sent back by the room
+# NORC_DELAYED  1: history, sent when joining the room
+# NORC_MENTION  1: the message contains your nick
+# Always set: NORC_EVENT NORC_ACCOUNT (the account name) NORC_JID (your jid)
+
+[ "$NORC_MENTION" = 1 ] && [ "$NORC_DELAYED" = 0 ] || exit 0
+command -v notify-send >/dev/null || exit 0
+exec notify-send --app-name=norc "$NORC_NICK in ${NORC_ROOM%%@*}" "$NORC_BODY"

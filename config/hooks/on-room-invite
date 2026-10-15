@@ -1,0 +1,15 @@
+#!/bin/sh
+#
+# norc hook: desktop notification for an invitation to a room
+#
+# Run on the room-invite event, when someone invites you to a room (join it with /room join <room>).
+# Enable it with `chmod +x on-room-invite`. Several hooks per event: on-room-invite.<anything> (e.g. on-room-invite.log).
+#
+# Arguments: room (bare jid) from
+# NORC_ROOM    jid of the room
+# NORC_FROM    jid of the inviting user, if known
+# NORC_REASON  optional message
+# Always set: NORC_EVENT NORC_ACCOUNT (the account name) NORC_JID (your jid)
+
+command -v notify-send >/dev/null || exit 0
+exec notify-send --app-name=norc "Invitation to $NORC_ROOM" "${NORC_FROM:-someone} invites you${NORC_REASON:+: $NORC_REASON}"

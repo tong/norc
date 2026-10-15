@@ -168,6 +168,10 @@ class Commands {
 		return (entry == null) ? null : {entry: entry, args: args};
 	}
 
+	/** `command` (e.g. `room`) has the subcommand `name` (or alias) **/
+	public function hasSubcommand(command:String, name:String):Bool
+		return entries.get(command)?.subs.exists(name) == true;
+
 	/** Registers several commands **/
 	public function registerAll(commands:Array<Command>)
 		for (c in commands)
