@@ -1,0 +1,92 @@
+#!/bin/bash
+#
+# norc script: away while you are idle (no keyboard or mouse input): away after 5 minutes, extended away (xa)
+# after 30, back to your presence and status when you return. Only an available presence is changed: a presence
+# you set yourself (away, dnd, …) is kept.
+#
+# Started by norc (enable it with `chmod +x`): stdout sends commands to norc, stdin receives the replies and
+# events (JSON lines). Needs jq, and the idle time from one of:
+#   swayidle     Wayland (Sway, Hyprland, river, …)
+#   xprintidle   X11
+#   signals      of another idle daemon, e.g. hypridle (hypridle.conf):
+#                  listener {
+#                      timeout = 300
+#                      on-timeout = pkill -USR1 -f norc/scripts/idle-away
+#                      on-resume = pkill -USR2 -f norc/scripts/idle-away
+#                  }
+#                SIGUSR1: idle (away, the second one: xa), SIGUSR2: back
+
+# minutes until away and extended away (0: never xa), with swayidle and xprintidle
+away=5
+xa=30
+
+command -v jq >/dev/null || { echo "idle-away needs jq" >&2; exit 0; }
+
+# idle: "" (not), away or xa; the presence before, restored when back
+idle=
+saved=
+
+# away: asks norc for the presence first (the reply decides); xa: after away
+idle() {
+	case $idle$1 in
+	away) echo "@idle-away presence" ;;
+	awayxa) echo "presence xa $saved_status"; idle=xa ;;
+	esac
+}
+
+back() {
+	[ -n "$idle" ] && echo "presence $saved"
+	idle=
+}
+
+# the reply with the presence: only available (or chat) is changed, the status is kept
+presence() {
+	local state status
+	state=$(jq -r '.data.state' <<<"$1")
+	status=$(jq -r '.data.status // ""' <<<"$1")
+	[ "$state" = available ] || [ "$state" = chat ] || return
+	saved="$state $status"
+	saved_status=$status
+	echo "presence away $status"
+	idle=away
+}
+
+# the idle time as lines: idle:away, idle:xa, idle:back
+watch() {
+	if command -v swayidle >/dev/null && [ -n "$WAYLAND_DISPLAY" ]; then
+		local args=(timeout $((away * 60)) 'echo idle:away' resume 'echo idle:back')
+		[ "$xa" -gt 0 ] && args+=(timeout $((xa * 60)) 'echo idle:xa' resume 'echo idle:back')
+		exec swayidle -w "${args[@]}"
+	elif command -v xprintidle >/dev/null && [ -n "$DISPLAY" ]; then
+		local last=back ms now
+		while sleep 10; do
+			ms=$(xprintidle) || continue
+			now=back
+			[ "$ms" -ge $((away * 60000)) ] && now=away
+			[ "$xa" -gt 0 ] && [ "$ms" -ge $((xa * 60000)) ] && now=xa
+			[ "$now" != "$last" ] && echo "idle:$now"
+			last=$now
+		done
+	fi
+	# else: signals only
+}
+
+trap 'if [ -n "$idle" ]; then idle xa; else idle away; fi' USR1
+trap back USR2
+trap exit TERM
+
+# the replies and events of norc and the idle time as one stream; the end of norc's input ends the script
+exec 3< <(watch & cat; kill $! 2>/dev/null)
+while true; do
+	if read -r line <&3; then
+		case $line in
+		idle:away | idle:xa) idle "${line#idle:}" ;;
+		idle:back) back ;;
+		*'"id":"idle-away"'*) [[ $line == *'"type":"data"'* ]] && presence "$line" ;;
+		*'"type":"error"'*) [[ $line == *'not connected'* ]] || echo "$line" >&2 ;;
+		esac
+	# a signal interrupted the read: continue, else the end of the input
+	elif [ $? -le 128 ]; then
+		break
+	fi
+done

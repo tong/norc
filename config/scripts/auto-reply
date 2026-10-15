@@ -1,0 +1,52 @@
+#!/bin/bash
+#
+# norc script: answers messages while you are away (away, xa or dnd) with an away message, once per contact.
+# A contact is answered again after you were available, or answered the contact yourself.
+#
+# Started by norc (enable it with `chmod +x`): stdout sends commands to norc, stdin receives the replies and
+# events (JSON lines). Needs jq.
+
+# the answer: {status} is replaced with your status message (empty if you have none)
+message="I'm away at the moment and will answer later. {status}"
+
+command -v jq >/dev/null || { echo "auto-reply needs jq" >&2; exit 0; }
+
+# the contacts answered while away, with the answer
+declare -A answered
+
+trap exit TERM
+
+while read -r line; do
+	case $line in
+	*'"event":"message"'*)
+		# a new message of a contact: not delivered after the login, not a copy of another own client
+		from=$(jq -r 'select(.data.delayed != true and .data.carbon != true and .data.type == "chat") | .data.from' <<<"$line")
+		jid=${from%%/*}
+		[ -z "$jid" ] || [ -n "${answered[$jid]}" ] && continue
+		# the presence decides, the reply has the contact in its id
+		echo "@auto-reply:$jid presence"
+		;;
+	*'"event":"sent"'*)
+		# answered yourself (also from another client), not the answer of this script
+		IFS=$'\t' read -r to body < <(jq -r '[.data.to // "", (.data.body // "" | gsub("\n"; " "))] | @tsv' <<<"$line")
+		jid=${to%%/*}
+		[ "$body" != "${answered[$jid]}" ] && unset "answered[$jid]"
+		;;
+	*'"id":"auto-reply:'*'"type":"data"'* | *'"type":"data"'*'"id":"auto-reply:'*)
+		jid=$(jq -r '.id | sub("^auto-reply:"; "")' <<<"$line")
+		state=$(jq -r '.data.state' <<<"$line")
+		case $state in
+		away | xa | dnd)
+			[ -n "${answered[$jid]}" ] && continue
+			status=$(jq -r '.data.status // ""' <<<"$line")
+			text=${message//\{status\}/$status}
+			text=${text% }
+			answered[$jid]=$text
+			echo "msg $jid $text"
+			;;
+		*) answered=() ;;
+		esac
+		;;
+	*'"type":"error"'*) [[ $line == *'not connected'* ]] || echo "$line" >&2 ;;
+	esac
+done

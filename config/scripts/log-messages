@@ -1,0 +1,42 @@
+#!/bin/bash
+#
+# norc script: writes the messages to log files, one per contact and room, readable only by you:
+#   ~/.local/share/norc/logs/<account>/<jid>.log
+#   2026-10-15 14:03:41 <alice> hello
+#   2026-10-15 14:03:52 → <alice> hi, all good?
+# Received and sent messages (also of your other clients), and the messages of rooms (not their history sent when
+# joining). Lines of a message after the first are indented.
+#
+# Started by norc (enable it with `chmod +x`): stdin receives the events (JSON lines). Needs jq.
+
+dir="${XDG_DATA_HOME:-$HOME/.local/share}/norc/logs/${NORC_ACCOUNT:-norc}"
+
+command -v jq >/dev/null || { echo "log-messages needs jq" >&2; exit 0; }
+
+umask 077
+mkdir -p "$dir" || exit 1
+
+# an event as the file name (the bare jid) and the line, separated by NUL; nothing for other events
+filter='
+def text: gsub("\n"; "\n  ");
+def bare: split("/")[0] | gsub("^\\.+"; "_");
+if .event == "message" then
+	[(.data.from | bare), "<\(.data.name)> \(.data.body | text)" + (if .data.delayed then " (delayed)" else "" end)]
+elif .event == "sent" then
+	[(.data.to | bare), "→ <\(.data.name)> \(.data.body | text)"]
+elif .event == "room" and (.data.delayed | not) then
+	[(.data.room | bare), "<\(.data.nick)> \(.data.body | text)"]
+else empty end
+| .[0] + "\u0000" + .[1] + "\u0000"'
+
+trap exit TERM
+
+while read -r line; do
+	case $line in
+	*'"event":"message"'* | *'"event":"sent"'* | *'"event":"room"'*) ;;
+	*) continue ;;
+	esac
+	file= text=
+	{ IFS= read -r -d '' file && IFS= read -r -d '' text; } < <(jq -j "$filter" <<<"$line")
+	[ -n "$file" ] && printf '%s %s\n' "$(date '+%F %T')" "$text" >> "$dir/$file.log"
+done
