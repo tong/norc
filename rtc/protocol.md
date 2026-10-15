@@ -5,7 +5,7 @@
 between it and the peer.
 
 ```
-norc-rtc [--video] [--stun URI] [--turn URI ...] [--audio-source PIPELINE] [--audio-sink PIPELINE]
+norc-rtc [--video] [--stun URI] [--turn URI ...] [--audio-source PIPELINE] [--audio-file PATH] [--audio-sink PIPELINE]
          [--video-source PIPELINE] [--video-sink PIPELINE] [--test]
 ```
 
@@ -15,6 +15,7 @@ norc-rtc [--video] [--stun URI] [--turn URI ...] [--audio-source PIPELINE] [--au
 | `--stun stun://host:port` | STUN server |
 | `--turn turn://user:password@host:port` | TURN server, repeatable (`turns://` for TLS) |
 | `--audio-source`, `--audio-sink` | GStreamer elements, default `autoaudiosrc`, `autoaudiosink` |
+| `--audio-file PATH` | play a file instead of the audio source (any format GStreamer decodes, at its speed; silence after its end) |
 | `--video-source`, `--video-sink` | default `autovideosrc`, `autovideosink` |
 | `--test` | test signals as sources (a tone, a test picture), received media is discarded |
 

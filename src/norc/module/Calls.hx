@@ -1,11 +1,14 @@
 package norc.module;
 
 import haxe.Json;
+import haxe.io.Path;
 import norc.Commands;
+import norc.Config;
 import norc.Files;
 import norc.Module;
 import norc.Output;
 import norc.Term;
+import sys.FileSystem;
 import sys.io.Process;
 import sys.thread.Thread;
 import xmpp.Jid;
@@ -66,6 +69,9 @@ private typedef Call = {
 	/** Muted media (`audio`, `video`) **/
 	var muted:Array<String>;
 
+	/** A file played instead of the microphone **/
+	var ?file:String;
+
 	/** Where status messages go: of the command which started or accepted the call **/
 	var out:Output;
 }
@@ -101,18 +107,18 @@ class Calls extends Module {
 		return [
 			{
 				name: "call",
-				args: "<jid> [media]",
-				description: "call a contact (audio; with video: /call <jid> video)",
+				args: "<jid> [media...]",
+				description: "call a contact (audio; with video: /call <jid> video; playing a file instead of the microphone: /call <jid> <file>)",
 				online: true,
 				run: (args, out) -> call(args[0], args[1], out),
-				complete: ["media" => _ -> ["video"]],
+				complete: ["media" => arg -> ["video"].concat(Commands.completePath(arg))],
 				subcommands: [
 					{
 						name: "accept",
-						args: "[#id]",
-						description: "accept a call (the only one if no number is given)",
+						args: "[#id] [path...]",
+						description: "accept a call (the only one if no number is given), playing the file at path instead of the microphone",
 						online: true,
-						run: (args, out) -> accept(find(args[0], Ringing, out), out)
+						run: (args, out) -> accept(find(args[0], Ringing, out), args[1], out)
 					},
 					{
 						name: "decline",
@@ -156,10 +162,10 @@ class Calls extends Module {
 			out.error("calls need norc-rtc (not found, see call_helper)");
 			return;
 		}
-		if (media != null && media != "video" && media != "audio") {
-			out.error('unknown media: $media (video)');
+		// a file to play, else the media
+		final file = (media != null && media != "video" && media != "audio") ? audioFile(media, out) : null;
+		if (file == null && media != null && media != "video" && media != "audio")
 			return;
-		}
 		if (calls.length > 0) {
 			out.error("already in a call (/calls, /call hangup)");
 			return;
@@ -174,7 +180,8 @@ class Calls extends Module {
 			if (peer == null || calls.length > 0)
 				return;
 			final c = add(peer, false, video, Calling, out);
-			out.info('#${c.id} calling ${name(c)} (${video ? "video" : "audio"})');
+			c.file = file;
+			out.info('#${c.id} calling ${name(c)} (${describeMedia(c)})');
 			event(c, "calling");
 			start(c);
 		});
@@ -204,8 +211,10 @@ class Calls extends Module {
 		event(c, "ringing");
 	}
 
-	function accept(c:Null<Call>, out:Output) {
+	function accept(c:Null<Call>, path:Null<String>, out:Output) {
 		if (c == null)
+			return;
+		if (path != null && (c.file = audioFile(path, out)) == null)
 			return;
 		c.out = out;
 		c.state = Connecting;
@@ -248,7 +257,8 @@ class Calls extends Module {
 	/** Starts the media of `c`: the caller creates an offer, the callee answers the offer of the peer **/
 	function start(c:Call) {
 		try {
-			c.rtc = new Rtc(helper.concat(c.video ? ["--video"] : []), context.post, msg -> media(c, msg), code -> stopped(c, code));
+			final options = (c.video ? ["--video"] : []).concat(c.file != null ? ["--audio-file", c.file] : []);
+			c.rtc = new Rtc(helper.concat(options), context.post, msg -> media(c, msg), code -> stopped(c, code));
 		} catch (e) {
 			c.out.error('cannot start ${helper[0]}: $e');
 			end(c, failed_application, "failed");
@@ -437,6 +447,7 @@ class Calls extends Module {
 					peer: c.peer,
 					incoming: c.incoming,
 					media: c.video ? "video" : "audio",
+					file: c.file,
 					state: (c.state : CallState).getName().toLowerCase(),
 					duration: (c.connected != null) ? Std.int(Sys.time() - c.connected) : null
 				}
@@ -445,7 +456,8 @@ class Calls extends Module {
 			if (list.length == 0)
 				out.info("no calls");
 			for (c in list)
-				out.print('  #${c.id} ${c.incoming ? "from" : "to"} ${c.peer} (${c.media}) ${c.state}' + (c.duration != null ? ' ${formatDuration(c.duration)}' : ''));
+				out.print('  #${c.id} ${c.incoming ? "from" : "to"} ${c.peer} (${c.media}' + (c.file != null ? ', playing ${Path.withoutDirectory(c.file)}' : '')
+					+ ') ${c.state}' + (c.duration != null ? ' ${formatDuration(c.duration)}' : ''));
 		});
 	}
 
@@ -462,6 +474,19 @@ class Calls extends Module {
 
 	function name(c:Call):String
 		return contacts.name(Jid.parseBare(c.peer));
+
+	/** The file at `path` (`~/` is the home directory) to play in a call, `null` with an error if there is none **/
+	static function audioFile(path:String, out:Output):Null<String> {
+		final file = Config.expandHome(path);
+		if (!FileSystem.exists(file) || FileSystem.isDirectory(file)) {
+			out.error('no such file: $path (media: video, or a file to play)');
+			return null;
+		}
+		return FileSystem.absolutePath(file);
+	}
+
+	static function describeMedia(c:Call):String
+		return (c.video ? "video" : "audio") + (c.file != null ? ', playing ${Path.withoutDirectory(c.file)}' : '');
 
 	/** The words of a command line, `"…"` for words with spaces **/
 	static function words(line:String):Array<String> {

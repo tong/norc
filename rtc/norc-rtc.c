@@ -31,7 +31,7 @@ static GMutex output_lock;
 static gboolean video = FALSE, test = FALSE;
 static gchar *stun = NULL, **turn = NULL;
 static gchar *audio_source = NULL, *audio_sink = NULL, *video_source = NULL,
-             *video_sink = NULL;
+             *video_sink = NULL, *audio_file = NULL;
 
 static GOptionEntry options[] = {
     {"video", 0, 0, G_OPTION_ARG_NONE, &video, "Send and receive video", NULL},
@@ -41,6 +41,9 @@ static GOptionEntry options[] = {
      "turn://USER:PASSWORD@HOST:PORT"},
     {"audio-source", 0, 0, G_OPTION_ARG_STRING, &audio_source,
      "Audio source (default autoaudiosrc)", "PIPELINE"},
+    {"audio-file", 0, 0, G_OPTION_ARG_FILENAME, &audio_file,
+     "Play a file (any format GStreamer decodes) instead of the audio source",
+     "PATH"},
     {"audio-sink", 0, 0, G_OPTION_ARG_STRING, &audio_sink,
      "Audio sink (default autoaudiosink)", "PIPELINE"},
     {"video-source", 0, 0, G_OPTION_ARG_STRING, &video_source,
@@ -311,7 +314,24 @@ static gboolean on_bus_message(GstBus *bus, GstMessage *msg,
 
 /* The pipeline: the own audio (and video) into webrtcbin, Opus (payload 111)
  * and VP8 (96) as browsers use them */
+/* The audio source playing `audio_file`: at the speed it plays (a file is read
+ * as fast as possible), its path quoted for the pipeline description */
+static gchar *file_source(void) {
+  GString *path = g_string_new(NULL);
+  for (const char *c = audio_file; *c; c++) {
+    if (*c == '"' || *c == '\\')
+      g_string_append_c(path, '\\');
+    g_string_append_c(path, *c);
+  }
+  gchar *source = g_strdup_printf("filesrc location=\"%s\" ! decodebin ! "
+                                  "audioconvert ! identity sync=true",
+                                  path->str);
+  g_string_free(path, TRUE);
+  return source;
+}
+
 static gboolean start(void) {
+  gchar *file = (audio_file != NULL) ? file_source() : NULL;
   GString *desc =
       g_string_new("webrtcbin name=webrtc bundle-policy=max-bundle ");
   g_string_append_printf(
@@ -320,9 +340,11 @@ static gboolean start(void) {
       "opusenc ! rtpopuspay pt=111 "
       "! application/x-rtp,media=audio,encoding-name=OPUS,payload=111,encoding-params=(string)2 ! "
       "webrtc. ",
-      test           ? "audiotestsrc is-live=true wave=sine volume=0.2"
+      file           ? file
+      : test         ? "audiotestsrc is-live=true wave=sine volume=0.2"
       : audio_source ? audio_source
                      : "autoaudiosrc");
+  g_free(file);
   if (video)
     g_string_append_printf(
         desc,
