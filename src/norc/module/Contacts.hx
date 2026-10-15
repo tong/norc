@@ -272,10 +272,8 @@ class Contacts extends Module {
 	}
 
 	function list(out:Output) {
-		final sorted = items.copy();
-		sorted.sort((a, b) -> Reflect.compare(name(a.jid).toLowerCase(), name(b.jid).toLowerCase()));
 		final contacts = [
-			for (item in sorted) {
+			for (item in items) {
 				final available = resources(item.jid);
 				{
 					jid: item.jid,
@@ -288,6 +286,9 @@ class Contacts extends Module {
 				}
 			}
 		];
+		// available contacts first, by name
+		final key = c -> (c.presence != null ? "0" : "1") + name(c.jid).toLowerCase();
+		contacts.sort((a, b) -> Reflect.compare(key(a), key(b)));
 		out.data({contacts: contacts}, () -> {
 			if (contacts.length == 0)
 				out.info("no contacts");
