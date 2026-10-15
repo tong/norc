@@ -46,15 +46,20 @@ class Files {
 		return {path: path, size: size};
 	}
 
-	/** The path of program `name` (a path, or a name searched in `PATH`), `null` if there is none **/
+	/**
+		The path of program `name`: a path, or a name searched in `PATH` and then next to norc (e.g. unpacked from a
+		release); on Windows also with `.exe`. `null` if there is none.
+	**/
 	public static function which(name:String):Null<String> {
 		final windows = Sys.systemName() == "Windows";
-		if (name.contains("/") || (windows && name.contains("\\")))
-			return FileSystem.exists(Config.expandHome(name)) ? Config.expandHome(name) : null;
-		for (dir in (Sys.getEnv("PATH") ?? "").split(windows ? ";" : ":"))
-			for (file in (windows ? ['$name.exe', name] : [name]))
-				if (dir.length > 0 && FileSystem.exists('$dir/$file') && !FileSystem.isDirectory('$dir/$file'))
-					return '$dir/$file';
+		final path = name.contains("/") || (windows && name.contains("\\"));
+		final dirs = path ? [""] : (Sys.getEnv("PATH") ?? "").split(windows ? ";" : ":").concat([Path.directory(Sys.programPath())]);
+		for (dir in dirs)
+			for (ext in (windows ? [".exe", ""] : [""])) {
+				final file = (dir == "" ? Config.expandHome(name) : '$dir/$name') + ext;
+				if ((path || dir != "") && FileSystem.exists(file) && !FileSystem.isDirectory(file))
+					return file;
+			}
 		return null;
 	}
 

@@ -1,14 +1,14 @@
 #!/bin/sh
 #
 # Bundles norc-rtc.exe (built with MSYS2 UCRT64) with the GStreamer plugins it uses and all DLLs they need into a
-# folder that runs without MSYS2: rtc/bundle-windows.sh [OUT] (default dist/norc-rtc)
+# folder that runs without MSYS2: rtc/bundle-windows.sh [OUT] (default dist/norc, the release adds norc.exe to bin)
 #
 #   OUT/bin/norc-rtc.exe and the DLLs
 #   OUT/lib/gstreamer-1.0/ the plugins (GStreamer finds them relative to its DLL)
 #
 # Without gst-plugin-scanner.exe: GStreamer scans the few plugins in its own process.
 set -e
-out=${1:-dist/norc-rtc}
+out=${1:-dist/norc}
 prefix=${MINGW_PREFIX:-/ucrt64}
 
 # webrtcbin and its transport (ICE, DTLS, SRTP, RTP), the codecs, and the elements of the pipelines of norc-rtc:
