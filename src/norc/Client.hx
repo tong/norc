@@ -170,7 +170,7 @@ class Client {
 			normal: account.prompt ?? "> ",
 			chat: account.chatPrompt ?? "{name}{state}> ",
 			room: account.roomPrompt ?? "#{name}> "
-		});
+		}, account.persistentCommandHistory != false ? '${Config.stateDir(account.name)}/history' : null);
 		commands.completers.set("jid", _ -> contacts.completions());
 		final sessions = new JingleSessions(context);
 		modules = [

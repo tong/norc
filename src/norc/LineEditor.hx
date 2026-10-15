@@ -1,6 +1,9 @@
 package norc;
 
 import haxe.io.Bytes;
+import sys.FileSystem;
+import sys.io.File;
+import sys.io.FileOutput;
 import sys.thread.Mutex;
 
 using StringTools;
@@ -59,22 +62,49 @@ class LineEditor {
 	/** Called with the input line after each change by a key, on the input thread while holding the editor's lock **/
 	public var changed:Null<(line:String) -> Void>;
 
+	/** The file keeping the history (lines appended), `null` without **/
+	var historyFile:Null<FileOutput>;
+
 	/**
 		Switches the terminal to the editor's mode; returns `null` if stdin is no terminal or on Windows.
+		With `historyPath`, the history is loaded from and kept in that file (readable only by the user).
 	**/
-	public static function start(prompt:String):Null<LineEditor> {
+	public static function start(prompt:String, ?historyPath:String):Null<LineEditor> {
 		// only if stdin is the terminal (not e.g. piped input of a command run in a terminal)
 		if (Sys.systemName() == "Windows" || Sys.command("test -t 0") != 0)
 			return null;
 		final saved = stty("-g");
 		if (saved == null || stty("-icanon -echo -isig min 1 time 0") == null)
 			return null;
-		return new LineEditor(prompt, saved);
+		final editor = new LineEditor(prompt, saved);
+		if (historyPath != null)
+			try
+				editor.loadHistory(historyPath)
+			catch (e)
+				Term.error('cannot keep the history in $historyPath: $e');
+		return editor;
 	}
 
 	function new(prompt:String, saved:String) {
 		this.prompt = prompt;
 		this.saved = saved;
+	}
+
+	/** Loads the history of `path` (created private if missing, trimmed to `MAX_HISTORY` lines), new lines are added **/
+	function loadHistory(path:String) {
+		if (!FileSystem.exists(path)) {
+			FileSystem.createDirectory(haxe.io.Path.directory(path));
+			File.saveContent(path, "");
+			if (Sys.systemName() != "Windows")
+				Sys.command("chmod", ["600", path]);
+		}
+		final lines = File.getContent(path).split("\n").filter(l -> l.length > 0);
+		for (l in lines.slice(-MAX_HISTORY))
+			history.push(l);
+		// grows to twice the size before it is trimmed
+		if (lines.length > MAX_HISTORY * 2)
+			File.saveContent(path, history.join("\n") + "\n");
+		historyFile = File.append(path, false);
 	}
 
 	/** Restores the terminal **/
@@ -83,6 +113,8 @@ class LineEditor {
 		if (active)
 			write("\r\x1B[K");
 		active = false;
+		historyFile?.close();
+		historyFile = null;
 		mutex.release();
 		stty(saved);
 	}
@@ -151,6 +183,10 @@ class LineEditor {
 					history.push(text);
 					if (history.length > MAX_HISTORY)
 						history.shift();
+					try {
+						historyFile?.writeString(text + "\n");
+						historyFile?.flush();
+					} catch (_) {}
 				}
 				return finish(text);
 			case 3: // ctrl-c

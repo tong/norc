@@ -52,6 +52,9 @@ typedef Account = {
 	/** Program for the media of calls with its options, `norc-rtc` if not set **/
 	var ?callHelper:String;
 
+	/** Keep the history of the input line (`-i`) in the state directory, `true` if not set **/
+	var ?persistentCommandHistory:Bool;
+
 	/** Prompt of the input line (`-i`), `> ` if not set **/
 	var ?prompt:String;
 
@@ -95,6 +98,7 @@ private typedef Key = {
 	`attention` (`0`: ignore attention requests),
 	`stream_management` (`0`: no acknowledgements and resumption of the session),
 	`call_helper` (program for the media of calls, with options),
+	`persistent_command_history` (`0`: the history of the input line is not kept),
 	`prompt` (of the input line, in `"` to keep spaces at the start or end),
 	`chat_prompt` (in chat mode, `{name}`, `{jid}` and `{state}` of the contact),
 	`room_prompt` (in a room, `{name}`, `{jid}` and `{nick}`).
@@ -123,6 +127,7 @@ class Config {
 		flag("attention", a -> a.attention, (a, v) -> a.attention = v),
 		flag("stream_management", a -> a.streamManagement, (a, v) -> a.streamManagement = v),
 		{name: "call_helper", get: a -> a.callHelper, set: (a, v) -> a.callHelper = v},
+		flag("persistent_command_history", a -> a.persistentCommandHistory, (a, v) -> a.persistentCommandHistory = v),
 		// in quotes: spaces at the start or end are kept
 		{name: "prompt", get: a -> (a.prompt != null) ? '"${a.prompt}"' : null, set: (a, v) -> a.prompt = unquote(v)},
 		{name: "chat_prompt", get: a -> (a.chatPrompt != null) ? '"${a.chatPrompt}"' : null, set: (a, v) -> a.chatPrompt = unquote(v)},

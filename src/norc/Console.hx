@@ -38,6 +38,9 @@ class Console {
 	final rooms:Rooms;
 	final prompts:Prompts;
 
+	/** The file keeping the history of the input line, `null` without **/
+	final historyPath:Null<String>;
+
 	/** The line editor, `null` without terminal **/
 	var editor:Null<LineEditor>;
 
@@ -53,13 +56,14 @@ class Console {
 	/** A check for `paused` is pending **/
 	var pausing = false;
 
-	public function new(context:Context, commands:Commands, contacts:Contacts, chatStates:ChatStates, rooms:Rooms, prompts:Prompts) {
+	public function new(context:Context, commands:Commands, contacts:Contacts, chatStates:ChatStates, rooms:Rooms, prompts:Prompts, ?historyPath:String) {
 		this.context = context;
 		this.commands = commands;
 		this.contacts = contacts;
 		this.chatStates = chatStates;
 		this.rooms = rooms;
 		this.prompts = prompts;
+		this.historyPath = historyPath;
 		chatStates.received = (from, state) -> if (chat != null && Jid.parseBare(chat) == from) {
 			theirState = (state == "active") ? null : state;
 			updatePrompt();
@@ -85,7 +89,7 @@ class Console {
 			description: "chat with a contact or room: lines without / are sent to it (// for a line starting with /); without jid, or Ctrl-C: leave",
 			run: (args, out) -> (args[0] == null) ? leave(out) : enter(args[0], out)
 		});
-		editor = LineEditor.start(prompts.normal);
+		editor = LineEditor.start(prompts.normal, historyPath);
 		Term.editor = editor;
 		if (editor != null) {
 			editor.complete = complete;
