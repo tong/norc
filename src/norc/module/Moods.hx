@@ -81,7 +81,7 @@ class Moods extends Module {
 		if (!change(moods, from, (current != null) ? describe(current) : null))
 			return;
 		if (current != null)
-			Term.notice('${contacts.name(from)} is ${describe(current)}');
+			Term.notice(Term.avatarBefore(from) + '${contacts.name(from)} is ${describe(current)}');
 		emit("mood", [from, data.mood ?? "", data.text ?? ""], {
 			from: from,
 			name: contacts.name(from),

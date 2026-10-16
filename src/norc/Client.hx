@@ -185,6 +185,9 @@ class Client {
 		function enabled(name:String):Bool
 			return !disabled.contains(name);
 		final contacts = new Contacts(context);
+		// avatars in the terminal: of the avatars module, in the prompt (`{avatar}`) and before names (`inline_avatars`)
+		Term.avatarPath = jid -> contacts.avatars.get(xmpp.Jid.parseBare(jid).toLowerCase());
+		Term.inlineAvatars = account.inlineAvatars == true;
 		final messages = new Messages(context, contacts);
 		// what the server offers: commands requiring a feature (`requires`) are refused without it
 		final server = new Server(context);

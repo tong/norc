@@ -257,7 +257,7 @@ class Messages extends Module {
 	/** Prints a message sent by this client or another of the account: `12:03:41 → <alice> text`, in the own color **/
 	function showSent(m:Message, ?date:Date) {
 		final to = Jid.parseBare(m.to);
-		final end = show('→ <${contacts.name(to)}>' + corrected(m), null, text(to, m), date);
+		final end = show('→ <${contacts.name(to)}>' + corrected(m), null, text(to, m), date, "", 0, to);
 		if (end != null && m.id != null && date == null) {
 			shown.set(m.id, end);
 			shownIds.push(m.id);
@@ -275,11 +275,13 @@ class Messages extends Module {
 		of `from` (a jid, `null`: own message), `date` is the time it was sent if delayed, `prefix` is printed before
 		the label (e.g. the room), `prefixLength` is its length without styles.
 	**/
-	public static function show(label:String, from:Null<String>, body:String, ?date:Date, prefix = "", prefixLength = 0):Null<LineEditor.Position> {
+	public static function show(label:String, from:Null<String>, body:String, ?date:Date, prefix = "", prefixLength = 0, ?avatar:String):Null<LineEditor.Position> {
 		final time = Term.timestamp(date ?? Date.now());
 		final lines = body.split("\n");
-		var end = Term.println('$time $prefix' + Term.name(label, from) + ' ' + lines[0]);
-		final indent = "".lpad(" ", time.length + prefixLength + label.length + 2);
+		// the avatar of the contact (of `avatar`, else of the sender) before the name: three columns
+		final icon = Term.avatarBefore(avatar ?? from);
+		var end = Term.println('$time $prefix' + icon + Term.name(label, from) + ' ' + lines[0]);
+		final indent = "".lpad(" ", time.length + prefixLength + label.length + 2 + (icon.length > 0 ? 3 : 0));
 		for (i in 1...lines.length)
 			end = Term.println(indent + lines[i]);
 		return end;

@@ -62,7 +62,8 @@ class History extends Module {
 
 	/** Shows the last `count` messages with a contact, quietly nothing while disconnected or without archive **/
 	public function recent(jid:String, count:Int, out:Output)
-		if (mam != null && count > 0)
+		// logged in: before (e.g. while connecting) the own jid isn't known
+		if (mam != null && count > 0 && stream?.jid != null)
 			history(jid, Std.int(Math.min(count, MAX)), out, true);
 
 	function history(input:String, count:Int, out:Output, quiet = false) {

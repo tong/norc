@@ -137,7 +137,7 @@ class Tunes extends Module {
 		if (!change(tunes, from, (current != null) ? describe(current) : null))
 			return;
 		if (current != null)
-			Term.notice('${contacts.name(from)} is listening to ${describe(current)}');
+			Term.notice(Term.avatarBefore(from) + '${contacts.name(from)} is listening to ${describe(current)}');
 		emit("tune", [from, data.artist ?? "", data.title ?? ""], {
 			from: from,
 			name: contacts.name(from),

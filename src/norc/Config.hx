@@ -46,6 +46,9 @@ typedef Account = {
 	/** Stream management (acknowledgements, resuming the session after a disconnection), `true` if not set **/
 	var ?streamManagement:Bool;
 
+	/** Small avatars of contacts: before their names, `{avatar}` in prompts (in terminals showing images), `false` if not set **/
+	var ?inlineAvatars:Bool;
+
 	/** Images shared in messages shown after them: `contacts` (default), `all` or `off` (see `module.InlineImages`) **/
 	var ?inlineImages:String;
 
@@ -181,6 +184,7 @@ class Config {
 		flag("last_activity", a -> a.lastActivity, (a, v) -> a.lastActivity = v),
 		flag("carbons", a -> a.carbons, (a, v) -> a.carbons = v),
 		flag("terminal_images", a -> a.terminalImages, (a, v) -> a.terminalImages = v),
+		flag("inline_avatars", a -> a.inlineAvatars, (a, v) -> a.inlineAvatars = v),
 		flag("chat_states", a -> a.chatStates, (a, v) -> a.chatStates = v),
 		flag("entity_time", a -> a.entityTime, (a, v) -> a.entityTime = v),
 		flag("attention", a -> a.attention, (a, v) -> a.attention = v),

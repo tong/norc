@@ -44,6 +44,9 @@ class Console {
 	final rooms:Rooms;
 	final prompts:Prompts;
 
+	/** The fixed placement of the avatar in the prompt (`{avatar}`), moved when the prompt is drawn again **/
+	static inline var PROMPT_PLACEMENT = 1;
+
 	/** The prompt last set (with its placeholders replaced) **/
 	var shownPrompt:Null<String>;
 
@@ -227,6 +230,7 @@ class Console {
 			prompt = prompt.replace("{name}", Term.name(name(jid), Jid.parseBare(jid)))
 				.replace("{jid}", jid)
 				.replace("{nick}", rooms.nickIn(jid) ?? "")
+				.replace("{avatar}", room ? "" : Term.avatarIcon(Jid.parseBare(jid), PROMPT_PLACEMENT))
 				.replace("{state}", (!room && theirState != null) ? Term.style(' (${theirState == "composing" ? "typing" : theirState})', 2) : "");
 		if (prompt.contains("{")) {
 			final c = (counts != null) ? counts() : {calls: {active: 0, pending: 0}, transfers: {active: 0, pending: 0}};
@@ -237,6 +241,9 @@ class Console {
 				.replace("{transfers_pending}", Std.string(c.transfers.pending))
 				.replace("{status}", status(c));
 		}
+		// the avatar of the previous chat, not drawn anymore
+		if (!prompt.contains("\x1B_Ga=p"))
+			Term.clearPlacement(PROMPT_PLACEMENT);
 		if (prompt != shownPrompt) {
 			shownPrompt = prompt;
 			editor.setPrompt(prompt);

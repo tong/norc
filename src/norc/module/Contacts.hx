@@ -239,7 +239,7 @@ class Contacts extends Module {
 					return;
 				presences.set(p.from, presence);
 				presenceEvent(p.from, presence, previous);
-				Term.notice('$full is ${describe(presence)}');
+				Term.notice(Term.avatarBefore(bare) + '$full is ${describe(presence)}');
 			case unavailable:
 				// not seen online (servers send these on login)
 				if (previous == null)
@@ -247,7 +247,7 @@ class Contacts extends Module {
 				final presence:PresenceState = {state: "offline", status: p.status};
 				presences.remove(p.from);
 				presenceEvent(p.from, presence, previous);
-				Term.notice('$full is ${describe(presence)}');
+				Term.notice(Term.avatarBefore(bare) + '$full is ${describe(presence)}');
 			case subscribe:
 				if (!requests.contains(bare))
 					requests.push(bare);

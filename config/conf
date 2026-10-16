@@ -68,6 +68,10 @@
 # by you, with the messages typed in chat mode). 0 disables it.
 # persistent_command_history = 1
 
+# Small avatars of contacts before their names in messages and notices, and {avatar} in chat_prompt (in terminals
+# showing images). 1 enables it.
+# inline_avatars = 0
+
 # Show images (avatars, /avatar) in terminals supporting the kitty graphics protocol (kitty, WezTerm, Ghostty,
 # Konsole; asked when the interactive mode starts, inside tmux only with allow-passthrough). 0 disables it.
 # terminal_images = 1
@@ -79,7 +83,8 @@
 # prompt = "{status}> "
 
 # Prompt in chat mode (/chat): {name} is the name of the contact (in its color), {jid} its jid,
-# {state} its chat state unless active, e.g. " (typing)".
+# {state} its chat state unless active, e.g. " (typing)", {avatar} its avatar (a small image with inline_avatars = 1
+# in terminals showing images, else nothing).
 # chat_prompt = "{name}{state}> "
 
 # Prompt in group chat mode (in a room, after /room join or /chat <room>): {name} is the room's local part (in its

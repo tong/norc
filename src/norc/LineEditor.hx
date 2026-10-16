@@ -63,8 +63,18 @@ class LineEditor {
 	/** The terminal shows images (kitty graphics protocol): it answered the query sent when the editor started **/
 	public var images(default, null) = false;
 
+	/** The size of a cell of the terminal in pixels (answer to `CSI 16 t`), `null` if unknown **/
+	public var cellSize(default, null):Null<{width:Int, height:Int}>;
+
 	/** Rows printed above the input line (wrapped lines by the width of the terminal), to find lines again (`mark`) **/
 	var rows = 0;
+
+	/** Writes `s` to the terminal as it is, e.g. image data for the terminal (not shown, the cursor stays) **/
+	public function writeRaw(s:String) {
+		mutex.acquire();
+		write(s);
+		mutex.release();
+	}
 
 	/** The size of the terminal (`stty size`) **/
 	var columns = 80;
@@ -116,8 +126,11 @@ class LineEditor {
 			editor.columns = size.columns;
 		}
 		// the answer is read as input (see `escape`), terminals without the protocol ignore it: nothing to wait for
-		if (queryImages)
-			write("\x1B_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1B\\");
+		// not in terminal multiplexers: tmux shows it as text (and passes images only with allow-passthrough)
+		final term = Sys.getEnv("TERM") ?? "";
+		if (queryImages && Sys.getEnv("TMUX") == null && !term.startsWith("screen") && !term.startsWith("tmux"))
+			// and the size of a cell in pixels, e.g. to scale images exactly
+			write("\x1B_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1B\\\x1B[16t");
 		if (historyPath != null)
 			try
 				editor.loadHistory(historyPath)
@@ -384,6 +397,12 @@ class LineEditor {
 			case ["~".code, "3"]:
 				if (cursor < line.length)
 					line.splice(cursor, 1);
+			case ["t".code, _] if (params.startsWith("6;")):
+				// the size of a cell (answer of the terminal): 6;height;width
+				final v = params.split(";");
+				final h = Std.parseInt(v[1] ?? ""), w = Std.parseInt(v[2] ?? "");
+				if (h != null && w != null && h > 0 && w > 0)
+					cellSize = {width: w, height: h};
 			case _:
 		}
 	}

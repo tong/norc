@@ -46,6 +46,103 @@ class Term {
 		return true;
 	}
 
+	/** The file of the avatar of a jid (PNG), `null` if there is none; set by the client **/
+	public static var avatarPath:Null<String->Null<String>>;
+
+	/** Small avatars in the terminal: in prompts (`{avatar}`) and before the names of contacts (`inline_avatars`) **/
+	public static var inlineAvatars = false;
+
+	/** The ids of the images sent to the terminal, by file **/
+	static final imageIds = new Map<String, Int>();
+
+	/** The next id of an image (low ids: other uses, e.g. 31 of the query) **/
+	static var nextImageId = 100;
+
+	/** The image of each fixed placement (e.g. of the prompt) **/
+	static final placements = new Map<Int, Int>();
+
+	/**
+		The avatar of `jid` as a small image (2 columns, 1 line) and a space after it, in terminals showing images and
+		with `inline_avatars = 1`; `""` without. The image is sent to the terminal once, then only placed. With `placement` (a fixed id, e.g. for
+		the prompt drawn again and again) it is moved instead of placed again, the placement of another image is deleted.
+	**/
+	public static function avatarIcon(jid:Null<String>, ?placement:Int):String {
+		final e = editor;
+		final original = (inlineAvatars && jid != null && e != null && e.images && !silent && avatarPath != null) ? avatarPath(jid) : null;
+		if (original == null || !StringTools.endsWith(original, ".png"))
+			return "";
+		// exactly sized, 1 pixel free around it (with ImageMagick and the cell size), else filling the two cells
+		final cell = e.cellSize;
+		final fitted = (cell != null) ? fittedAvatar(original, cell) : null;
+		final path = fitted?.path ?? original;
+		var id = imageIds.get(path);
+		if (id == null) {
+			final data = try sys.io.File.getBytes(path) catch (_) null;
+			if (data == null)
+				return "";
+			id = nextImageId++;
+			final b = new StringBuf();
+			final encoded = haxe.crypto.Base64.encode(data);
+			var i = 0;
+			while (i < encoded.length) {
+				final chunk = encoded.substr(i, 4096);
+				i += 4096;
+				final more = (i < encoded.length) ? 1 : 0;
+				b.add((i == 4096) ? '\x1B_Ga=t,f=100,i=$id,q=2,m=$more;$chunk\x1B\\' : '\x1B_Gm=$more;$chunk\x1B\\');
+			}
+			e.writeRaw(b.toString());
+			imageIds.set(path, id);
+		}
+		if (placement != null) {
+			// once: the placement of another image (e.g. of the previous chat)
+			final old = placements.get(placement);
+			if (old != null && old != id)
+				e.writeRaw(deletion(old, placement));
+			placements.set(placement, id);
+		}
+		final size = (fitted != null) ? ',X=${fitted.x},Y=${fitted.y}' : ',c=2,r=1';
+		return '\x1B_Ga=p,i=$id' + ((placement != null) ? ',p=$placement' : '') + size + ',C=1,q=2\x1B\\' + "   ";
+	}
+
+	/** Scaled avatars by file and size: their file and horizontal offset, `null` if they can't be made **/
+	static final fitted = new Map<String, Null<{path:String, x:Int, y:Int}>>();
+
+	/**
+		A copy of the avatar `path` scaled to the box of 2 cells (`cell`) minus a pixel on each side: square, as large as
+		the smaller side allows, centered (the offsets `x`, `y` in pixels); made once with ImageMagick, `null` without it.
+	**/
+	static function fittedAvatar(path:String, cell:{width:Int, height:Int}):Null<{path:String, x:Int, y:Int}> {
+		final side = Std.int(Math.min(cell.width * 2, cell.height)) - 2;
+		final key = '$path $side';
+		if (fitted.exists(key))
+			return fitted.get(key);
+		var result:Null<{path:String, x:Int, y:Int}> = null;
+		final magick = Files.which("magick");
+		if (side > 0 && magick != null) {
+			final out = haxe.io.Path.withoutExtension(path) + '-$side.png';
+			if (sys.FileSystem.exists(out) || Sys.command(magick, [path, "-resize", '${side}x$side!', 'png:$out']) == 0)
+				result = {path: out, x: 1 + Std.int((cell.width * 2 - 2 - side) / 2), y: 1 + Std.int((cell.height - 2 - side) / 2)};
+		}
+		fitted.set(key, result);
+		return result;
+	}
+
+	/** Removes the image of a fixed placement (see `avatarIcon`), e.g. when the prompt has none anymore **/
+	public static function clearPlacement(placement:Int) {
+		final id = placements.get(placement);
+		if (id == null)
+			return;
+		placements.remove(placement);
+		editor?.writeRaw(deletion(id, placement));
+	}
+
+	static function deletion(id:Int, placement:Int):String
+		return '\x1B_Ga=d,d=i,i=$id,p=$placement,q=2\x1B\\';
+
+	/** The avatar of a contact before its name (`avatarIcon`) **/
+	public static inline function avatarBefore(jid:Null<String>):String
+		return avatarIcon(jid);
+
 	/** Prints a line (to stderr if `error`), above the input line while the editor is active **/
 	public static function println(text:String, error = false):Null<LineEditor.Position> {
 		if (silent)
