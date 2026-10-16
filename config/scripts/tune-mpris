@@ -6,45 +6,48 @@
 # Started by norc (enable it with `chmod +x`): stdout sends commands to norc, stdin receives the replies and
 # events (JSON lines). A playing track is published with artist, title, album and length; paused or stopped
 # clears the tune. After the login (also after reconnecting) the current track is published.
+# The link of the track is published if it is remote (http, https: e.g. a web radio), not the path of a local file.
 
 # only this player (see `playerctl -l`), empty: any
 player=
 
-format=$'{{status}}\x1f{{artist}}\x1f{{title}}\x1f{{album}}\x1f{{mpris:length}}'
+format=$'{{status}}\x1f{{artist}}\x1f{{title}}\x1f{{album}}\x1f{{mpris:length}}\x1f{{xesam:url}}'
 
 # a JSON string
 json() {
-	local s=${1//\\/\\\\}
-	s=${s//\"/\\\"}
-	printf '"%s"' "$s"
+  local s=${1//\\/\\\\}
+  s=${s//\"/\\\"}
+  printf '"%s"' "$s"
 }
 
 # a quoted /tune value: \ and " escaped
 quote() {
-	local s=${1//\\/\\\\}
-	printf '"%s"' "${s//\"/\\\"}"
+  local s=${1//\\/\\\\}
+  printf '"%s"' "${s//\"/\\\"}"
 }
 
-# the /tune argument of a line of playerctl (status, artist, title, album, length; separated by \x1f)
+# the /tune argument of a line of playerctl (status, artist, title, album, length, url; separated by \x1f)
 tune() {
-	local status artist title album length t
-	# a separator which is no whitespace: empty fields are kept
-	IFS=$'\x1f' read -r status artist title album length <<<"$1"
-	if [ "$status" != Playing ] || [ -z "$title" ]; then
-		echo -
-		return
-	fi
-	t="title=$(quote "$title")"
-	[ -n "$artist" ] && t="$t artist=$(quote "$artist")"
-	[ -n "$album" ] && t="$t source=$(quote "$album")"
-	# microseconds
-	[ -n "$length" ] && [ "$length" -gt 0 ] 2>/dev/null && t="$t length=$((length / 1000000))"
-	echo "$t"
+  local status artist title album length url t
+  # a separator which is no whitespace: empty fields are kept
+  IFS=$'\x1f' read -r status artist title album length url <<<"$1"
+  if [ "$status" != Playing ] || [ -z "$title" ]; then
+    echo -
+    return
+  fi
+  t="title=$(quote "$title")"
+  [ -n "$artist" ] && t="$t artist=$(quote "$artist")"
+  [ -n "$album" ] && t="$t source=$(quote "$album")"
+  # microseconds
+  [ -n "$length" ] && [ "$length" -gt 0 ] 2>/dev/null && t="$t length=$((length / 1000000))"
+  # only remote links: a local path reveals your files and plays nowhere else
+  case $url in http://* | https://*) t="$t uri=$(quote "$url")" ;; esac
+  echo "$t"
 }
 
 # sends /tune to norc
 send() {
-	printf '{"cmd":%s}\n' "$(json "tune $1")"
+  printf '{"cmd":%s}\n' "$(json "tune $1")"
 }
 
 trap exit TERM
@@ -52,16 +55,16 @@ trap exit TERM
 # replies and events of norc: errors to stderr, after the login the current track;
 # the end of the input (norc quits) ends the script
 {
-	while read -r line; do
-		case $line in
-		# before the login: the track is sent after it
-		*'not connected'*) ;;
-		*'"type":"error"'*) echo "$line" >&2 ;;
-		*'"event":"login"'*) send "$(tune "$(playerctl ${player:+--player="$player"} metadata --format "$format" 2>/dev/null)")" ;;
-		esac
-	done
-	kill $$ 2>/dev/null
-	# explicitly: background jobs would read from /dev/null
+  while read -r line; do
+    case $line in
+    # before the login: the track is sent after it
+    *'not connected'*) ;;
+    *'"type":"error"'*) echo "$line" >&2 ;;
+    *'"event":"login"'*) send "$(tune "$(playerctl ${player:+--player="$player"} metadata --format "$format" 2>/dev/null)")" ;;
+    esac
+  done
+  kill $$ 2>/dev/null
+  # explicitly: background jobs would read from /dev/null
 } <&0 &
 
 # the changes of the players
@@ -71,9 +74,9 @@ trap 'kill $playerctl 2>/dev/null' EXIT
 
 last=
 while read -r -u "$changes" line; do
-	t=$(tune "$line")
-	# playerctl repeats unchanged metadata, e.g. on seeking
-	[ "$t" = "$last" ] && continue
-	send "$t"
-	last=$t
+  t=$(tune "$line")
+  # playerctl repeats unchanged metadata, e.g. on seeking
+  [ "$t" = "$last" ] && continue
+  send "$t"
+  last=$t
 done
