@@ -50,6 +50,12 @@ class LineEditor {
 	/** The history line shown by browsing, if the line was edited since then a new search starts **/
 	var browsed:Null<String>;
 
+	/** Ask the terminal whether it shows images (kitty graphics protocol) when started **/
+	public static var queryImages = true;
+
+	/** The terminal shows images (kitty graphics protocol): it answered the query sent when the editor started **/
+	public var images(default, null) = false;
+
 	/** Reading a line (the prompt is shown) **/
 	var active = false;
 
@@ -89,6 +95,9 @@ class LineEditor {
 		if (saved == null || stty("-icanon -echo -isig min 1 time 0") == null)
 			return null;
 		final editor = new LineEditor(prompt, saved);
+		// the answer is read as input (see `escape`), terminals without the protocol ignore it: nothing to wait for
+		if (queryImages)
+			write("\x1B_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1B\\");
 		if (historyPath != null)
 			try
 				editor.loadHistory(historyPath)
@@ -270,14 +279,22 @@ class LineEditor {
 	function escape(input:haxe.io.Input) {
 		mutex.release();
 		final c1 = try input.readByte() catch (_:haxe.io.Eof) -1;
+		if (c1 == "_".code) {
+			// an answer of the terminal (APC): to the query of the kitty graphics protocol `i=31;OK`
+			final answer = applicationCommand(input);
+			mutex.acquire();
+			if (answer.startsWith("Gi=31;") && answer.endsWith(";OK"))
+				images = true;
+			return;
+		}
 		if (c1 != "[".code && c1 != "O".code) {
 			mutex.acquire();
 			return;
 		}
-		// CSI parameters (e.g. "3~") and the final byte
+		// CSI parameters (e.g. "3~", "?62;4" of an answer of the terminal) and the final byte
 		var params = "";
 		var c = try input.readByte() catch (_:haxe.io.Eof) -1;
-		while (c >= "0".code && c <= "9".code || c == ";".code) {
+		while (c >= "0".code && c <= "9".code || c == ";".code || c == "?".code || c == ">".code) {
 			params += String.fromCharCode(c);
 			c = try input.readByte() catch (_:haxe.io.Eof) -1;
 		}
@@ -302,6 +319,21 @@ class LineEditor {
 					line.splice(cursor, 1);
 			case _:
 		}
+	}
+
+	/** The rest of an application program command (after `ESC _`), up to `ESC \` (at most 4096 bytes) **/
+	static function applicationCommand(input:haxe.io.Input):String {
+		final b = new StringBuf();
+		var esc = false;
+		for (_ in 0...4096) {
+			final c = try input.readByte() catch (_:haxe.io.Eof) -1;
+			if (c < 0 || (esc && c == "\\".code))
+				break;
+			esc = c == 0x1B;
+			if (!esc)
+				b.addChar(c);
+		}
+		return b.toString();
 	}
 
 	/**

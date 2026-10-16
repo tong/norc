@@ -20,6 +20,12 @@ using StringTools;
 	Chat states (XEP-0085) are sent: `active` in the chat, `composing` while typing a message, `paused` after some seconds
 	without typing, `gone` when leaving it; the state of the contact is shown in the prompt (e.g. `alice (typing)> `).
 **/
+/** Counts shown in the prompt **/
+typedef PromptCounts = {
+	var calls:{active:Int, pending:Int};
+	var transfers:{active:Int, pending:Int};
+}
+
 /** The prompts of the modes, see `Config.Account` **/
 typedef Prompts = {
 	final normal:String;
@@ -37,6 +43,12 @@ class Console {
 	final chatStates:ChatStates;
 	final rooms:Rooms;
 	final prompts:Prompts;
+
+	/** The prompt last set (with its placeholders replaced) **/
+	var shownPrompt:Null<String>;
+
+	/** The counts of calls and file transfers for the prompt (`{calls_active}`, `{status}`, …) **/
+	public var counts:Null<() -> PromptCounts>;
 
 	/** The file keeping the history of the input line, `null` without **/
 	final historyPath:Null<String>;
@@ -102,6 +114,7 @@ class Console {
 		editor = LineEditor.start(prompts.normal, historyPath);
 		Term.editor = editor;
 		if (editor != null) {
+			refreshPrompt();
 			editor.complete = complete;
 			editor.changed = line -> context.post(() -> typing(line));
 			// sent messages are shown by the messages module
@@ -197,15 +210,50 @@ class Console {
 		final jid = chat;
 		// its occupants entering and leaving are shown
 		rooms.active = (jid != null && rooms.joined(jid)) ? Jid.parseBare(jid).toLowerCase() : null;
-		if (jid == null) {
-			editor?.setPrompt(prompts.normal);
+		refreshPrompt();
+	}
+
+	/**
+		Sets the prompt of the current mode, with the counts of calls, rooms and file transfers (`counts`), if it changed;
+		after each event, the counts may have changed.
+	**/
+	public function refreshPrompt() {
+		if (editor == null)
 			return;
+		final jid = chat;
+		final room = jid != null && rooms.joined(jid);
+		var prompt = (jid == null) ? prompts.normal : (room ? prompts.room : prompts.chat);
+		if (jid != null)
+			prompt = prompt.replace("{name}", Term.name(name(jid), Jid.parseBare(jid)))
+				.replace("{jid}", jid)
+				.replace("{nick}", rooms.nickIn(jid) ?? "")
+				.replace("{state}", (!room && theirState != null) ? Term.style(' (${theirState == "composing" ? "typing" : theirState})', 2) : "");
+		if (prompt.contains("{")) {
+			final c = (counts != null) ? counts() : {calls: {active: 0, pending: 0}, transfers: {active: 0, pending: 0}};
+			prompt = prompt.replace("{calls_active}", Std.string(c.calls.active))
+				.replace("{calls_pending}", Std.string(c.calls.pending))
+				.replace("{rooms}", Std.string(rooms.count()))
+				.replace("{transfers_active}", Std.string(c.transfers.active))
+				.replace("{transfers_pending}", Std.string(c.transfers.pending))
+				.replace("{status}", status(c));
 		}
-		final room = rooms.joined(jid);
-		editor?.setPrompt((room ? prompts.room : prompts.chat).replace("{name}", Term.name(name(jid), Jid.parseBare(jid)))
-			.replace("{jid}", jid)
-			.replace("{nick}", rooms.nickIn(jid) ?? "")
-			.replace("{state}", (!room && theirState != null) ? Term.style(' (${theirState == "composing" ? "typing" : theirState})', 2) : ""));
+		if (prompt != shownPrompt) {
+			shownPrompt = prompt;
+			editor.setPrompt(prompt);
+		}
+	}
+
+	/** `☎1/0 #3 ⇅2/1 `: calls (active/pending), rooms, file transfers (active/pending), only those there are; dimmed **/
+	function status(c:PromptCounts):String {
+		final parts = [];
+		if (c.calls.active + c.calls.pending > 0)
+			parts.push('☎${c.calls.active}/${c.calls.pending}');
+		final n = rooms.count();
+		if (n > 0)
+			parts.push('#$n');
+		if (c.transfers.active + c.transfers.pending > 0)
+			parts.push('⇅${c.transfers.active}/${c.transfers.pending}');
+		return (parts.length > 0) ? Term.style(parts.join(" "), 2) + " " : "";
 	}
 
 	/** The input line changed: `composing` while it is a message (`paused` after a while), else `active` **/

@@ -68,8 +68,15 @@
 # by you, with the messages typed in chat mode). 0 disables it.
 # persistent_command_history = 1
 
+# Show images (avatars, /avatar) in terminals supporting the kitty graphics protocol (kitty, WezTerm, Ghostty,
+# Konsole; asked when the interactive mode starts, inside tmux only with allow-passthrough). 0 disables it.
+# terminal_images = 1
+
 # Prompt of the input line (interactive mode), in "" to keep spaces at the start or end.
-# prompt = "> "
+# {status}: the calls (active/pending), rooms and file transfers (active/pending) there are, e.g. "☎1/0 #3 ⇅0/1 ",
+# nothing without; the numbers alone: {calls_active} {calls_pending} {rooms} {transfers_active} {transfers_pending}
+# (in all prompts), e.g. "{calls_active}/{calls_pending}|{rooms}|{transfers_active}/{transfers_pending}> ".
+# prompt = "{status}> "
 
 # Prompt in chat mode (/chat): {name} is the name of the contact (in its color), {jid} its jid,
 # {state} its chat state unless active, e.g. " (typing)".

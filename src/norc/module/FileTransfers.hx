@@ -129,6 +129,12 @@ class FileTransfers extends Module {
 			}
 		];
 
+	/** The transfers sending or receiving (`active`), and offers not accepted yet (`pending`), e.g. for the prompt **/
+	public function counts():{active:Int, pending:Int} {
+		final pending = transfers.filter(t -> t.state == Offered).length;
+		return {active: transfers.length - pending, pending: pending};
+	}
+
 	override public function features():Array<String>
 		return FEATURES;
 

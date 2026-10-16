@@ -201,6 +201,12 @@ class Calls extends Module {
 	override public function features():Array<String>
 		return (helper != null) ? JingleRtp.FEATURES : [];
 
+	/** The calls being connected or connected (`active`), and ringing or calling (`pending`), e.g. for the prompt **/
+	public function counts():{active:Int, pending:Int} {
+		final pending = calls.filter(c -> c.state.match(Ringing | Calling)).length;
+		return {active: calls.length - pending, pending: pending};
+	}
+
 	override public function detach() {
 		for (c in calls.copy())
 			finish(c, "disconnected");

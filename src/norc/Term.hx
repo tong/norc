@@ -17,6 +17,35 @@ class Term {
 	/** The line editor reading input (`-i` on a terminal): output is printed above its input line **/
 	public static var editor:Null<LineEditor>;
 
+	/**
+		Shows a PNG image `rows` lines high (the width by its aspect ratio) above the input line, if the terminal shows
+		images (kitty graphics protocol, see `LineEditor.images`); returns `false` if it doesn't, or `png` is no PNG.
+	**/
+	public static function image(png:haxe.io.Bytes, rows:Int):Bool {
+		final e = editor;
+		if (e == null || !e.images || silent || rows < 1 || png.length < 8 || png.get(0) != 0x89 || png.getString(1, 3) != "PNG")
+			return false;
+		final data = haxe.crypto.Base64.encode(png);
+		final b = new StringBuf();
+		// the lines of the image first (scrolling at the bottom of the screen), then the image at their start; the
+		// cursor stays (C=1), no answers (q=2), the data in chunks of 4096 bytes
+		b.add(StringTools.lpad("", "\n", rows - 1));
+		if (rows > 1)
+			b.add('\x1B[${rows - 1}A');
+		b.add("\r");
+		var i = 0;
+		while (i < data.length) {
+			final chunk = data.substr(i, 4096);
+			i += 4096;
+			final more = (i < data.length) ? 1 : 0;
+			b.add((i == 4096) ? '\x1B_Ga=T,f=100,t=d,r=$rows,C=1,q=2,m=$more;$chunk\x1B\\' : '\x1B_Gm=$more;$chunk\x1B\\');
+		}
+		if (rows > 1)
+			b.add('\x1B[${rows - 1}B');
+		e.print(b.toString());
+		return true;
+	}
+
 	/** Prints a line (to stderr if `error`), above the input line while the editor is active **/
 	public static function println(text:String, error = false) {
 		if (silent)

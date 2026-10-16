@@ -191,7 +191,7 @@ class Client {
 		final chatStates = new ChatStates(context, messages, contacts, account.chatStates != false);
 		chatStates.isRoom = rooms.joined;
 		console = new Console(context, commands, contacts, chatStates, rooms, {
-			normal: account.prompt ?? "> ",
+			normal: account.prompt ?? "{status}> ",
 			chat: account.chatPrompt ?? "{name}{state}> ",
 			room: account.roomPrompt ?? "#{name}> "
 		},
@@ -202,6 +202,9 @@ class Client {
 		final sessions = new JingleSessions(context);
 		final history = new History(context, contacts, rooms, messages);
 		console.entered = (jid, out) -> history.recent(jid, account.chatHistory ?? 10, out);
+		final fileTransfers = new FileTransfers(context, contacts, sessions, account.downloadDir ?? Config.downloadDir());
+		final calls = new Calls(context, contacts, sessions, account);
+		console.counts = () -> {calls: calls.counts(), transfers: fileTransfers.counts()};
 		modules = [
 			contacts,
 			messages,
@@ -225,8 +228,8 @@ class Client {
 			new Blocking(context, contacts),
 			new Discovery(context, contacts, account.lastActivity == true ? () -> Std.int(Sys.time() - lastInput) : null),
 			sessions,
-			new FileTransfers(context, contacts, sessions, account.downloadDir ?? Config.downloadDir()),
-			new Calls(context, contacts, sessions, account),
+			fileTransfers,
+			calls,
 			new Upload(context, messages, contacts) // disabled for now (shared documents, /share)
 				// new Share(context, messages, contacts, account.shareService)
 		];
@@ -262,10 +265,15 @@ class Client {
 		scripts.startAll();
 		connect();
 		// after connecting: reading piped input from the start hangs the client
-		if (interactive)
+		if (interactive) {
+			LineEditor.queryImages = account.terminalImages != false;
 			console.start(line -> events.add(line != null ? Line(line) : InputClosed));
-		while (exitCode == null)
+		}
+		while (exitCode == null) {
 			handle(events.pop(true));
+			// e.g. a call or file transfer started or ended
+			console.refreshPrompt();
+		}
 		scripts.stopAll();
 		api.stop();
 		console.stop();

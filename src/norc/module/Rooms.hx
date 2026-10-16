@@ -270,6 +270,10 @@ class Rooms extends Module {
 			r.muc = null;
 	}
 
+	/** The number of rooms the user is in (joined) **/
+	public function count():Int
+		return Lambda.count(rooms, r -> r.entered == true);
+
 	/** `jid` is a room the user is in (or joining) **/
 	public function joined(jid:String):Bool
 		return find(jid) != null;

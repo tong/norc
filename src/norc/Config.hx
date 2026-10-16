@@ -49,6 +49,9 @@ typedef Account = {
 	/** Receive attention requests (`/buzz`), `true` if not set **/
 	var ?attention:Bool;
 
+	/** Show images (e.g. avatars) in terminals supporting the kitty graphics protocol, `true` if not set **/
+	var ?terminalImages:Bool;
+
 	/** Aliases of commands (`alias.h = help`): the name without `/`, the command it runs with its first arguments **/
 	var ?aliases:Map<String, String>;
 
@@ -171,6 +174,7 @@ class Config {
 		{name: "api_port", get: a -> (a.apiPort != null) ? Std.string(a.apiPort) : null, set: (a, v) -> a.apiPort = parsePort(v)},
 		flag("last_activity", a -> a.lastActivity, (a, v) -> a.lastActivity = v),
 		flag("carbons", a -> a.carbons, (a, v) -> a.carbons = v),
+		flag("terminal_images", a -> a.terminalImages, (a, v) -> a.terminalImages = v),
 		flag("chat_states", a -> a.chatStates, (a, v) -> a.chatStates = v),
 		flag("entity_time", a -> a.entityTime, (a, v) -> a.entityTime = v),
 		flag("attention", a -> a.attention, (a, v) -> a.attention = v),

@@ -39,6 +39,9 @@ private typedef Avatar = {
 	e.g. for the icon of a notification. PEP avatars win over vCard photos. Images are checked against their hash.
 **/
 class Avatars extends Module {
+	/** The height of an avatar shown in the terminal, in lines **/
+	static inline var IMAGE_ROWS = 4;
+
 	/** The largest image loaded **/
 	static inline var MAX_LOAD = 1024 * 1024;
 
@@ -275,7 +278,12 @@ class Avatars extends Module {
 					width: avatar.width,
 					height: avatar.height,
 					source: source
-				}, () -> out.info('${contacts.name(bare)}: ${avatar.path} (${describe(avatar)})'));
+				}, () -> {
+					// the image itself, in terminals showing images (PNG)
+					if (avatar.type == "image/png")
+						try Term.image(File.getBytes(avatar.path), IMAGE_ROWS) catch (_) false;
+					out.info('${contacts.name(bare)}: ${avatar.path} (${describe(avatar)})');
+				});
 			}
 			done();
 		}
