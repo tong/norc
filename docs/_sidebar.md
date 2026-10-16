@@ -1,0 +1,12 @@
+[Home](home)
+
+- [Installation](installation)
+- [Configuration](configuration)
+- [Running norc](running-norc)
+- [Commands](commands)
+- [Account Management](account-management)
+- [Checking Servers](checking-servers)
+- [File Transfer](file-transfer)
+- [Hooks](hooks)
+- [Scripts](scripts)
+- [API](api)
