@@ -46,6 +46,7 @@ class Moods extends Module {
 	override public function detach() {
 		super.detach();
 		moods.clear();
+		contacts.moods.clear();
 	}
 
 	function publish(value:Null<String>, text:Null<String>, out:Output) {
@@ -73,6 +74,10 @@ class Moods extends Module {
 			mood = current;
 			return;
 		}
+		if (current != null)
+			contacts.moods.set(from, {mood: current.mood, text: current.text});
+		else
+			contacts.moods.remove(from);
 		if (!change(moods, from, (current != null) ? describe(current) : null))
 			return;
 		if (current != null)

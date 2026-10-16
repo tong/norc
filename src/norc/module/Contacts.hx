@@ -32,6 +32,12 @@ class Contacts extends Module {
 	/** Nicknames published by contacts (bare jid), their names if the roster has none **/
 	public final nicknames = new Map<String, String>();
 
+	/** The moods contacts publish (bare jid), set by the moods module **/
+	public final moods = new Map<String, {mood:String, ?text:String}>();
+
+	/** The music contacts listen to (bare jid), set by the tunes module **/
+	public final tunes = new Map<String, {?artist:String, ?title:String, ?source:String}>();
+
 	/** The files of the avatars of contacts (and the own) by bare jid (lowercase), set by the avatars module **/
 	public final avatars = new Map<String, String>();
 
@@ -290,7 +296,9 @@ class Contacts extends Module {
 					asked: item.ask == "subscribe",
 					groups: item.groups,
 					// of the first available client
-					presence: (stream != null && available.length > 0) ? describe(presences.get(available[0])) : null
+					presence: (stream != null && available.length > 0) ? describe(presences.get(available[0])) : null,
+					mood: moods.get(item.jid),
+					tune: tunes.get(item.jid)
 				}
 			}
 		];
@@ -306,10 +314,20 @@ class Contacts extends Module {
 					details.push("asked");
 				if (c.groups.length > 0)
 					details.push(c.groups.join(", "));
+				// what they publish: mood, music
+				final published = [];
+				if (c.mood != null)
+					published.push(StringTools.replace(c.mood.mood, "_", " ") + (c.mood.text != null && c.mood.text.length > 0 ? ' (${c.mood.text})' : ''));
+				if (c.tune != null) {
+					final song = [c.tune.artist, c.tune.title].filter(s -> s != null && s.length > 0).join(" – ");
+					if (song.length > 0)
+						published.push('♪ $song');
+				}
 				out.print('  '
 					+ (c.name != null ? '${c.name} <${c.jid}>' : c.jid)
 					+ (c.presence != null ? Term.style(' ${c.presence}', 32) : '')
-					+ Term.style(' [${details.join("; ")}]', 2));
+					+ Term.style(' [${details.join("; ")}]', 2)
+					+ (published.length > 0 ? ' ' + Term.style(published.join(" · "), 35) : ''));
 			}
 		});
 	}

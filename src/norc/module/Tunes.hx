@@ -63,6 +63,7 @@ class Tunes extends Module {
 	override public function detach() {
 		super.detach();
 		tunes.clear();
+		contacts.tunes.clear();
 	}
 
 	function publish(input:Null<String>, out:Output) {
@@ -129,6 +130,10 @@ class Tunes extends Module {
 			tune = current;
 			return;
 		}
+		if (current != null)
+			contacts.tunes.set(from, {artist: current.artist, title: current.title, source: current.source});
+		else
+			contacts.tunes.remove(from);
 		if (!change(tunes, from, (current != null) ? describe(current) : null))
 			return;
 		if (current != null)
