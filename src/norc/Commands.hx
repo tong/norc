@@ -426,11 +426,13 @@ class Commands {
 		Returns `true` if `line` runs a command ending the client. Called by the input thread
 		(the commands are not changed after the start).
 	**/
-	public function exits(line:String):Bool {
+	public function exits(line:String, slash = true):Bool {
 		line = line.trim();
-		if (!line.startsWith("/"))
+		if (line.startsWith("/"))
+			line = line.substr(1);
+		else if (slash)
 			return false;
-		final resolved = resolve(line.substr(1));
+		final resolved = resolve(line);
 		if (resolved == null || resolved.entry.command.exit != true)
 			return false;
 		// only if it will run
