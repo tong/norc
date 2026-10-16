@@ -43,6 +43,9 @@ private typedef Transfer = {
 
 	/** Where status messages go: of the command which started or accepted the transfer **/
 	var out:Output;
+
+	/** Ended with `/file abort` **/
+	var ?aborted:Bool;
 }
 
 /**
@@ -121,6 +124,14 @@ class FileTransfers extends Module {
 						complete: ["id" => _ -> offerIds()]
 					},
 					{
+						name: "abort",
+						args: "[#id]",
+						description: "abort a file transfer (sending, receiving, or your offer not accepted yet); an offer to you is declined",
+						online: true,
+						run: (args, out) -> abort(args[0] != null ? Std.parseInt(args[0]) : null, out),
+						complete: ["id" => _ -> [for (t in transfers) '${t.id}']]
+					},
+					{
 						name: "transfers",
 						description: "list pending file offers and active transfers",
 						run: (args, out) -> list(out)
@@ -194,6 +205,10 @@ class FileTransfers extends Module {
 		}, () -> out.info('#${t.id} offering ${describe(file)} to $peer'));
 		t.session = JingleFileTransfer.sendFile(jingle, peer, file, data, {s5b: s5b, onProgress: sent -> progress(t, sent)}, reason -> {
 			transfers.remove(t);
+			if (t.aborted == true) {
+				aborted(t);
+				return;
+			}
 			switch reason.condition {
 				case JingleReason.success:
 					out.info('#${t.id} sent ${file.name} to $peer');
@@ -206,6 +221,10 @@ class FileTransfers extends Module {
 				case JingleReason.decline:
 					out.info('#${t.id} $peer declined ${file.name}');
 					failed(t, "decline");
+				case JingleReason.cancel:
+					// e.g. /file abort of the receiver
+					out.info('#${t.id} $peer cancelled ${file.name}');
+					failed(t, "cancel");
 				case _:
 					out.error('#${t.id} sending ${file.name} failed: ${formatReason(reason)}');
 					failed(t, formatReason(reason));
@@ -241,6 +260,15 @@ class FileTransfers extends Module {
 		out.data({id: t.id, path: target}, () -> out.info('#${t.id} receiving ${t.file.name ?? "file"} → $target'));
 		JingleFileTransfer.receiveFile(t.session, {s5b: s5b, onProgress: received -> progress(t, received)}, (reason, data) -> {
 			transfers.remove(t);
+			if (t.aborted == true) {
+				aborted(t);
+				return;
+			}
+			if (reason.condition == JingleReason.cancel) {
+				out.info('#${t.id} ${t.peer} cancelled ${t.file.name ?? "file"}');
+				failed(t, "cancel");
+				return;
+			}
 			if (reason.condition != JingleReason.success || data == null) {
 				out.error('#${t.id} receiving ${t.file.name ?? "file"} failed: ${formatReason(reason)}');
 				failed(t, formatReason(reason));
@@ -265,6 +293,34 @@ class FileTransfers extends Module {
 		transfers.remove(t);
 		t.session.terminate(JingleReason.decline);
 		out.info('#${t.id} declined ${t.file.name ?? "file"}');
+	}
+
+	/**
+		`/file abort [id]`: ends a transfer (the only one, if `id` is not given): sending, receiving, or an own offer not
+		accepted yet; an offer of the peer is declined. Nothing received is saved.
+	**/
+	function abort(?id:Int, out:Output) {
+		final t = if (id != null) Lambda.find(transfers, t -> t.id == id) else (transfers.length == 1) ? transfers[0] : null;
+		if (t == null) {
+			out.error((id != null) ? 'no file transfer #$id' : (transfers.length == 0) ? "no file transfers" :
+				'several file transfers, give the number: ${[for (t in transfers) '#${t.id}'].join(", ")}');
+			return;
+		}
+		if (t.incoming && t.state == Offered) {
+			decline(t.id, out);
+			return;
+		}
+		t.aborted = true;
+		t.out = out;
+		// the callback of the transfer reports it (closing its connections)
+		t.session.terminate(JingleReason.cancel);
+	}
+
+	/** A transfer ended with `/file abort` **/
+	function aborted(t:Transfer) {
+		final percent = (t.file.size != null && t.file.size > 0) ? ' at ${Std.int(t.done / t.file.size * 100)}%' : '';
+		t.out.info('#${t.id} aborted ${t.incoming ? "receiving" : "sending"} ${t.file.name ?? "file"}$percent');
+		failed(t, "aborted");
 	}
 
 	/** Numbers of the file offers, to complete input **/

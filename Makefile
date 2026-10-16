@@ -92,9 +92,13 @@ $(STATIC)/lib/hl/fmt.o: lib/hl/fmt.c
 	@mkdir -p $(dir $@)
 	$(STATIC_CC) $(STATIC_CFLAGS) $(MBEDTLS_INC) -I$(HASHLINK_SRC)/include/zlib -c $< -o $@
 
+# with the headers it includes as dependencies (.d): haxe rewrites only the files that changed, a changed class
+# (e.g. a new field) must recompile the files using it
 $(STATIC)/out/%.o: out/%.c
 	@mkdir -p $(dir $@)
-	$(STATIC_CC) $(STATIC_CFLAGS) -std=c11 -DHL_MAKE -Iout $(MBEDTLS_INC) -c $< -o $@
+	$(STATIC_CC) $(STATIC_CFLAGS) -std=c11 -DHL_MAKE -Iout $(MBEDTLS_INC) -MMD -MP -c $< -o $@
+
+-include $(OUT_OBJ:.o=.d)
 
 $(STATIC)/$(BIN): $(OUT_OBJ) $(SSL_OBJ) $(FMT_OBJ) $(LIBHL_OBJ)
 	$(STATIC_CC) $(STATIC_LDFLAGS) -o $@ $^ $(STATIC_LIBS)
