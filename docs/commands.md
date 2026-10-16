@@ -81,19 +81,22 @@ without it, calls are not available.
 
 | Command | Description |
 |---|---|
-| `/call <jid> [options...]` | call a contact (audio); options: `video`, `send` or `receive` (only one direction, for all media), and a file to play instead of your microphone (any audio format, `~/` is the home directory); without resource a client of the contact supporting calls |
-| `/call accept [#id] [options...]` | accept a call (the only one, if no number is given); options: `audio` (accept a video call without video), `send` or `receive` (only one direction), a file to play |
+| `/call <jid> [options...]` | call a contact (audio); options: `video`, `audio`, `send` or `receive` (only one direction, for all media), `record` (see [Recording calls](#recording-calls)), and a file to play instead of your microphone (any audio format, `~/` is the home directory); without resource a client of the contact supporting calls. The options can also come before the jid (`/call video alice`), e.g. for an alias: `alias.videocall = call video` |
+| `/call accept [#id] [options...]` | accept a call (the only one, if no number is given); options: `audio` (accept a video call without video), `send` or `receive` (only one direction), `record`, a file to play |
 | `/call decline [#id]` | decline a call |
 | `/call hangup [#id]` | end a call, or cancel it while it rings |
 | `/call mute [audio\|video]` | mute or unmute your audio (or video) |
+| `/call record [#id] [on\|off]` | record the call, or stop recording it (without `on` or `off`: switched) |
 | `/calls` | the calls and their state (ringing, calling, connecting, connected) |
 | `/calls hangup` | end all calls (ringing calls are declined) |
 | `/calls devices` | list the microphones, speakers and cameras for calls: names for `call_microphone`, `call_speaker`, `call_camera` |
 
 ```
 /call alice video receive        watch alice's camera (and listen), send nothing
+/call video alice                the same as /call alice video
 /call alice send ~/song.ogg      play a file to alice, hear nothing back
 /call accept 1 audio             accept a video call without video
+/call cam video receive record   watch and record a camera
 ```
 
 The other side can only narrow the directions: a call to receive can only be accepted to send.
@@ -109,6 +112,25 @@ The other side can only narrow the directions: a call to receive can only be acc
 One call at a time: other callers get `busy`. Only contacts can call you, as the connection reveals your address.
 In chat mode, `/call` calls the contact of the chat. `call_helper` sets the program and its options, e.g. other audio
 devices: `call_helper = norc-rtc --audio-source "pipewiresrc target-object=…"` (see `norc-rtc --help`).
+
+### Recording calls
+
+Off unless `call_recording = 1` is in the config. `record` (an option of `/call` and `/call accept`) or `/call record`
+during the call then writes the call into a file in
+`call_record_dir` (default `~/.local/share/norc/calls/`): `<contact>-<date>-<time>.webm`, which plays in players and
+browsers. It has both voices mixed into one audio track, the video of the other side and your own video (as received
+and sent, not encoded again). The recording starts two seconds after the connection (with the media flowing then),
+and ends with `/call record off` or the end of the call.
+
+```
+/call alice video record
+#1 recording audio, video, own video into ~/.local/share/norc/calls/alice@example.org-2026-10-16-170342.webm
+/call hangup
+#1 recording saved: ~/.local/share/norc/calls/alice@example.org-2026-10-16-170342.webm
+```
+
+The other side is not told that you record: in many countries recording a call without the consent of the other
+side is illegal. The `recording` event (hook `on-recording`) has the file, e.g. to move or convert it.
 
 ## Rooms (group chats)
 

@@ -1,0 +1,21 @@
+#!/bin/sh
+#
+# norc hook: desktop notification when the recording of a call is saved or failed
+#
+# Run on the recording event, when the recording of a call starts, is saved or fails (/call record).
+# Enable it with `chmod +x on-recording`. Several hooks per event: on-recording.<anything> (e.g. on-recording.move).
+#
+# Arguments: from (bare jid) state file
+# NORC_FROM      full jid of the other side of the call
+# NORC_NAME      name of the contact
+# NORC_STATE     started, stopped (the file is written), failed
+# NORC_FILE      the file of the recording (WebM)
+# NORC_TRACKS    its tracks, separated by spaces: audio (both voices), video (of the contact), own-video; when started
+# NORC_MESSAGE   why it failed
+# Always set: NORC_EVENT NORC_ACCOUNT (the account name) NORC_JID (your jid)
+
+command -v notify-send >/dev/null || exit 0
+case $NORC_STATE in
+stopped) exec notify-send --app-name=norc "Call with $NORC_NAME recorded" "$NORC_FILE" ;;
+failed) exec notify-send --app-name=norc --urgency=critical "Recording the call with $NORC_NAME failed" "$NORC_MESSAGE" ;;
+esac

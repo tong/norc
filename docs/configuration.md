@@ -54,6 +54,8 @@ An account file overrides any value of `conf`:
 | `stun` | STUN server for calls (`stun://host:port`), in addition to those of your server (XEP-0215) | |
 | `turn` | TURN servers for calls (`turn://user:password@host:port`, `turns://…`, several separated by `,`), in addition to those of your server; needed when both sides are behind NAT | |
 | `call_helper` | program for the audio and video of calls, with its options (see `norc-rtc --help`) | `norc-rtc` |
+| `call_recording` | `1`: calls can be recorded (`/call record`); the other side is not told | `0` |
+| `call_record_dir` | directory of the recordings of calls, `~/` is the home directory | `$XDG_DATA_HOME/norc/calls` |
 | `chat_history` | messages of the archive of the server shown when the chat mode starts with a contact (`/chat`, MAM), `0`: none | `10` |
 | `inline_avatars` | `1`: small avatars of contacts, before their names in messages and notices, and `{avatar}` in `chat_prompt` (in terminals showing images, PNG avatars; with ImageMagick scaled to fit with a pixel of space around them, else filling two cells); with `0` `{avatar}` is empty | `0` |
 | `terminal_images` | `0`: don't show images (avatars) in the terminal; else they are shown in terminals supporting the kitty graphics protocol (kitty, WezTerm, Ghostty, Konsole), detected when the interactive mode starts | `1` |

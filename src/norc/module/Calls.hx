@@ -94,6 +94,9 @@ private typedef Call = {
 	/** A file played instead of the microphone **/
 	var ?file:String;
 
+	/** The file of the recording, requested or running **/
+	var ?record:String;
+
 	/** The media share one connection (BUNDLE): the peer supports grouping **/
 	var bundle:Bool;
 
@@ -140,7 +143,7 @@ class Calls extends Module {
 			{
 				name: "call",
 				args: "<jid> [options...]",
-				description: "call a contact; options (also before the jid, e.g. for an alias: /call video <jid>): video, audio, send or receive (only one direction), a file to play instead of the microphone",
+				description: "call a contact; options (also before the jid, e.g. for an alias: /call video <jid>): video, audio, send or receive (only one direction), record, a file to play instead of the microphone",
 				online: true,
 				run: (args, out) -> {
 					final line = optionsFirst(args[0], args[1]);
@@ -161,7 +164,7 @@ class Calls extends Module {
 					{
 						name: "accept",
 						args: "[#id] [options...]",
-						description: "accept a call (the only one if no number is given); options: audio (without video), send or receive, a file to play",
+						description: "accept a call (the only one if no number is given); options: audio (without video), send or receive, record, a file to play",
 						online: true,
 						run: (args, out) -> accept(find(args[0], Ringing, out), args[1], out),
 						complete: ["options" => completeOptions]
@@ -177,6 +180,19 @@ class Calls extends Module {
 						args: "[#id]",
 						description: "end a call",
 						run: (args, out) -> hangup(find(args[0], null, out))
+					},
+					{
+						name: "record",
+						args: "[#id] [state...]",
+						description: "record the call into a file (call_record_dir): on or off, without: switched; with a jid: a call recorded (/call record <jid> [options...])",
+						run: (args, out) -> switch args[1] {
+							case null | "on" | "off": record(find(args[0], null, out), args[1], out);
+							// the option record before the jid
+							case rest:
+								final line = optionsFirst("record", rest);
+								call(line.jid, line.options, out);
+						},
+						complete: ["state" => arg -> [["on", "off"], calls.length == 0 ? contacts.completions(arg) : []]]
 					},
 					{
 						name: "mute",
@@ -234,7 +250,7 @@ class Calls extends Module {
 			return;
 		}
 		final options = parseOptions(words, out);
-		if (options == null)
+		if (options == null || (options.record && !recordingAllowed(out)))
 			return;
 		if (calls.length > 0) {
 			out.error("already in a call (/calls, /call hangup)");
@@ -251,6 +267,8 @@ class Calls extends Module {
 				return;
 			final c = add(peer, false, options.direction, video ? options.direction : none, Calling, out);
 			c.file = options.file;
+			if (options.record)
+				c.record = recordPath(c, out);
 			out.info('#${c.id} calling ${name(c)} (${describeMedia(c)})');
 			event(c, "calling");
 			// one connection for all media only with clients supporting it (e.g. not Dino)
@@ -302,7 +320,7 @@ class Calls extends Module {
 		if (c == null)
 			return;
 		final options = parseOptions(words, out);
-		if (options == null)
+		if (options == null || (options.record && !recordingAllowed(out)))
 			return;
 		// what is offered, as far as wanted
 		final audio = c.audio.and(options.direction);
@@ -318,6 +336,8 @@ class Calls extends Module {
 		c.audio = audio;
 		c.video = video;
 		c.file = options.file;
+		if (options.record)
+			c.record = recordPath(c, out);
 		c.out = out;
 		c.state = Connecting;
 		start(c);
@@ -360,6 +380,85 @@ class Calls extends Module {
 		out.info('$media ${muted ? "muted" : "unmuted"}');
 	}
 
+	/** Starts (`on`) or stops (`off`) recording call `c`, without `state` switched **/
+	function record(c:Null<Call>, state:Null<String>, out:Output) {
+		if (c == null)
+			return;
+		if (c.rtc == null) {
+			out.error('#${c.id} is not accepted yet: /call accept ${c.id} record');
+			return;
+		}
+		final on = switch state {
+			case null: c.record == null;
+			case "on": true;
+			case "off": false;
+			case _:
+				out.error('on or off, not $state');
+				return;
+		}
+		if (on == (c.record != null)) {
+			out.info(on ? 'already recording into ${Config.contractHome(c.record)}' : "not recording");
+			return;
+		}
+		if (on) {
+			if (!recordingAllowed(out))
+				return;
+			c.record = recordPath(c, out);
+			if (c.record != null)
+				c.rtc.send({type: "record", file: c.record});
+		} else
+			c.rtc.send({type: "record"});
+	}
+
+	/** Recording calls is allowed (`call_recording`), else an error **/
+	function recordingAllowed(out:Output):Bool {
+		if (account.callRecording != true)
+			out.error("recording calls is off: call_recording = 1 in the config allows it");
+		return account.callRecording == true;
+	}
+
+	/** The file of a new recording of `c`: `<contact>-<time>.webm` in `call_record_dir`, `null` with an error **/
+	function recordPath(c:Call, out:Output):Null<String> {
+		final dir = account.callRecordDir ?? Config.recordingsDir();
+		try
+			FileSystem.createDirectory(dir)
+		catch (e) {
+			out.error('cannot record into $dir: $e');
+			return null;
+		}
+		return '$dir/${Jid.parseBare(c.peer)}-${DateTools.format(Date.now(), "%Y-%m-%d-%H%M%S")}.webm';
+	}
+
+	/** A message of the recording of `c` (also after the call: the file is written at its end) **/
+	function recording(c:Call, msg:Dynamic) {
+		final file:Null<String> = msg.file;
+		final shown = (file != null) ? Config.contractHome(file) : "";
+		final tracks:Array<String> = (msg.tracks != null) ? msg.tracks : [];
+		switch (msg.state : String) {
+			case "started":
+				c.record = file;
+				Term.notice('#${c.id} recording ${[for (t in tracks) t.replace("-", " ")].join(", ")} into $shown');
+			case "stopped":
+				if (c.record == file)
+					c.record = null;
+				Term.notice('#${c.id} recording saved: $shown');
+			case "failed":
+				if (c.record == file)
+					c.record = null;
+				Term.error('#${c.id} recording failed: ${msg.message ?? "already recording"}');
+			case _:
+				return;
+		}
+		emit("recording", [Jid.parseBare(c.peer), msg.state, file ?? ""], {
+			from: c.peer,
+			name: name(c),
+			state: msg.state,
+			file: file,
+			tracks: tracks.join(" "),
+			message: msg.message
+		});
+	}
+
 	/** Starts the media of `c`: the caller creates an offer, the callee answers the offer of the peer **/
 	function start(c:Call)
 		servers(servers -> {
@@ -370,7 +469,8 @@ class Calls extends Module {
 					.concat(c.bundle ? [] : ["--no-bundle"])
 					.concat(['--audio=${c.audio}'])
 					.concat(c.video != none ? ['--video=${c.video}'] : [])
-					.concat(c.file != null ? ["--audio-file", c.file] : []);
+					.concat(c.file != null ? ["--audio-file", c.file] : [])
+					.concat(c.record != null ? ["--record", c.record] : []);
 				c.rtc = new Rtc(helper.concat(options), context.post, msg -> media(c, msg), code -> stopped(c, code));
 			} catch (e) {
 				c.out.error('cannot start ${helper[0]}: $e');
@@ -455,6 +555,8 @@ class Calls extends Module {
 
 	/** A message of the media of `c` **/
 	function media(c:Call, msg:Dynamic) {
+		if (msg.type == "recording")
+			return recording(c, msg);
 		if (!calls.contains(c))
 			return;
 		switch (msg.type : String) {
@@ -652,6 +754,7 @@ class Calls extends Module {
 					incoming: c.incoming,
 					media: describeMedia(c),
 					file: c.file,
+					recording: c.record,
 					state: (c.state : CallState).getName().toLowerCase(),
 					duration: (c.connected != null) ? Std.int(Sys.time() - c.connected) : null
 				}
@@ -661,7 +764,7 @@ class Calls extends Module {
 				out.info("no calls");
 			for (c in list)
 				out.print('  #${c.id} ${c.incoming ? "from" : "to"} ${c.peer} (${c.media}' + (c.file != null ? ', playing ${Path.withoutDirectory(c.file)}' : '')
-					+ ') ${c.state}' + (c.duration != null ? ' ${formatDuration(c.duration)}' : ''));
+					+ ') ${c.state}' + (c.duration != null ? ' ${formatDuration(c.duration)}' : '') + (c.recording != null ? ', recording' : ''));
 		});
 	}
 
@@ -675,6 +778,7 @@ class Calls extends Module {
 		v.set("audio", (c.audio : String));
 		v.set("video", (c.video : String));
 		v.set("incoming", c.incoming);
+		v.set("recording", c.record);
 		emit("call", [Jid.parseBare(c.peer), state], v);
 	}
 
@@ -685,7 +789,7 @@ class Calls extends Module {
 	static function audioFile(path:String, out:Output):Null<String> {
 		final file = Config.expandHome(path);
 		if (!FileSystem.exists(file) || FileSystem.isDirectory(file)) {
-			out.error('no such file: $path (options: video, audio, send, receive, a file to play)');
+			out.error('no such file: $path (options: video, audio, send, receive, record, a file to play)');
 			return null;
 		}
 		return FileSystem.absolutePath(file);
@@ -705,12 +809,8 @@ class Calls extends Module {
 		return media.join(", ") + (c.file != null ? ', playing ${Path.withoutDirectory(c.file)}' : '');
 	}
 
-	/**
-		The options of `/call` and `/call accept`: words (`video`, `audio`: without video, `send`, `receive`), then a file
-		to play; `null` with an error if the file doesn't exist
-	**/
 	/** The words of the options of `/call` **/
-	static final OPTIONS = ["video", "audio", "send", "receive"];
+	static final OPTIONS = ["video", "audio", "send", "receive", "record"];
 
 	/** The jid and options of `/call <first> <rest>`, also with the options before the jid (`/call video alice`) **/
 	static function optionsFirst(first:String, rest:Null<String>):{jid:String, options:Null<String>} {
@@ -734,10 +834,15 @@ class Calls extends Module {
 		return words.foreach(w -> w.length == 0 || OPTIONS.contains(w));
 	}
 
-	static function parseOptions(input:Null<String>, out:Output):Null<{video:Null<Bool>, direction:Direction, file:Null<String>}> {
+	/**
+		The options of `/call` and `/call accept`: words (`video`, `audio`: without video, `send`, `receive`, `record`),
+		then a file to play; `null` with an error if the file doesn't exist
+	**/
+	static function parseOptions(input:Null<String>, out:Output):Null<{video:Null<Bool>, direction:Direction, record:Bool, file:Null<String>}> {
 		final words = (input ?? "").split(" ");
 		var video:Null<Bool> = null;
 		var direction = both;
+		var record = false;
 		var i = 0;
 		while (i < words.length) {
 			switch words[i] {
@@ -745,6 +850,7 @@ class Calls extends Module {
 				case "audio": video = false;
 				case "send": direction = send;
 				case "receive": direction = receive;
+				case "record": record = true;
 				case "":
 				case _: break;
 			}
@@ -758,7 +864,7 @@ class Calls extends Module {
 			out.error("a file is played to the other side: not with receive");
 			return null;
 		}
-		return {video: video, direction: direction, file: file};
+		return {video: video, direction: direction, record: record, file: file};
 	}
 
 	/** The options, then the files **/

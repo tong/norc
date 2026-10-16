@@ -61,6 +61,12 @@
 # call_helper = norc-rtc --audio-source "pipewiresrc target-object=alsa_input.usb-headset"
 # call_helper = norc-rtc
 
+# Recording calls (/call record, or the option record of /call and /call accept): off unless 1. The other side is
+# not told; in many countries recording a call without the consent of the other side is illegal.
+# call_recording = 0
+# The recordings, default: $XDG_DATA_HOME/norc/calls (~/.local/share/norc/calls).
+# call_record_dir = ~/Videos/calls
+
 # Messages of the archive of the server (MAM) shown when the chat mode starts with a contact (/chat), 0: none.
 # chat_history = 10
 
@@ -149,3 +155,4 @@ alias.h = help
 # alias.m = msg
 # alias.away = presence away
 # alias.status = presence status
+# alias.videocall = call video

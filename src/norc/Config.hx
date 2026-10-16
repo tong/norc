@@ -99,6 +99,12 @@ typedef Account = {
 	/** Program for the media of calls with its options, `norc-rtc` if not set **/
 	var ?callHelper:String;
 
+	/** Directory of the recordings of calls, `Config.recordingsDir()` if not set **/
+	var ?callRecordDir:String;
+
+	/** Calls can be recorded (`/call record`), `false` if not set **/
+	var ?callRecording:Bool;
+
 	/** PubSub service of shared documents (`/share`), discovered on the server if not set **/
 	var ?shareService:String;
 
@@ -154,6 +160,7 @@ private typedef Key = {
 	`call_microphone`, `call_speaker`, `call_camera` (devices of calls by name, see `/calls devices`),
 	`call_echo_cancel` (`0`: no echo cancellation and noise suppression in calls),
 	`call_video_size` (`1280x720`), `call_video_fps`, `call_video_bitrate`, `call_audio_bitrate` (kbit/s) of the sent media,
+	`call_recording` (`1`: calls can be recorded, `/call record`), `call_record_dir` (the recordings),
 	`stun`, `turn` (servers for calls, `stun://host:port`, `turn://user:password@host:port`, several separated by `,`),
 	`autojoin_bookmarks` (`0`: don't join bookmarked rooms after the login),
 	`priority` (of the presence, -128 to 127),
@@ -214,6 +221,12 @@ class Config {
 			set: (a, v) -> a.turn = [for (s in v.split(",")) if (s.trim().length > 0) serverUri(s.trim(), ["turn", "turns"])]
 		},
 		{name: "call_helper", get: a -> a.callHelper, set: (a, v) -> a.callHelper = v},
+		flag("call_recording", a -> a.callRecording, (a, v) -> a.callRecording = v),
+		{
+			name: "call_record_dir",
+			get: a -> (a.callRecordDir != null) ? contractHome(a.callRecordDir) : null,
+			set: (a, v) -> a.callRecordDir = expandHome(v)
+		},
 		{
 			name: "inline_images",
 			get: a -> a.inlineImages,
@@ -267,6 +280,10 @@ class Config {
 	/** Directory for cached data of all accounts (e.g. avatars): `$XDG_CACHE_HOME/norc` **/
 	public static function cacheDir():String
 		return (windows() ? env("LOCALAPPDATA", "AppData/Local") + "/norc/cache" : env("XDG_CACHE_HOME", ".cache") + "/norc");
+
+	/** Directory for the recordings of calls: `$XDG_DATA_HOME/norc/calls` **/
+	public static function recordingsDir():String
+		return (windows() ? env("APPDATA", "AppData/Roaming") : env("XDG_DATA_HOME", ".local/share")) + "/norc/calls";
 
 	/** Directory for received files: `$XDG_DOWNLOAD_DIR` or `Downloads` in the home directory **/
 	public static function downloadDir():String
@@ -567,7 +584,7 @@ class Config {
 		return path.startsWith("~/") ? home() + path.substr(1) : path;
 
 	/** `path` with the home directory as `~/` **/
-	static function contractHome(path:String):String
+	public static function contractHome(path:String):String
 		return path.startsWith(home() + "/") ? "~" + path.substr(home().length) : path;
 
 	static function home():String

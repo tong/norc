@@ -18,6 +18,7 @@
 #include <io.h>
 #define read _read
 #else
+#include <signal.h>
 #include <unistd.h>
 #endif
 
@@ -37,6 +38,7 @@ static gboolean test = FALSE, bundle = TRUE, echo_cancel = FALSE,
 static gchar *microphone = NULL, *speaker = NULL, *camera = NULL,
              *video_size = NULL;
 static gint video_fps = 0, video_bitrate = 0, audio_bitrate = 0;
+static gchar *record_option = NULL;
 
 static gboolean sends(Direction d);
 static GstElement *device_element(const char *klass, const char *name,
@@ -47,6 +49,11 @@ static const char *transceiver_media(GstWebRTCRTPTransceiver *t);
 static gchar *stun = NULL, **turn = NULL;
 static gchar *audio_source = NULL, *audio_sink = NULL, *video_source = NULL,
              *video_sink = NULL, *audio_file = NULL;
+static void request_recording(const char *path);
+static void stop_recording(const char *error);
+static GstPad *tap(const char *name, GstPad *pad);
+static gboolean on_connected(gpointer data);
+static gboolean on_late_audio(gpointer data);
 
 static gboolean parse_direction(const char *value, Direction *d,
                                 GError **error) {
@@ -115,6 +122,8 @@ static GOptionEntry options[] = {
      "A connection for each media (the peer doesn't support BUNDLE)", NULL},
     {"test", 0, 0, G_OPTION_ARG_NONE, &test,
      "Test signals as sources, discard received media", NULL},
+    {"record", 0, 0, G_OPTION_ARG_FILENAME, &record_option,
+     "Record the call into a file (WebM) once connected", "PATH"},
     {NULL}};
 
 /* --- Messages
@@ -317,6 +326,8 @@ static void on_connection_state(GstElement *webrtc, GParamSpec *spec,
   }
   if (name != NULL)
     send_value("state", "state", name);
+  if (state == GST_WEBRTC_PEER_CONNECTION_STATE_CONNECTED)
+    g_main_context_invoke(NULL, on_connected, NULL);
 }
 
 /* --- Media
@@ -376,8 +387,13 @@ static void on_decoded(GstElement *decodebin, GstPad *pad, gpointer user_data) {
   }
   gst_element_sync_state_with_parent(sink);
   GstPad *sinkpad = gst_element_get_static_pad(sink, "sink");
-  gst_pad_link(pad, sinkpad);
+  // the audio through a tap for recordings, maybe one already running
+  GstPad *from = audio ? tap("tap-peer-audio", pad) : gst_object_ref(pad);
+  gst_pad_link(from, sinkpad);
+  gst_object_unref(from);
   gst_object_unref(sinkpad);
+  if (audio)
+    g_main_context_invoke(NULL, on_late_audio, NULL);
   gst_clear_object(&probe_pad);
   gst_clear_object(&probe);
   JsonBuilder *b = message("media");
@@ -415,7 +431,10 @@ static void on_incoming(GstElement *webrtc, GstPad *pad, gpointer user_data) {
   gst_bin_add(GST_BIN(pipeline), decodebin);
   gst_element_sync_state_with_parent(decodebin);
   GstPad *sinkpad = gst_element_get_static_pad(decodebin, "sink");
-  gst_pad_link(pad, sinkpad);
+  // the video as received (RTP) through a tap for recordings, the audio is tapped decoded
+  GstPad *from = (g_strcmp0(media, "video") == 0) ? tap("tap-peer-video", pad) : gst_object_ref(pad);
+  gst_pad_link(from, sinkpad);
+  gst_object_unref(from);
   gst_object_unref(sinkpad);
 }
 
@@ -446,6 +465,30 @@ static gboolean on_bus_message(GstBus *bus, GstMessage *msg,
   if (GST_MESSAGE_TYPE(msg) == GST_MESSAGE_ERROR)
     fail_with(msg);
   return TRUE;
+}
+
+/* The recording, see below */
+static GstElement *recorder = NULL;
+static GMutex record_lock;
+static gint record_closing = 0;
+static gboolean on_record_error(gpointer data);
+
+/* An error of the recording (in the thread of the element): its taps drop the streams at once (an error flowing
+ * back would stop them), it is stopped on the main loop; the call goes on */
+static GstBusSyncReply on_bus_sync(GstBus *bus, GstMessage *msg, gpointer user_data) {
+  if (GST_MESSAGE_TYPE(msg) != GST_MESSAGE_ERROR)
+    return GST_BUS_PASS;
+  g_mutex_lock(&record_lock);
+  const gboolean recording = recorder != NULL && gst_object_has_as_ancestor(GST_MESSAGE_SRC(msg), GST_OBJECT(recorder));
+  g_mutex_unlock(&record_lock);
+  if (!recording)
+    return GST_BUS_PASS;
+  g_atomic_int_set(&record_closing, 1);
+  GError *error = NULL;
+  gst_message_parse_error(msg, &error, NULL);
+  g_main_context_invoke(NULL, on_record_error, g_strdup_printf("%s: %s", GST_OBJECT_NAME(GST_MESSAGE_SRC(msg)), error->message));
+  g_error_free(error);
+  return GST_BUS_DROP;
 }
 
 static gboolean sends(Direction d) { return d == SEND || d == BOTH; }
@@ -691,7 +734,7 @@ static gboolean start(void) {
     g_string_append_printf(
       desc,
       "%s ! queue ! audioconvert ! audioresample ! %s volume name=audio-mute ! "
-      "valve name=audio-send ! opusenc %s ! rtpopuspay pt=111 "
+      "valve name=audio-send ! tee name=tap-own-audio allow-not-linked=true ! opusenc %s ! rtpopuspay pt=111 "
       "! application/x-rtp,media=audio,encoding-name=OPUS,payload=111,encoding-params=(string)2 ! "
       "webrtc. ",
       file           ? file
@@ -716,7 +759,7 @@ static gboolean start(void) {
         desc,
         "%s ! queue ! videoconvert ! %svalve name=video-mute ! valve name=video-send ! "
         "vp8enc deadline=1 %s "
-        "keyframe-max-dist=60 ! rtpvp8pay pt=96 "
+        "keyframe-max-dist=60 ! tee name=tap-own-video allow-not-linked=true ! rtpvp8pay pt=96 "
         "! application/x-rtp,media=video,encoding-name=VP8,payload=96 ! "
         "webrtc. ",
         test ? "videotestsrc is-live=true pattern=ball ! "
@@ -776,6 +819,7 @@ static gboolean start(void) {
                              "payload=96,clock-rate=90000");
   set_directions();
   GstBus *bus = gst_pipeline_get_bus(GST_PIPELINE(pipeline));
+  gst_bus_set_sync_handler(bus, on_bus_sync, NULL, NULL);
   gst_bus_add_watch(bus, on_bus_message, NULL);
   gst_object_unref(bus);
   if (gst_element_set_state(pipeline, GST_STATE_PLAYING) ==
@@ -792,7 +836,383 @@ static gboolean start(void) {
     return FALSE;
   }
   write_message(message("ready"));
+  if (record_option != NULL)
+    request_recording(record_option);
   return TRUE;
+}
+
+
+/* --- Recording
+ * ------------------------------------------------------------------------------------------------
+ * The streams are tapped with tees: the own audio before encoding (tap-own-audio), the own video after it
+ * (tap-own-video, VP8), the audio of the peer decoded (tap-peer-audio), its video as received (tap-peer-video, RTP).
+ * A recording is a bin linked to the taps flowing when it starts, a moment after the connection (the streams of the
+ * peer start): both voices mixed into one Opus track (players play one audio track), the videos as they are (the
+ * peer's first, players show the first), in WebM. Videos can't be added later (the header of the file is written),
+ * voices can (to the mixer). It is stopped with an EOS through its own elements: the file gets its index.
+ */
+
+/* Seconds after the connection until a recording starts, for the streams of the peer to start */
+#define RECORD_DELAY 2
+
+/* Seconds to wait for a stopped recording to be written */
+#define RECORD_STOP_TIMEOUT 3
+
+typedef struct {
+  GstElement *tee;
+  GstPad *tap;   /* the request pad of the tee */
+  GstPad *input; /* the ghost pad of the recorder */
+} Branch;
+
+static GstElement *mixer = NULL, *muxer = NULL;
+static GPtrArray *branches = NULL;
+static gchar *record_path = NULL, *record_error = NULL;
+static gboolean record_stopping = FALSE, quit_after_recording = FALSE;
+static gint64 connected_at = 0;
+static guint record_timer = 0;
+
+/* The own message of the recording: `started` (with its tracks), `stopped`, `failed` (with the message) */
+static void send_recording(const char *state, const char *error, GPtrArray *tracks) {
+  JsonBuilder *b = message("recording");
+  member(b, "state", state);
+  if (record_path != NULL)
+    member(b, "file", record_path);
+  if (error != NULL)
+    member(b, "message", error);
+  if (tracks != NULL) {
+    json_builder_set_member_name(b, "tracks");
+    json_builder_begin_array(b);
+    for (guint i = 0; i < tracks->len; i++)
+      json_builder_add_string_value(b, g_ptr_array_index(tracks, i));
+    json_builder_end_array(b);
+  }
+  write_message(b);
+}
+
+/* A tee tapping the stream of `pad` for recordings: returns its pad to link the stream on. The first of `name`
+ * (later ones, e.g. after a renegotiation, are not recorded) */
+static GstPad *tap(const char *name, GstPad *pad) {
+  GstElement *existing = gst_bin_get_by_name(GST_BIN(pipeline), name);
+  GstElement *tee = gst_element_factory_make("tee", existing == NULL ? name : NULL);
+  gst_clear_object(&existing);
+  g_object_set(tee, "allow-not-linked", TRUE, NULL);
+  gst_bin_add(GST_BIN(pipeline), tee);
+  gst_element_sync_state_with_parent(tee);
+  GstPad *sink = gst_element_get_static_pad(tee, "sink");
+  gst_pad_link(pad, sink);
+  gst_object_unref(sink);
+  return gst_element_request_pad_simple(tee, "src_%u");
+}
+
+/* The tap `name` if its stream flows (its caps are known), with its caps (`caps` may be NULL) */
+static GstElement *flowing(const char *name, GstCaps **caps) {
+  GstElement *tee = gst_bin_get_by_name(GST_BIN(pipeline), name);
+  if (tee == NULL)
+    return NULL;
+  GstPad *sink = gst_element_get_static_pad(tee, "sink");
+  GstCaps *current = gst_pad_get_current_caps(sink);
+  gst_object_unref(sink);
+  if (current == NULL) {
+    gst_object_unref(tee);
+    return NULL;
+  }
+  if (caps != NULL)
+    *caps = current;
+  else
+    gst_caps_unref(current);
+  return tee;
+}
+
+/* Drops the buffers of a tap while the recording closes (or failed): nothing flows back to the call */
+static GstPadProbeReturn guard(GstPad *pad, GstPadProbeInfo *info, gpointer data) {
+  return g_atomic_int_get(&record_closing) ? GST_PAD_PROBE_DROP : GST_PAD_PROBE_OK;
+}
+
+/* Drops the video until a keyframe: a recording starts with one */
+static GstPadProbeReturn until_keyframe(GstPad *pad, GstPadProbeInfo *info, gpointer data) {
+  GstBuffer *buffer = GST_PAD_PROBE_INFO_BUFFER(info);
+  if (GST_BUFFER_FLAG_IS_SET(buffer, GST_BUFFER_FLAG_DELTA_UNIT))
+    return GST_PAD_PROBE_DROP;
+  return GST_PAD_PROBE_REMOVE;
+}
+
+/* Links the tap `tee` to a new branch of the recorder, the elements `desc` ending at `dest` (a pad of the mixer or
+ * the muxer); returns the pad leaving the branch (unref), NULL after an error */
+static GstPad *add_branch(GstElement *tee, const char *desc, GstPad *dest) {
+  GError *error = NULL;
+  GstElement *bin = gst_parse_bin_from_description(desc, TRUE, &error);
+  if (bin == NULL) {
+    g_printerr("norc-rtc: cannot record: %s\n", error->message);
+    g_error_free(error);
+    return NULL;
+  }
+  gst_bin_add(GST_BIN(recorder), bin);
+  GstPad *src = gst_element_get_static_pad(bin, "src");
+  if (gst_pad_link(src, dest) != GST_PAD_LINK_OK) {
+    g_printerr("norc-rtc: cannot record: the branch %s can't be linked\n", desc);
+    gst_object_unref(src);
+    gst_bin_remove(GST_BIN(recorder), bin);
+    return NULL;
+  }
+  gst_element_sync_state_with_parent(bin);
+  GstPad *sink = gst_element_get_static_pad(bin, "sink");
+  GstPad *input = gst_ghost_pad_new(NULL, sink);
+  gst_object_unref(sink);
+  gst_pad_set_active(input, TRUE);
+  gst_element_add_pad(recorder, input);
+  GstPad *pad = gst_element_request_pad_simple(tee, "src_%u");
+  gst_pad_add_probe(pad, GST_PAD_PROBE_TYPE_BUFFER | GST_PAD_PROBE_TYPE_BUFFER_LIST, guard, NULL, NULL);
+  gst_pad_link(pad, input);
+  Branch *b = g_new(Branch, 1);
+  b->tee = gst_object_ref(tee);
+  b->tap = pad;
+  b->input = input;
+  g_ptr_array_add(branches, b);
+  return src;
+}
+
+/* A voice into the mixer of the recording */
+static gboolean add_voice(GstElement *tee) {
+  GstPad *dest = gst_element_request_pad_simple(mixer, "sink_%u");
+  GstPad *src = add_branch(tee, "queue ! audioconvert ! audioresample ! capsfilter caps=audio/x-raw,rate=48000,channels=2", dest);
+  gst_object_unref(dest);
+  if (src == NULL)
+    return FALSE;
+  gst_object_unref(src);
+  return TRUE;
+}
+
+static gboolean has_branch(GstElement *tee) {
+  for (guint i = 0; branches != NULL && i < branches->len; i++)
+    if (((Branch *)g_ptr_array_index(branches, i))->tee == tee)
+      return TRUE;
+  return FALSE;
+}
+
+/* The audio of the peer started: into a running recording (with a mixer) */
+static gboolean on_late_audio(gpointer data) {
+  if (recorder == NULL || mixer == NULL || record_stopping)
+    return G_SOURCE_REMOVE;
+  GstElement *tee = flowing("tap-peer-audio", NULL);
+  if (tee == NULL)
+    tee = gst_bin_get_by_name(GST_BIN(pipeline), "tap-peer-audio");
+  if (tee != NULL && !has_branch(tee))
+    add_voice(tee);
+  gst_clear_object(&tee);
+  return G_SOURCE_REMOVE;
+}
+
+/* The recording was written (EOS at the file), or the time to wait for it is over */
+static gboolean finish_recording(gpointer data) {
+  if (GPOINTER_TO_INT(data) == 1)
+    record_timer = 0;
+  if (recorder == NULL || !record_stopping)
+    return G_SOURCE_REMOVE;
+  if (record_timer != 0) {
+    g_source_remove(record_timer);
+    record_timer = 0;
+  }
+  g_atomic_int_set(&record_closing, 1);
+  for (guint i = 0; i < branches->len; i++) {
+    Branch *b = g_ptr_array_index(branches, i);
+    if (gst_pad_is_linked(b->tap))
+      gst_pad_unlink(b->tap, b->input);
+    gst_element_release_request_pad(b->tee, b->tap);
+    gst_object_unref(b->tap);
+    gst_object_unref(b->tee);
+    g_free(b);
+  }
+  g_ptr_array_unref(branches);
+  branches = NULL;
+  g_mutex_lock(&record_lock);
+  GstElement *r = recorder;
+  recorder = NULL;
+  g_mutex_unlock(&record_lock);
+  gst_element_set_state(r, GST_STATE_NULL);
+  gst_bin_remove(GST_BIN(pipeline), r);
+  mixer = muxer = NULL;
+  record_stopping = FALSE;
+  send_recording(record_error != NULL ? "failed" : "stopped", record_error, NULL);
+  g_clear_pointer(&record_path, g_free);
+  g_clear_pointer(&record_error, g_free);
+  if (quit_after_recording)
+    g_main_loop_quit(loop);
+  return G_SOURCE_REMOVE;
+}
+
+/* The end of the stream reached the file: written */
+static GstPadProbeReturn on_written(GstPad *pad, GstPadProbeInfo *info, gpointer data) {
+  if (GST_EVENT_TYPE(GST_PAD_PROBE_INFO_EVENT(info)) == GST_EVENT_EOS)
+    g_main_context_invoke(NULL, finish_recording, NULL);
+  return GST_PAD_PROBE_OK;
+}
+
+/* Stops the recording: the taps are unlinked, an EOS through the recorder writes the end of the file. `error`: it
+ * failed */
+static void stop_recording(const char *error) {
+  if (recorder == NULL) {
+    // not started yet
+    if (record_path != NULL && error == NULL && !record_stopping) {
+      if (record_timer != 0) {
+        g_source_remove(record_timer);
+        record_timer = 0;
+      }
+      g_clear_pointer(&record_path, g_free);
+    }
+    return;
+  }
+  if (record_stopping)
+    return;
+  record_stopping = TRUE;
+  if (error != NULL)
+    record_error = g_strdup(error);
+  g_atomic_int_set(&record_closing, 1);
+  for (guint i = 0; i < branches->len; i++) {
+    Branch *b = g_ptr_array_index(branches, i);
+    gst_pad_unlink(b->tap, b->input);
+    gst_pad_send_event(b->input, gst_event_new_eos());
+  }
+  record_timer = g_timeout_add_seconds(RECORD_STOP_TIMEOUT, finish_recording, GINT_TO_POINTER(1));
+}
+
+static gboolean on_record_error(gpointer data) {
+  gchar *text = data;
+  stop_recording(text);
+  g_free(text);
+  return G_SOURCE_REMOVE;
+}
+
+/* Starts the requested recording with the streams flowing */
+static gboolean begin_recording(gpointer data) {
+  record_timer = 0;
+  if (record_path == NULL || recorder != NULL)
+    return G_SOURCE_REMOVE;
+  GstCaps *caps = NULL;
+  GstElement *own_audio = flowing("tap-own-audio", NULL), *peer_audio = flowing("tap-peer-audio", NULL),
+             *peer_video = flowing("tap-peer-video", &caps), *own_video = flowing("tap-own-video", NULL);
+  // the video of the peer: VP8, the only codec offered
+  if (peer_video != NULL &&
+      g_strcmp0(gst_structure_get_string(gst_caps_get_structure(caps, 0), "encoding-name"), "VP8") != 0)
+    gst_clear_object(&peer_video);
+  gst_clear_caps(&caps);
+  if (own_audio == NULL && peer_audio == NULL && peer_video == NULL && own_video == NULL) {
+    send_recording("failed", "nothing to record: no media flows", NULL);
+    g_clear_pointer(&record_path, g_free);
+    return G_SOURCE_REMOVE;
+  }
+  GstElement *r = gst_bin_new("recorder");
+  muxer = gst_element_factory_make("webmmux", NULL);
+  GstElement *file = gst_element_factory_make("filesink", NULL);
+  g_object_set(muxer, "offset-to-zero", TRUE, NULL);
+  g_object_set(file, "location", record_path, NULL);
+  gst_bin_add_many(GST_BIN(r), muxer, file, NULL);
+  gst_element_link(muxer, file);
+  GstPad *written = gst_element_get_static_pad(file, "sink");
+  gst_pad_add_probe(written, GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM, on_written, NULL, NULL);
+  gst_object_unref(written);
+  branches = g_ptr_array_new();
+  GPtrArray *tracks = g_ptr_array_new();
+  g_atomic_int_set(&record_closing, 0);
+  g_mutex_lock(&record_lock);
+  recorder = r;
+  g_mutex_unlock(&record_lock);
+  gst_bin_add(GST_BIN(pipeline), r);
+  // an error (e.g. the file can't be written) stops it at once, from this thread
+  gboolean ok = gst_element_sync_state_with_parent(r) && !record_stopping;
+  // the voices mixed, then the videos
+  if (ok && (own_audio != NULL || peer_audio != NULL)) {
+    // in the recorder itself: the voices are linked to the mixer (no ghost pads)
+    mixer = gst_element_factory_make("audiomixer", NULL);
+    GstElement *convert = gst_element_factory_make("audioconvert", NULL),
+               *encode = gst_element_factory_make("opusenc", NULL), *queue = gst_element_factory_make("queue", NULL);
+    // from the first voice (not with silence from the start of the call)
+    g_object_set(mixer, "start-time-selection", 1, NULL);
+    gst_bin_add_many(GST_BIN(r), mixer, convert, encode, queue, NULL);
+    GstPad *src = gst_element_get_static_pad(queue, "src");
+    GstPad *dest = gst_element_request_pad_simple(muxer, "audio_%u");
+    ok = gst_element_link_many(mixer, convert, encode, queue, NULL) && gst_pad_link(src, dest) == GST_PAD_LINK_OK;
+    gst_object_unref(src);
+    gst_object_unref(dest);
+    for (GstElement **e = (GstElement *[]){queue, encode, convert, mixer, NULL}; ok && *e != NULL; e++)
+      gst_element_sync_state_with_parent(*e);
+    if (ok && (own_audio == NULL || add_voice(own_audio)) && (peer_audio == NULL || add_voice(peer_audio)))
+      g_ptr_array_add(tracks, "audio");
+  }
+  if (ok && peer_video != NULL) {
+    GstPad *dest = gst_element_request_pad_simple(muxer, "video_%u");
+    GstPad *src = add_branch(peer_video, "queue ! rtpvp8depay wait-for-keyframe=true request-keyframe=true", dest);
+    gst_object_unref(dest);
+    if (src != NULL)
+      g_ptr_array_add(tracks, "video");
+    gst_clear_object(&src);
+  }
+  if (ok && own_video != NULL) {
+    GstPad *dest = gst_element_request_pad_simple(muxer, "video_%u");
+    GstPad *src = add_branch(own_video, "queue", dest);
+    gst_object_unref(dest);
+    if (src != NULL) {
+      gst_pad_add_probe(src, GST_PAD_PROBE_TYPE_BUFFER, until_keyframe, NULL, NULL);
+      gst_object_unref(src);
+      // a keyframe now (else within the keyframe distance)
+      Branch *b = g_ptr_array_index(branches, branches->len - 1);
+      gst_pad_send_event(b->tap, gst_event_new_custom(GST_EVENT_CUSTOM_UPSTREAM,
+                                                      gst_structure_new("GstForceKeyUnit", "all-headers",
+                                                                        G_TYPE_BOOLEAN, TRUE, NULL)));
+      g_ptr_array_add(tracks, "own-video");
+    }
+  }
+  gst_clear_object(&own_audio);
+  gst_clear_object(&peer_audio);
+  gst_clear_object(&peer_video);
+  gst_clear_object(&own_video);
+  if (!ok || record_stopping || branches->len == 0) {
+    g_ptr_array_unref(tracks);
+    if (!record_stopping) {
+      record_stopping = TRUE;
+      record_error = g_strdup("cannot record");
+    }
+    finish_recording(NULL);
+    return G_SOURCE_REMOVE;
+  }
+  send_recording("started", NULL, tracks);
+  g_ptr_array_unref(tracks);
+  return G_SOURCE_REMOVE;
+}
+
+/* Records into `path` once connected (a moment after it), else at once */
+static void request_recording(const char *path) {
+  if (record_path != NULL) {
+    send_value("recording", "state", "failed");
+    g_printerr("norc-rtc: already recording into %s\n", record_path);
+    return;
+  }
+  record_path = g_strdup(path);
+  if (connected_at == 0)
+    return;
+  const gint64 left = connected_at + RECORD_DELAY * G_USEC_PER_SEC - g_get_monotonic_time();
+  if (left <= 0)
+    begin_recording(NULL);
+  else
+    record_timer = g_timeout_add(left / 1000, begin_recording, NULL);
+}
+
+/* Connected: a requested recording starts a moment later */
+static gboolean on_connected(gpointer data) {
+  if (connected_at != 0)
+    return G_SOURCE_REMOVE;
+  connected_at = g_get_monotonic_time();
+  if (record_path != NULL && recorder == NULL && record_timer == 0)
+    record_timer = g_timeout_add_seconds(RECORD_DELAY, begin_recording, NULL);
+  return G_SOURCE_REMOVE;
+}
+
+/* Ends the call: a recording is written first */
+static void quit(void) {
+  if (recorder != NULL) {
+    quit_after_recording = TRUE;
+    stop_recording(NULL);
+  } else
+    g_main_loop_quit(loop);
 }
 
 /* --- Input
@@ -825,8 +1245,14 @@ static gboolean handle(gpointer data) {
   else if (strcmp(type, "mute") == 0)
     mute(json_object_get_string_member_with_default(msg, "media", ""),
          json_object_get_boolean_member_with_default(msg, "muted", TRUE));
-  else if (strcmp(type, "hangup") == 0)
-    g_main_loop_quit(loop);
+  else if (strcmp(type, "record") == 0) {
+    const char *file = json_object_get_string_member_with_default(msg, "file", NULL);
+    if (file != NULL)
+      request_recording(file);
+    else
+      stop_recording(NULL);
+  } else if (strcmp(type, "hangup") == 0)
+    quit();
   else
     g_printerr("norc-rtc: unknown message: %s\n", type);
   g_object_unref(parser);
@@ -835,7 +1261,7 @@ static gboolean handle(gpointer data) {
 }
 
 static gboolean end_of_input(gpointer data) {
-  g_main_loop_quit(loop);
+  quit();
   return G_SOURCE_REMOVE;
 }
 
@@ -879,6 +1305,10 @@ int main(int argc, char *argv[]) {
     print_devices();
     return 0;
   }
+#ifndef _WIN32
+  // norc quit: a recording is still written (messages to it are lost)
+  signal(SIGPIPE, SIG_IGN);
+#endif
   loop = g_main_loop_new(NULL, FALSE);
   if (start()) {
     g_thread_unref(g_thread_new("input", read_input, NULL));
