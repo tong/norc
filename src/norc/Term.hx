@@ -47,16 +47,41 @@ class Term {
 	}
 
 	/** Prints a line (to stderr if `error`), above the input line while the editor is active **/
-	public static function println(text:String, error = false) {
+	public static function println(text:String, error = false):Null<LineEditor.Position> {
 		if (silent)
-			return;
+			return null;
 		final e = editor;
 		if (e != null)
-			e.print(text, error);
-		else if (error || stderrOnly)
+			return e.print(text, error);
+		if (error || stderrOnly)
 			Sys.stderr().writeString(text + "\n");
 		else
 			Sys.println(text);
+		return null;
+	}
+
+	/**
+		Writes `text` at the end of a line printed before (`pos`, of `println`) if it is still on the screen; `false` if
+		it isn't, or there is no input line (output may go to a file).
+	**/
+	public static function mark(pos:Null<LineEditor.Position>, text:String):Bool
+		return editor?.mark(pos, text) ?? false;
+
+	/**
+		The columns `s` takes on the terminal: escape sequences none, combining characters none, wide characters (CJK,
+		emoji) two.
+	**/
+	public static function displayWidth(s:String):Int {
+		final plain = ~/\x1B(\[[0-9;?]*[ -\/]*[@-~]|_[^\x1B]*\x1B\\|\][^\x07\x1B]*(\x07|\x1B\\)|[78])/g.replace(s, "");
+		var width = 0;
+		for (c in new haxe.iterators.StringIteratorUnicode(plain)) {
+			if (c < 32 || (c >= 0x300 && c <= 0x36F) || c == 0x200D || (c >= 0xFE00 && c <= 0xFE0F))
+				continue;
+			width += (c >= 0x1100 && c <= 0x115F) || (c >= 0x2E80 && c <= 0xA4CF) || (c >= 0xAC00 && c <= 0xD7A3)
+				|| (c >= 0xF900 && c <= 0xFAFF) || (c >= 0xFE30 && c <= 0xFE4F) || (c >= 0xFF00 && c <= 0xFF60)
+				|| (c >= 0xFFE0 && c <= 0xFFE6) || (c >= 0x1F300 && c <= 0x1FAFF) || (c >= 0x20000 && c <= 0x3FFFD) ? 2 : 1;
+		}
+		return width;
 	}
 
 	public static function error(msg:String)

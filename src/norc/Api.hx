@@ -218,7 +218,8 @@ class Api {
 @:allow(norc.Api)
 private class ApiClient {
 	/** Queued to close the connection after the queued lines **/
-	static final CLOSE = "\x00close";
+	// not "\x00close": HashLink/C writes it as a C string, where "\x00c" is one character
+	static final CLOSE = "\x00:close";
 
 	/** Lines not yet written, more are dropped (a client not reading, e.g. a script ignoring events) **/
 	static inline var MAX_QUEUED = 1000;

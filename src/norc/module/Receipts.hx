@@ -19,6 +19,7 @@ class Receipts extends Module {
 	static inline var MAX_PENDING = 200;
 
 	final contacts:Contacts;
+	final messages:Messages;
 
 	/** Sent messages waiting for a receipt, in the order sent **/
 	final pending = new Array<{id:String, to:String, body:String}>();
@@ -26,6 +27,7 @@ class Receipts extends Module {
 	public function new(context:Context, messages:Messages, contacts:Contacts) {
 		super(context);
 		this.contacts = contacts;
+		this.messages = messages;
 		messages.outgoing.push(requestReceipt);
 		messages.incoming.push(receive);
 	}
@@ -54,7 +56,9 @@ class Receipts extends Module {
 			final p = (i.carbon == null) ? Lambda.find(pending, p -> p.id == id && p.to == from) : null;
 			if (p != null) {
 				pending.remove(p);
-				Term.notice('✓ ${contacts.name(from)}: ${excerpt(p.body)}');
+				// at the end of the message if it is still on the screen, else a line of its own
+				if (!Term.mark(messages.shownAt(id), " " + Term.style("✓", 32)))
+					Term.notice('✓ ${contacts.name(from)}: ${excerpt(p.body)}');
 				emit("receipt", [from, id], {from: m.from, name: contacts.name(from), id: id});
 			}
 			return m.body == null;

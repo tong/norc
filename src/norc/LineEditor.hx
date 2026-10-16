@@ -17,6 +17,13 @@ using StringTools;
 	Keys: Tab (complete), ←/→, Home/End, Backspace/Delete, ↑/↓ history (the lines starting with the text typed), Ctrl-A/E (start/end), Ctrl-U/K (delete to start/end),
 	Ctrl-W (delete word), Ctrl-L (clear screen), Ctrl-C (clear the line; on an empty line `INTERRUPT`), Ctrl-D (quit on an empty line).
 **/
+/** Where printed text ended on the screen: its row (counted by the editor) and column, at a terminal width **/
+typedef Position = {
+	var row:Int;
+	var column:Int;
+	var columns:Int;
+}
+
 class LineEditor {
 	/** Returned for Ctrl-D on an empty line **/
 	public static inline var QUIT = "/quit";
@@ -55,6 +62,14 @@ class LineEditor {
 
 	/** The terminal shows images (kitty graphics protocol): it answered the query sent when the editor started **/
 	public var images(default, null) = false;
+
+	/** Rows printed above the input line (wrapped lines by the width of the terminal), to find lines again (`mark`) **/
+	var rows = 0;
+
+	/** The size of the terminal (`stty size`) **/
+	var columns = 80;
+
+	var screenRows = 24;
 
 	/** Reading a line (the prompt is shown) **/
 	var active = false;
@@ -95,6 +110,11 @@ class LineEditor {
 		if (saved == null || stty("-icanon -echo -isig min 1 time 0") == null)
 			return null;
 		final editor = new LineEditor(prompt, saved);
+		final size = terminalSize();
+		if (size != null) {
+			editor.screenRows = size.rows;
+			editor.columns = size.columns;
+		}
 		// the answer is read as input (see `escape`), terminals without the protocol ignore it: nothing to wait for
 		if (queryImages)
 			write("\x1B_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1B\\");
@@ -152,12 +172,12 @@ class LineEditor {
 	/**
 		Prints `text` (a complete line, without newline) above the input line.
 	**/
-	public function print(text:String, error = false) {
+	public function print(text:String, error = false):Null<Position> {
 		mutex.acquire();
 		if (suspended) {
 			held.push({text: text, error: error});
 			mutex.release();
-			return;
+			return null;
 		}
 		if (active)
 			write("\r\x1B[K");
@@ -166,9 +186,54 @@ class LineEditor {
 			Sys.stderr().flush();
 		} else
 			write(text + "\n");
+		// the rows of the text, and where it ended
+		var end:Null<Position> = null;
+		for (l in text.split("\n")) {
+			final width = Term.displayWidth(l);
+			final n = (width == 0) ? 1 : Std.int((width + columns - 1) / columns);
+			rows += n;
+			end = {row: rows - 1, column: (width == 0) ? 0 : width - (n - 1) * columns, columns: columns};
+		}
 		if (active)
 			redraw();
 		mutex.release();
+		return end;
+	}
+
+	/**
+		Writes `text` at the end of printed text (at `pos`, see `print`) if it is still on the screen and there is room,
+		e.g. a mark; returns `false` if it isn't, or the terminal was resized since.
+	**/
+	public function mark(pos:Null<Position>, text:String):Bool {
+		if (pos == null)
+			return false;
+		final size = terminalSize();
+		mutex.acquire();
+		if (size != null) {
+			screenRows = size.rows;
+			columns = size.columns;
+		}
+		final up = rows - pos.row;
+		// the input line on one row: the cursor is on the row after the printed text
+		final input = Term.displayWidth(prompt) + Term.displayWidth(line.join(""));
+		final ok = active && !suspended && pos.columns == columns && up >= 1 && up < screenRows && input < columns
+			&& pos.column + Term.displayWidth(text) < columns;
+		// up to the line, the text at its end, down again; the input line is drawn again (the cursor back in it).
+		// No save and restore of the cursor (ESC 7, ESC 8): HashLink/C writes "\x1B7" as one character (C reads all
+		// hex digits of an escape)
+		if (ok) {
+			write('\x1B[${up}A\r' + ((pos.column > 0) ? '\x1B[${pos.column}C' : '') + text + '\x1B[${up}B');
+			redraw();
+		}
+		mutex.release();
+		return ok;
+	}
+
+	/** The size of the terminal, `null` if unknown **/
+	static function terminalSize():Null<{rows:Int, columns:Int}> {
+		final words = (stty("size") ?? "").split(" ");
+		final r = Std.parseInt(words[0] ?? ""), c = Std.parseInt(words[1] ?? "");
+		return (r != null && c != null && r > 0 && c > 0) ? {rows: r, columns: c} : null;
 	}
 
 	/**
@@ -264,6 +329,8 @@ class LineEditor {
 				completeWord();
 			case 12: // ctrl-l
 				write("\x1B[2J\x1B[H");
+				// the printed lines are gone
+				rows += screenRows;
 			case 27: // escape sequence
 				escape(input);
 			case _ if (c >= 32):
@@ -380,6 +447,8 @@ class LineEditor {
 		back while the editor runs.
 	**/
 	public function edit(text:String):Null<String> {
+		// the text editor may change the screen: the printed lines can't be found anymore
+		rows += screenRows;
 		mutex.acquire();
 		suspended = true;
 		if (active)
