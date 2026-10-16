@@ -4,9 +4,9 @@ import norc.Config.Account;
 import norc.Module;
 import norc.Output;
 import norc.module.AdHoc;
+import norc.module.Attention;
 import norc.module.Avatars;
 import norc.module.Blocking;
-import norc.module.Buzz;
 import norc.module.Calls;
 import norc.module.Carbons;
 import norc.module.ChatStates;
@@ -215,7 +215,7 @@ class Client {
 			new Replies(context, messages, contacts, rooms),
 			new Retractions(context, messages, contacts, rooms),
 			new Avatars(context, messages, contacts, rooms),
-			new Buzz(context, messages, contacts, account.attention != false),
+			new Attention(context, messages, contacts, account.attention != false),
 			new Time(context, contacts, account.entityTime == true),
 			new Pings(context, contacts),
 			new AdHoc(context, contacts),

@@ -46,7 +46,7 @@ typedef Account = {
 	/** Stream management (acknowledgements, resuming the session after a disconnection), `true` if not set **/
 	var ?streamManagement:Bool;
 
-	/** Receive attention requests (`/buzz`), `true` if not set **/
+	/** Receive attention requests (`/attention`), `true` if not set **/
 	var ?attention:Bool;
 
 	/** Show images (e.g. avatars) in terminals supporting the kitty graphics protocol, `true` if not set **/

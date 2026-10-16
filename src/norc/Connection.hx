@@ -73,6 +73,9 @@ class Connection {
 			try {
 				socket.setTimeout(CONNECT_TIMEOUT);
 				socket.connect(host, t.port);
+				// a connect timing out returns as if it succeeded (HashLink: EINPROGRESS of the send timeout)
+				if ((try socket.peer() catch (_) null) == null)
+					throw "timed out";
 			} catch (e) {
 				socket.close();
 				errors.push('cannot connect to ${t.host}:${t.port}: $e');

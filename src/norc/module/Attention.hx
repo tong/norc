@@ -5,15 +5,15 @@ import norc.Module;
 import norc.Output;
 import norc.Term;
 import norc.module.Messages;
-import xmpp.Attention;
+import xmpp.Attention as XmppAttention;
 import xmpp.Jid;
 import xmpp.Message;
 
 /**
-	Attention (XEP-0224): `/buzz` gets the attention of a contact; attention requests of contacts in the roster
+	Attention (XEP-0224): `/attention` gets the attention of a contact; attention requests of contacts in the roster
 	ring the terminal bell and emit the `attention` event. Disabled with `attention = 0`.
 **/
-class Buzz extends Module {
+class Attention extends Module {
 	final contacts:Contacts;
 	final enabled:Bool;
 
@@ -27,29 +27,29 @@ class Buzz extends Module {
 	override public function commands():Array<Commands.Command>
 		return [
 			{
-				name: "buzz",
+				name: "attention",
 				args: "<jid> [text...]",
 				description: "get the attention of a contact (their client may ring or flash), with an optional message",
 				online: true,
-				run: (args, out) -> buzz(args[0], args[1], out)
+				run: (args, out) -> attention(args[0], args[1], out)
 			}
 		];
 
 	override public function features():Array<String>
-		return enabled ? [Attention.XMLNS] : [];
+		return enabled ? [XmppAttention.XMLNS] : [];
 
-	function buzz(input:String, text:Null<String>, out:Output) {
+	function attention(input:String, text:Null<String>, out:Output) {
 		final to = contacts.resolve(input, out);
 		if (to == null)
 			return;
-		stream.send(Attention.captureAttention(new Message(to, text)));
-		out.info('buzzed ${contacts.name(Jid.parseBare(to))}');
+		stream.send(XmppAttention.captureAttention(new Message(to, text)));
+		out.info('asked ${contacts.name(Jid.parseBare(to))} for attention');
 	}
 
 	/** Attention requests of contacts (not copies of other own clients) **/
 	function receive(i:Incoming):Bool {
 		final m = i.message;
-		if (!enabled || i.carbon != null || m.from == null || !Attention.wantsAttention(m))
+		if (!enabled || i.carbon != null || m.from == null || !XmppAttention.wantsAttention(m))
 			return false;
 		final from = Jid.parseBare(m.from);
 		if (!contacts.contains(from))
