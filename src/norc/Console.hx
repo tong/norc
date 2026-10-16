@@ -131,18 +131,15 @@ class Console {
 				var line = (editor != null) ? editor.readLine(initial) : try stdin.readLine() catch (_:haxe.io.Eof) null;
 				initial = null;
 				// on this thread: the text editor reads the terminal, not this thread
-				// in normal mode also without / (as all commands)
-				final edit = (line == null) ? null : (~/^\/edit(\s|$)/.match(line.trim()) ? "/edit" : (chat == null
-					&& ~/^edit(\s|$)/.match(line.trim())) ? "edit" : null);
-				if (editor != null && edit != null) {
-					initial = editor.edit(line.trim().substr(edit.length).trim()) ?? "";
+				if (editor != null && line != null && ~/^\/edit(\s|$)/.match(line.trim())) {
+					initial = editor.edit(line.trim().substr("/edit".length).trim()) ?? "";
 					continue;
 				}
 				if (line == LineEditor.INTERRUPT)
 					line = (chat != null) ? "/chat" : LineEditor.QUIT;
 				read(line);
 				// Stop reading: exit() waits for the lock of stdin, held while a read blocks
-				if (line == null || commands.exits(line, chat != null))
+				if (line == null || commands.exits(line))
 					return;
 			}
 		});
@@ -156,8 +153,7 @@ class Console {
 	/** Runs an input line (on the main thread): a command, or a message in chat mode **/
 	public function input(line:String) {
 		if (chat == null || line.trim().length == 0 || !message(line))
-			// in normal mode every line is a command: the / is optional
-			commands.run(roomCommand(line), null, chat != null, (chat != null) ? {jid: chat, known: contacts.known} : null);
+			commands.run(roomCommand(line), null, true, (chat != null) ? {jid: chat, known: contacts.known} : null);
 		else
 			commands.call("msg", [chat, line.startsWith("//") ? line.substr(1) : line]);
 	}
@@ -311,14 +307,6 @@ class Console {
 		context.post(() -> {
 			final line = roomCommand(before);
 			result = commands.complete(line, chat != null);
-			// in normal mode a command without /: completed as with it, the candidates without it
-			if (chat == null && before.length > 0 && !before.startsWith("/")) {
-				final c = commands.complete('/$before');
-				result = (c == null) ? null : c.word.startsWith("/") ? {
-					word: c.word.substr(1),
-					candidates: [for (v in c.candidates) v.startsWith("/") ? v.substr(1) : v]
-				} : c;
-			}
 			// a command being typed: also the subcommands of /room in group chat mode
 			if (line == before && chat != null && rooms.joined(chat) && before.startsWith("/") && !before.contains(" ")) {
 				final subs = commands.complete('/room ${before.substr(1)}');

@@ -214,7 +214,9 @@ class Commands {
 		if (line.startsWith("/"))
 			line = line.substr(1);
 		else if (slash) {
-			out.error("commands start with / (/help for the commands)");
+			// a command typed without /: say which
+			final word = line.split(" ")[0];
+			out.error((resolve(line) != null) ? 'commands start with /: /$word' : "commands start with / (/help for the commands)");
 			return false;
 		}
 		final resolved = resolve(line);
@@ -426,13 +428,11 @@ class Commands {
 		Returns `true` if `line` runs a command ending the client. Called by the input thread
 		(the commands are not changed after the start).
 	**/
-	public function exits(line:String, slash = true):Bool {
+	public function exits(line:String):Bool {
 		line = line.trim();
-		if (line.startsWith("/"))
-			line = line.substr(1);
-		else if (slash)
+		if (!line.startsWith("/"))
 			return false;
-		final resolved = resolve(line);
+		final resolved = resolve(line.substr(1));
 		if (resolved == null || resolved.entry.command.exit != true)
 			return false;
 		// only if it will run
