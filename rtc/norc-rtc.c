@@ -431,14 +431,20 @@ static void mute(const char *media, gboolean muted) {
   }
 }
 
+/* Reports the error message `msg` of the pipeline: the element and the error, with a hint for a device in use */
+static void fail_with(GstMessage *msg) {
+  GError *error = NULL;
+  gst_message_parse_error(msg, &error, NULL);
+  const gboolean busy = error->domain == GST_RESOURCE_ERROR && error->code == GST_RESOURCE_ERROR_BUSY;
+  fail("%s: %s%s", GST_OBJECT_NAME(msg->src), error->message,
+       busy ? " (used by another program? a PipeWire source, e.g. pipewiresrc, can be shared)" : "");
+  g_error_free(error);
+}
+
 static gboolean on_bus_message(GstBus *bus, GstMessage *msg,
                                gpointer user_data) {
-  if (GST_MESSAGE_TYPE(msg) == GST_MESSAGE_ERROR) {
-    GError *error = NULL;
-    gst_message_parse_error(msg, &error, NULL);
-    fail("%s: %s", GST_OBJECT_NAME(msg->src), error->message);
-    g_error_free(error);
-  }
+  if (GST_MESSAGE_TYPE(msg) == GST_MESSAGE_ERROR)
+    fail_with(msg);
   return TRUE;
 }
 
@@ -774,7 +780,15 @@ static gboolean start(void) {
   gst_object_unref(bus);
   if (gst_element_set_state(pipeline, GST_STATE_PLAYING) ==
       GST_STATE_CHANGE_FAILURE) {
-    fail("cannot start the media (audio or video device?)");
+    // the error of the element failing, posted before the bus watch runs
+    GstBus *errors = gst_pipeline_get_bus(GST_PIPELINE(pipeline));
+    GstMessage *msg = gst_bus_pop_filtered(errors, GST_MESSAGE_ERROR);
+    gst_object_unref(errors);
+    if (msg != NULL) {
+      fail_with(msg);
+      gst_message_unref(msg);
+    } else
+      fail("cannot start the media (audio or video device?)");
     return FALSE;
   }
   write_message(message("ready"));
