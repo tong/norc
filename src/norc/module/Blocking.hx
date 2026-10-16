@@ -27,12 +27,14 @@ class Blocking extends Module {
 		return [
 			{
 				name: "block",
+				requires: "blocking",
 				description: "list blocked jids",
 				online: true,
 				run: (args, out) -> list(out),
 				subcommands: [
 					{
 						name: "add",
+						requires: "blocking",
 						args: "<jid>",
 						description: "block a jid, contact or domain (on the server, for all your clients)",
 						online: true,
@@ -40,6 +42,7 @@ class Blocking extends Module {
 					},
 					{
 						name: "remove",
+						requires: "blocking",
 						args: "[jid]",
 						description: "unblock a jid, or all without jid",
 						online: true,

@@ -23,12 +23,14 @@ class History extends Module {
 	final contacts:Contacts;
 	final rooms:Rooms;
 	final messages:Messages;
+	final server:Server;
 
 	/** The archive queries of the session **/
 	var mam:Null<MessageArchiveManagement>;
 
-	public function new(context:Context, contacts:Contacts, rooms:Rooms, messages:Messages) {
+	public function new(context:Context, contacts:Contacts, rooms:Rooms, messages:Messages, server:Server) {
 		super(context);
+		this.server = server;
 		this.contacts = contacts;
 		this.rooms = rooms;
 		this.messages = messages;
@@ -72,6 +74,12 @@ class History extends Module {
 		final jid = room ?? contacts.resolve(input, out);
 		if (jid == null)
 			return;
+		// of a contact: the archive of the own server (of a room: the room's)
+		if (room == null && server.supports("mam") == false) {
+			if (!quiet)
+				out.error('your server keeps no message archive (MAM): no history of $jid');
+			return;
+		}
 		final own = Jid.parseBare(stream.jid);
 		final query:MamQuery = {page: {max: count, before: ""}};
 		if (room == null)

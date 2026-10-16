@@ -78,6 +78,7 @@ class Avatars extends Module {
 				subcommands: [
 					{
 						name: "set",
+						requires: "pep",
 						args: "<path...>",
 						description: 'publish your avatar: an image (PNG recommended, at most ${Term.size(MAX_SET)}), for PEP and in your vCard',
 						online: true,
@@ -86,6 +87,7 @@ class Avatars extends Module {
 					},
 					{
 						name: "remove",
+						requires: "pep",
 						description: "remove your avatar (PEP and vCard)",
 						online: true,
 						target: false,

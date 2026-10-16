@@ -24,6 +24,9 @@ typedef Command = {
 	/** Only available while connected, `false` by default **/
 	var ?online:Bool;
 
+	/** A feature the server must offer (see `module.Server.FEATURES`), e.g. `upload`: refused if it doesn't **/
+	var ?requires:String;
+
 	/** Ends the client: no more input is read after it **/
 	var ?exit:Bool;
 
@@ -90,6 +93,12 @@ class Commands {
 
 	/** Returns `true` if connected (for commands requiring a connection) **/
 	public final isOnline:() -> Bool;
+
+	/** Whether the server offers a feature commands require (`Command.requires`): `null` if not known **/
+	public var supports:Null<String->Null<Bool>>;
+
+	/** What a feature is, for errors (e.g. `HTTP file upload`) **/
+	public var missing:Null<String->String>;
 
 	/**
 		Aliases (`alias.<name>` in the config): the name, without `/`, and the command it runs with its first
@@ -260,6 +269,10 @@ class Commands {
 		}
 		if (command.online == true && !isOnline()) {
 			out.error('${entry.path}: not connected');
+			return false;
+		}
+		if (!available(command)) {
+			out.error('${entry.path}: your server offers no ${missing != null ? missing(command.requires) : command.requires}');
 			return false;
 		}
 		final args = try (list != null ? mapArgs(entry.params, list) : parseArgs(entry.params, input)) catch (e:String) {
@@ -443,7 +456,7 @@ class Commands {
 			final c = e.command;
 			out.data({commands: [describe(e)].concat(c.subcommands != null ? [for (sub in c.subcommands) describe(e.subs.get(sub.name))] : [])}, () -> {
 				if (c.run != null)
-					out.print('  ${styledUsage(e)}\n    ${c.description}');
+					out.print('  ${styledUsage(e)}\n    ${c.description}' + unavailable(c));
 				else
 					out.print('  ${Term.style(e.path, 36)}: ${c.description}');
 				if (c.aliases != null)
@@ -473,24 +486,33 @@ class Commands {
 		});
 	}
 
-	static function describe(e:Entry)
+	/** The command can run on this server: it requires nothing, or a feature the server offers (or not known yet) **/
+	function available(c:Command):Bool
+		return c.requires == null || supports == null || supports(c.requires) != false;
+
+	function describe(e:Entry)
 		return {
 			command: e.path.substr(1),
 			args: e.command.args,
 			description: e.command.description,
 			aliases: e.command.aliases ?? [],
-			online: e.command.online == true
+			online: e.command.online == true,
+			available: available(e.command)
 		};
 
-	static function printTable(list:Array<Entry>, out:Output) {
+	function printTable(list:Array<Entry>, out:Output) {
 		// aligned by the usage without styles
 		var width = 0;
 		for (e in list)
 			if (usage(e).length > width)
 				width = usage(e).length;
 		for (e in list)
-			out.print('  ${styledUsage(e)}${"".rpad(" ", width + 2 - usage(e).length)}${e.command.description}');
+			out.print('  ${styledUsage(e)}${"".rpad(" ", width + 2 - usage(e).length)}${e.command.description}' + unavailable(e.command));
 	}
+
+	/** ` (not on your server)` for a command the server doesn't support **/
+	function unavailable(c:Command):String
+		return available(c) ? "" : Term.style(" (not on your server)", 31);
 
 	/** `usage` for the terminal: the command, required and optional arguments in their colors **/
 	static function styledUsage(entry:Entry):String {

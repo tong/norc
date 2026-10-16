@@ -31,6 +31,7 @@ class Moods extends Module {
 		return [
 			{
 				name: "mood",
+				requires: "pep",
 				args: "[mood] [text...]",
 				description: "show or publish your mood (e.g. happy, tired, …) with an optional text (- stops publishing it)",
 				online: true,

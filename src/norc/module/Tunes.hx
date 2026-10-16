@@ -48,6 +48,7 @@ class Tunes extends Module {
 		return [
 			{
 				name: "tune",
+				requires: "pep",
 				args: "[tune...]",
 				description: 'show or publish the music you are listening to: "artist - title", or fields as key=value ' +
 				'(${FIELDS.join(", ")}; length in seconds, values with spaces in quotes); - stops publishing it',

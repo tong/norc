@@ -42,6 +42,7 @@ class Upload extends Module {
 				subcommands: [
 					{
 						name: "upload",
+						requires: "upload",
 						args: "<path...>",
 						description: "upload a file to the upload service of your server, prints its URL",
 						online: true,
@@ -49,6 +50,7 @@ class Upload extends Module {
 					},
 					{
 						name: "share",
+						requires: "upload",
 						args: "<jid> <path...>",
 						description: "upload a file and send its URL to a jid or contact (works offline and with any client)",
 						online: true,

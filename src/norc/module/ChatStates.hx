@@ -27,10 +27,13 @@ class ChatStates extends Module {
 	/** Last state sent to each jid, a state is not sent twice in a row **/
 	final sent = new Map<String, String>();
 
-	public function new(context:Context, messages:Messages, contacts:Contacts, enabled:Bool) {
+	/** Without `handling` (the module is disabled), chat states are neither sent nor received **/
+	public function new(context:Context, messages:Messages, contacts:Contacts, enabled:Bool, handling = true) {
 		super(context);
 		this.contacts = contacts;
-		this.enabled = enabled;
+		this.enabled = enabled && handling;
+		if (!handling)
+			return;
 		messages.outgoing.push(m -> {
 			if (enabled && m.body != null && m.type == chat) {
 				ChatState.setChatState(m, active);

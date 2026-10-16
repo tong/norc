@@ -24,6 +24,7 @@ import norc.module.Reactions;
 import norc.module.Receipts;
 import norc.module.Replies;
 import norc.module.Retractions;
+import norc.module.Server;
 import norc.module.Rooms;
 import norc.module.Time;
 import norc.module.Tunes;
@@ -178,11 +179,19 @@ class Client {
 			}
 		]);
 		final context:Context = {emit: emit, post: post};
+		// disabled modules are not created: they would handle stanzas (see `Config.MODULES`)
+		final disabled = account.disableModules ?? [];
+		function enabled(name:String):Bool
+			return !disabled.contains(name);
 		final contacts = new Contacts(context);
 		final messages = new Messages(context, contacts);
-		// before the modules adding elements to sent chat messages
-		final rooms = new Rooms(context, messages, contacts, account.autojoinBookmarks != false);
-		final chatStates = new ChatStates(context, messages, contacts, account.chatStates != false);
+		// what the server offers: commands requiring a feature (`requires`) are refused without it
+		final server = new Server(context);
+		commands.supports = server.supports;
+		commands.missing = feature -> Server.FEATURES.get(feature) ?? feature;
+		// before the modules adding elements to sent chat messages; without the module only used by others (no rooms)
+		final rooms = new Rooms(context, messages, contacts, account.autojoinBookmarks != false, enabled("rooms"));
+		final chatStates = new ChatStates(context, messages, contacts, account.chatStates != false, enabled("chat-states"));
 		chatStates.isRoom = rooms.joined;
 		console = new Console(context, commands, contacts, chatStates, rooms, {
 			normal: account.prompt ?? "{status}> ",
@@ -193,40 +202,53 @@ class Client {
 		for (name => command in account.aliases ?? [])
 			commands.aliases.set(name, command);
 		commands.completers.set("jid", arg -> contacts.completions(arg));
-		final sessions = new JingleSessions(context);
-		final history = new History(context, contacts, rooms, messages);
-		console.entered = (jid, out) -> history.recent(jid, account.chatHistory ?? 10, out);
-		final fileTransfers = new FileTransfers(context, contacts, sessions, account.downloadDir ?? Config.downloadDir());
-		final calls = new Calls(context, contacts, sessions, account);
-		console.counts = () -> {calls: calls.counts(), transfers: fileTransfers.counts()};
-		modules = [
-			contacts,
-			messages,
-			rooms,
-			history,
-			new Carbons(context, messages, account.carbons != false),
-			new Receipts(context, messages, contacts),
-			chatStates,
-			new Profile(context, messages, contacts),
-			new Moods(context, messages, contacts),
-			new Tunes(context, messages, contacts),
-			new Corrections(context, messages),
-			new Reactions(context, messages, contacts, rooms),
-			new Replies(context, messages, contacts, rooms),
-			new Retractions(context, messages, contacts, rooms),
-			new Avatars(context, messages, contacts, rooms),
-			new Attention(context, messages, contacts, account.attention != false),
-			new Time(context, contacts, account.entityTime == true),
-			new Pings(context, contacts),
-			new AdHoc(context, contacts),
-			new Blocking(context, contacts),
-			new Discovery(context, contacts, account.lastActivity == true ? () -> Std.int(Sys.time() - lastInput) : null),
-			sessions,
-			fileTransfers,
-			calls,
-			new Upload(context, messages, contacts) // disabled for now (shared documents, /share)
-				// new Share(context, messages, contacts, account.shareService)
+		final history = enabled("history") ? new History(context, contacts, rooms, messages, server) : null;
+		if (history != null)
+			console.entered = (jid, out) -> history.recent(jid, account.chatHistory ?? 10, out);
+		// Jingle sessions for file transfers and calls
+		final sessions = (enabled("file-transfers") || enabled("calls")) ? new JingleSessions(context) : null;
+		final fileTransfers = enabled("file-transfers") ? new FileTransfers(context, contacts, sessions, account.downloadDir ?? Config.downloadDir()) : null;
+		final calls = enabled("calls") ? new Calls(context, contacts, sessions, account) : null;
+		console.counts = () -> {
+			calls: calls?.counts() ?? {active: 0, pending: 0},
+			transfers: fileTransfers?.counts() ?? {active: 0, pending: 0}
+		};
+		// in this order: modules handle received messages in the order they were created
+		final optional:Array<{name:String, create:() -> Module}> = [
+			{name: "carbons", create: () -> new Carbons(context, messages, account.carbons != false)},
+			{name: "receipts", create: () -> new Receipts(context, messages, contacts)},
+			// created above, for the console
+			{name: "chat-states", create: () -> chatStates},
+			{name: "profile", create: () -> new Profile(context, messages, contacts)},
+			{name: "moods", create: () -> new Moods(context, messages, contacts)},
+			{name: "tunes", create: () -> new Tunes(context, messages, contacts)},
+			{name: "corrections", create: () -> new Corrections(context, messages)},
+			{name: "reactions", create: () -> new Reactions(context, messages, contacts, rooms)},
+			{name: "replies", create: () -> new Replies(context, messages, contacts, rooms)},
+			{name: "retractions", create: () -> new Retractions(context, messages, contacts, rooms)},
+			{name: "avatars", create: () -> new Avatars(context, messages, contacts, rooms)},
+			{name: "attention", create: () -> new Attention(context, messages, contacts, account.attention != false)},
+			{name: "time", create: () -> new Time(context, contacts, account.entityTime == true)},
+			{name: "ping", create: () -> new Pings(context, contacts)},
+			{name: "adhoc", create: () -> new AdHoc(context, contacts)},
+			{name: "blocking", create: () -> new Blocking(context, contacts)}
 		];
+		modules = [contacts, messages, server];
+		if (enabled("rooms"))
+			modules.push(rooms);
+		if (history != null)
+			modules.push(history);
+		for (m in optional)
+			if (enabled(m.name))
+				modules.push(m.create());
+		modules.push(new Discovery(context, contacts, account.lastActivity == true ? () -> Std.int(Sys.time() - lastInput) : null));
+		for (m in ([sessions, fileTransfers, calls] : Array<Null<Module>>))
+			if (m != null)
+				modules.push(m);
+		if (enabled("upload"))
+			modules.push(new Upload(context, messages, contacts));
+		// disabled for now (shared documents, /share)
+		// modules.push(new Share(context, messages, contacts, account.shareService));
 		for (m in modules)
 			commands.registerAll(m.commands());
 	}

@@ -1,8 +1,8 @@
 #!/bin/sh
 #
-# norc hook: urgent notification and a sound when a contact buzzes you
+# norc hook: urgent notification and a sound when a contact asks for your attention
 #
-# Run on the attention event, when a contact requested your attention (/buzz).
+# Run on the attention event, when a contact requested your attention (/attention).
 # Enable it with `chmod +x on-attention`. Several hooks per event: on-attention.<anything> (e.g. on-attention.log).
 #
 # Arguments: from (bare jid) text
@@ -14,4 +14,4 @@
 # a sound, if a player is installed
 command -v paplay >/dev/null && paplay /usr/share/sounds/freedesktop/stereo/bell.oga 2>/dev/null &
 command -v notify-send >/dev/null || exit 0
-exec notify-send --app-name=norc --urgency=critical "$NORC_NAME wants your attention" "${NORC_TEXT:-}"
+exec notify-send --app-name=norc "$NORC_NAME wants your attention" "${NORC_TEXT:-}"

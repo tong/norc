@@ -87,6 +87,7 @@ class Profile extends Module {
 			},
 			{
 				name: "nick",
+				requires: "pep",
 				args: "[name...]",
 				description: "show or publish your nickname (- stops publishing it)",
 				online: true,

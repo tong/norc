@@ -46,6 +46,9 @@ typedef Account = {
 	/** Stream management (acknowledgements, resuming the session after a disconnection), `true` if not set **/
 	var ?streamManagement:Bool;
 
+	/** Modules not loaded (see `Config.MODULES`): their commands, features and handling of stanzas **/
+	var ?disableModules:Array<String>;
+
 	/** Receive attention requests (`/attention`), `true` if not set **/
 	var ?attention:Bool;
 
@@ -204,6 +207,11 @@ class Config {
 			set: (a, v) -> a.turn = [for (s in v.split(",")) if (s.trim().length > 0) serverUri(s.trim(), ["turn", "turns"])]
 		},
 		{name: "call_helper", get: a -> a.callHelper, set: (a, v) -> a.callHelper = v},
+		{
+			name: "disable_modules",
+			get: a -> (a.disableModules != null) ? a.disableModules.join(", ") : null,
+			set: (a, v) -> a.disableModules = [for (s in v.split(",")) if (s.trim().length > 0) module(s.trim().toLowerCase())]
+		},
 		{name: "share_service", get: a -> a.shareService, set: (a, v) -> a.shareService = v},
 		{name: "chat_history", get: a -> (a.chatHistory != null) ? Std.string(a.chatHistory) : null, set: (a, v) -> a.chatHistory = parseCount(v)},
 		flag("persistent_command_history", a -> a.persistentCommandHistory, (a, v) -> a.persistentCommandHistory = v),
@@ -468,6 +476,21 @@ class Config {
 	}
 
 	/** A server URI with one of `schemes` (e.g. `stun://host:port`) **/
+	/**
+		The modules that can be disabled (`disable_modules`), by name; contacts, messages and service discovery are always
+		loaded.
+	**/
+	public static final MODULES = [
+		"rooms", "history", "carbons", "receipts", "chat-states", "profile", "moods", "tunes", "corrections", "reactions", "replies",
+		"retractions", "avatars", "attention", "time", "ping", "adhoc", "blocking", "file-transfers", "calls", "upload"
+	];
+
+	static function module(name:String):String {
+		if (!MODULES.contains(name))
+			throw 'unknown module: $name (${MODULES.join(", ")})';
+		return name;
+	}
+
 	static function serverUri(value:String, schemes:Array<String>):String {
 		final i = value.indexOf("://");
 		if (i == -1 || !schemes.contains(value.substr(0, i)) || value.length <= i + 3)

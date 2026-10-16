@@ -70,6 +70,9 @@ class Rooms extends Module {
 	/** Called when a room was left (also when removed by the room), or the own nick in it changed **/
 	public var changed:Null<(room:String) -> Void>;
 
+	/** The module is enabled: rooms can be joined (else it is only used by other modules, see `new`) **/
+	public final handling:Bool;
+
 	/** The room of the room mode (bare jid, lowercase): its occupants entering and leaving are shown **/
 	public var active:Null<String>;
 
@@ -94,11 +97,18 @@ class Rooms extends Module {
 	/** Join the rooms bookmarked with autojoin after the login (`autojoin_bookmarks`) **/
 	final autojoinBookmarks:Bool;
 
-	public function new(context:Context, messages:Messages, contacts:Contacts, autojoinBookmarks = true) {
+	/**
+		Without `handling` (the module is disabled), nothing of messages is handled: the rooms are used by other modules
+		(there are none).
+	**/
+	public function new(context:Context, messages:Messages, contacts:Contacts, autojoinBookmarks = true, handling = true) {
+		this.handling = handling;
 		this.autojoinBookmarks = autojoinBookmarks;
 		super(context);
 		this.messages = messages;
 		this.contacts = contacts;
+		if (!handling)
+			return;
 		// before other modules add elements for chats (e.g. receipt requests)
 		messages.outgoing.push(m -> if (m.to != null && Jid.parseResource(m.to) == null && joined(m.to)) m.type = groupchat);
 		messages.incoming.push(invitation);
@@ -139,6 +149,7 @@ class Rooms extends Module {
 				subcommands: [
 					{
 						name: "add",
+						requires: "pep",
 						args: "<jid> [nick]",
 						description: "bookmark a room: joined after the login, by your other clients too",
 						online: true,
@@ -147,6 +158,7 @@ class Rooms extends Module {
 					},
 					{
 						name: "autojoin",
+						requires: "pep",
 						args: "<jid> <state>",
 						description: "join a bookmarked room after the login (on) or not (off), the bookmark is kept",
 						online: true,
@@ -155,6 +167,7 @@ class Rooms extends Module {
 					},
 					{
 						name: "remove",
+						requires: "pep",
 						aliases: ["rm"],
 						args: "<jid>",
 						description: "remove the bookmark of a room (the room is not left)",

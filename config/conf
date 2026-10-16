@@ -103,7 +103,12 @@
 # Receive copies of the messages sent and received by your other clients (Message Carbons).
 # carbons = 1
 
-# Accept attention requests (/buzz) of contacts: they ring the terminal bell.
+# Modules not loaded, separated by commas: their commands, the features other clients see and the handling of their
+# stanzas are left out. rooms, history, carbons, receipts, chat-states, profile, moods, tunes, corrections, reactions,
+# replies, retractions, avatars, attention, time, ping, adhoc, blocking, file-transfers, calls, upload
+# disable_modules = calls, tunes
+
+# Accept attention requests (/attention) of contacts: they ring the terminal bell.
 # attention = 1
 
 # --- Connection ---
@@ -134,3 +139,4 @@
 alias.h = help
 # alias.m = msg
 # alias.away = presence away
+# alias.status = presence status

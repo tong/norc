@@ -36,8 +36,8 @@ class Retractions extends Module {
 		rooms.incoming.push(receiveInRoom);
 	}
 
-	override public function commands():Array<Commands.Command>
-		return [
+	override public function commands():Array<Commands.Command> {
+		final commands:Array<Commands.Command> = [
 			{
 				name: "retract",
 				args: "<jid> [message]",
@@ -45,8 +45,11 @@ class Retractions extends Module {
 				"their clients may have kept it",
 				online: true,
 				run: (args, out) -> retract(args[0], args[1] ?? "", out)
-			},
-			{
+			}
+		];
+		// moderation needs rooms (disable_modules)
+		if (rooms.handling)
+			commands.push({
 				name: "room",
 				description: "group chats (multi-user chat rooms)",
 				subcommands: [
@@ -59,8 +62,9 @@ class Retractions extends Module {
 						run: (args, out) -> moderate(args[0], args[1] ?? "", out)
 					}
 				]
-			}
-		];
+			});
+		return commands;
+	}
 
 	override public function features():Array<String>
 		return [MessageRetraction.XMLNS];
