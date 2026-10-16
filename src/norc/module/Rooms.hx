@@ -568,6 +568,8 @@ class Rooms extends Module {
 		// reactions and replies refer to the id the room gave it
 		final id = StanzaId.getStanzaId(m, r.jid);
 		messages.remember(r.jid, m, id, own, nick);
+		for (f in messages.displayed)
+			f(r.jid, m, own, true);
 		final reply = MessageReply.getReply(m);
 		emit("room", [r.jid, nick, body], {
 			room: r.jid,

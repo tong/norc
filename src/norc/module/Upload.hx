@@ -6,12 +6,15 @@ import norc.Files;
 import norc.Module;
 import norc.Output;
 import norc.Term;
+import sys.FileSystem;
 import sys.io.File;
 import sys.thread.Thread;
 import xmpp.HttpFileUpload;
 import xmpp.Oob;
 import xmpp.Response;
 import xmpp.XML;
+
+using StringTools;
 
 /**
 	HTTP File Upload (XEP-0363): uploads a file to the upload service of the server, which serves it at a URL
@@ -101,9 +104,16 @@ class Upload extends Module {
 								type: type,
 								to: to
 							}, () -> out.print(slot.get));
-							if (to != null && stream != null)
+							if (to != null && stream != null) {
+								// the own image is shown from the file, not downloaded again (see InlineImages)
+								if (type.startsWith("image/"))
+									try {
+										FileSystem.createDirectory(Path.directory(InlineImages.cachePath(slot.get, "orig")));
+										File.copy(file.path, InlineImages.cachePath(slot.get, "orig"));
+									} catch (_) {}
 								// the URL as body and out of band data: other clients show it as attachment
 								messages.send(to, slot.get, [XML.create("x").set("xmlns", Oob.XMLNS_X).append(XML.create("url", slot.get))]);
+							}
 						}
 						done();
 					});

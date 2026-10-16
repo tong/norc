@@ -15,6 +15,7 @@ import norc.module.Contacts;
 import norc.module.Discovery;
 import norc.module.FileTransfers;
 import norc.module.History;
+import norc.module.InlineImages;
 import norc.module.JingleSessions;
 import norc.module.Messages;
 import norc.module.Moods;
@@ -247,6 +248,8 @@ class Client {
 				modules.push(m);
 		if (enabled("upload"))
 			modules.push(new Upload(context, messages, contacts));
+		if (enabled("images"))
+			modules.push(new InlineImages(context, messages, contacts, cast(account.inlineImages ?? "contacts")));
 		// disabled for now (shared documents, /share)
 		// modules.push(new Share(context, messages, contacts, account.shareService));
 		for (m in modules)

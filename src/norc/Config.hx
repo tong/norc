@@ -46,6 +46,9 @@ typedef Account = {
 	/** Stream management (acknowledgements, resuming the session after a disconnection), `true` if not set **/
 	var ?streamManagement:Bool;
 
+	/** Images shared in messages shown after them: `contacts` (default), `all` or `off` (see `module.InlineImages`) **/
+	var ?inlineImages:String;
+
 	/** Modules not loaded (see `Config.MODULES`): their commands, features and handling of stanzas **/
 	var ?disableModules:Array<String>;
 
@@ -207,6 +210,14 @@ class Config {
 			set: (a, v) -> a.turn = [for (s in v.split(",")) if (s.trim().length > 0) serverUri(s.trim(), ["turn", "turns"])]
 		},
 		{name: "call_helper", get: a -> a.callHelper, set: (a, v) -> a.callHelper = v},
+		{
+			name: "inline_images",
+			get: a -> a.inlineImages,
+			set: (a, v) -> a.inlineImages = switch v.trim().toLowerCase() {
+				case p = "contacts" | "all" | "off": p;
+				case _: throw 'invalid value: $v (contacts, all, off)';
+			}
+		},
 		{
 			name: "disable_modules",
 			get: a -> (a.disableModules != null) ? a.disableModules.join(", ") : null,
@@ -482,7 +493,7 @@ class Config {
 	**/
 	public static final MODULES = [
 		"rooms", "history", "carbons", "receipts", "chat-states", "profile", "moods", "tunes", "corrections", "reactions", "replies",
-		"retractions", "avatars", "attention", "time", "ping", "adhoc", "blocking", "file-transfers", "calls", "upload"
+		"retractions", "avatars", "attention", "time", "ping", "adhoc", "blocking", "file-transfers", "calls", "upload", "images"
 	];
 
 	static function module(name:String):String {

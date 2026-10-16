@@ -103,9 +103,13 @@
 # Receive copies of the messages sent and received by your other clients (Message Carbons).
 # carbons = 1
 
+# Images shared in messages shown after them, in terminals showing images (kitty): contacts (of contacts and your
+# own), all (also in rooms), off (only with /file show). Downloading them reveals your address to their server.
+# inline_images = contacts
+
 # Modules not loaded, separated by commas: their commands, the features other clients see and the handling of their
 # stanzas are left out. rooms, history, carbons, receipts, chat-states, profile, moods, tunes, corrections, reactions,
-# replies, retractions, avatars, attention, time, ping, adhoc, blocking, file-transfers, calls, upload
+# replies, retractions, avatars, attention, time, ping, adhoc, blocking, file-transfers, calls, upload, images
 # disable_modules = calls, tunes
 
 # Accept attention requests (/attention) of contacts: they ring the terminal bell.

@@ -53,6 +53,12 @@ class Messages extends Module {
 	/** The last messages of each chat, also of rooms **/
 	public final recent = new Recent();
 
+	/**
+		Called after a message was shown: its chat (bare jid of the contact or room), the message, sent by the user,
+		in a room; e.g. to show its image
+	**/
+	public final displayed = new Array<(chat:String, m:Message, own:Bool, room:Bool) -> Void>();
+
 	/** Where sent messages were shown (see `shownAt`), the last `MAX_SHOWN` **/
 	final shown = new Map<String, LineEditor.Position>();
 
@@ -101,6 +107,8 @@ class Messages extends Module {
 		if (m.type != groupchat) {
 			showSent(m);
 			remember(Jid.parseBare(to), m, null, true);
+			for (f in displayed)
+				f(Jid.parseBare(to), m, true, false);
 		}
 		sentEvent(m, false);
 		return m;
@@ -173,6 +181,8 @@ class Messages extends Module {
 				return;
 			showSent(m, delay?.date);
 			remember(Jid.parseBare(m.to), m, null, true);
+			for (f in displayed)
+				f(Jid.parseBare(m.to), m, true, false);
 			sentEvent(m, true);
 			return;
 		}
@@ -181,6 +191,8 @@ class Messages extends Module {
 		final from = (m.from != null) ? Jid.parseBare(m.from) : stream.domain;
 		show('<${contacts.name(from)}>' + corrected(m), from, text(from, m), delay?.date);
 		remember(from, m, null, false);
+		for (f in displayed)
+			f(from, m, false, false);
 		final body = MessageReply.getBody(m);
 		final reply = MessageReply.getReply(m);
 		emit("message", [from, body], {
