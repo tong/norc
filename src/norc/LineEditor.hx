@@ -88,7 +88,7 @@ class LineEditor {
 		Completes the input up to the cursor: returns the text being completed (its end) and the candidates
 		replacing it, see `Commands.complete`. Called on the input thread, without holding the editor's lock.
 	**/
-	public var complete:Null<(before:String) -> Null<{word:String, candidates:Array<String>}>>;
+	public var complete:Null<(before:String) -> Null<{word:String, candidates:Array<String>, ?groups:Array<Array<String>>}>>;
 
 	/** Whether a line read stays on the screen (after the prompt), all if not set; on the input thread **/
 	public var echo:Null<(line:String) -> Bool>;
@@ -450,7 +450,7 @@ class LineEditor {
 		if (insert == null) {
 			// without the start of the word up to the last directory or word, e.g. `/` of a command
 			final cut = Std.int(Math.max(c.word.lastIndexOf("/"), c.word.lastIndexOf(" "))) + 1;
-			write("\r\x1B[K" + [for (v in candidates) v.substr(cut)].join("  ") + "\n");
+			write("\r\x1B[K" + [for (g in c.groups ?? [candidates]) [for (v in g) v.substr(cut)].join("  ")].join("\n\x1B[K") + "\n");
 			return;
 		}
 		final n = splitChars(c.word).length;

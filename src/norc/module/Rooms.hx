@@ -217,7 +217,7 @@ class Rooms extends Module {
 						description: "show the configuration form of a room (as its owner), or change it: field=value (e.g. persistentroom=yes)",
 						online: true,
 						run: (args, out) -> config(args[0], args[1], out),
-						complete: ["jid" => _ -> [for (r in rooms) r.jid], "values" => completeConfig]
+						complete: ["jid" => _ -> [for (r in rooms) r.jid], "values" => arg -> completeConfig(arg)]
 					},
 					{
 						name: "nick",

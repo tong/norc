@@ -62,7 +62,24 @@ typedef Target = {
 	Candidates for the argument being typed (`arg`, the rest of the line for an argument taking it): values replacing
 	it, those not starting with `arg` are left out. A value ending with `/` is not complete (e.g. a directory).
 **/
-typedef Completion = (arg:String) -> Array<String>;
+typedef Completion = (arg:String) -> Candidates;
+
+/**
+	Candidates of a completion, in groups of one kind each (e.g. options, contacts, files): listed one group per line.
+	A plain array is one group.
+**/
+@:forward(length, iterator)
+abstract Candidates(Array<Array<String>>) from Array<Array<String>> to Array<Array<String>> {
+	@:from static inline function fromList(list:Array<String>):Candidates
+		return [list];
+}
+
+/** The text being completed (`word`) and its candidates: all of them, and by group **/
+typedef Completed = {
+	var word:String;
+	var candidates:Array<String>;
+	var groups:Array<Array<String>>;
+}
 
 private typedef Param = {
 	var name:String;
@@ -116,9 +133,9 @@ class Commands {
 			args: "[command...]",
 			description: "list the commands, or show the usage of one",
 			run: (args, out) -> help(args[0], out),
-			complete: ["command" => completeCommand]
+			complete: ["command" => arg -> completeCommand(arg)]
 		});
-		completers.set("path", completePath);
+		completers.set("path", arg -> completePath(arg));
 	}
 
 	/**
@@ -288,10 +305,10 @@ class Commands {
 
 	/**
 		Completes the end of `before` (the input up to the cursor): the command, a subcommand or an argument.
-		Returns the text being completed (the end of `before`) and the sorted candidates replacing it,
+		Returns the text being completed (the end of `before`) and the candidates replacing it (sorted in their groups),
 		`null` if there is nothing to complete.
 	**/
-	public function complete(before:String, target = false):Null<{word:String, candidates:Array<String>}> {
+	public function complete(before:String, target = false):Null<Completed> {
 		if (!before.startsWith("/"))
 			return null;
 		final text = before.substr(1);
@@ -301,7 +318,7 @@ class Commands {
 		// the arguments of an alias: those of its command
 		if (expand(text) != text) {
 			final c = complete('/' + expand(text), target);
-			return (c == null) ? null : {word: c.word, candidates: c.candidates};
+			return c;
 		}
 		var entry = entries.get(text.substr(0, i));
 		var args = text.substr(i + 1).ltrim();
@@ -309,13 +326,9 @@ class Commands {
 			i = args.indexOf(" ");
 			if (i == -1) {
 				// a subcommand, or the first argument of the command
-				final c = result(args, [for (name in entry.subs.keys()) name]);
+				final subs = [for (name in entry.subs.keys()) name];
 				final a = completeArgs(entry, args, target);
-				if (a != null)
-					for (v in a.candidates)
-						c.candidates.push(v);
-				c.candidates.sort(Reflect.compare);
-				return c;
+				return result(args, [subs].concat(a?.groups ?? []));
 			}
 			final sub = entry.subs.get(args.substr(0, i));
 			if (sub == null)
@@ -338,7 +351,7 @@ class Commands {
 		Completes the argument at the end of `args` (the arguments of `entry`); with `target` (chat mode) also as if
 		a first `jid` argument was left out.
 	**/
-	function completeArgs(entry:Entry, args:String, target = false):Null<{word:String, candidates:Array<String>}> {
+	function completeArgs(entry:Entry, args:String, target = false):Null<Completed> {
 		final c = completeParams(entry, entry.params, args);
 		if (!target || entry.params[0]?.name != "jid" || entry.command.target == false)
 			return c;
@@ -346,11 +359,12 @@ class Commands {
 		if (c == null || c.candidates.length == 0)
 			return left;
 		if (left != null && left.word == c.word)
-			return result(c.word, c.candidates.concat(left.candidates));
+			return result(c.word, c.groups.concat(left.groups));
 		return c;
 	}
 
-	function completeParams(entry:Entry, params:Array<Param>, args:String):Null<{word:String, candidates:Array<String>}> {
+	function completeParams(entry:Entry, params:Array<Param>, args:String):Null<Completed> {
+		completing = args;
 		// start of each word, the last one is being typed (empty after a space)
 		final starts = new Array<Int>();
 		var i = 0;
@@ -368,12 +382,11 @@ class Commands {
 			final param = params[p];
 			if (w == starts.length - 1 || param.rest) {
 				final arg = args.substr(starts[w]);
-				final candidates = completeParam(entry, param, arg);
+				var groups:Array<Array<String>> = completeParam(entry, param, arg);
 				// an optional number can be left out: or the next argument
 				if (param.integer && param.optional && p + 1 < params.length)
-					for (v in completeParam(entry, params[p + 1], arg))
-						candidates.push(v);
-				return result(arg, candidates);
+					groups = groups.concat(completeParam(entry, params[p + 1], arg));
+				return result(arg, groups);
 			}
 			final word = args.substring(starts[w], starts[w + 1]).rtrim();
 			if (param.integer && param.optional && Std.parseInt(word.startsWith("#") ? word.substr(1) : word) == null)
@@ -383,20 +396,34 @@ class Commands {
 		return null;
 	}
 
-	function completeParam(entry:Entry, param:Param, arg:String):Array<String> {
+	function completeParam(entry:Entry, param:Param, arg:String):Candidates {
 		final f = entry.command.complete?.get(param.name) ?? completers.get(param.name);
-		return (f == null) ? [] : f(arg);
+		return (f == null) ? new Array<Array<String>>() : f(arg);
 	}
 
-	/** The candidates starting with `word` (ignoring case), sorted and without duplicates **/
-	static function result(word:String, candidates:Array<String>) {
+	/** While completing: the arguments typed of the command (e.g. `video al` of `/call video al`), for completions depending on other arguments **/
+	public static var completing(default, null) = "";
+
+	/**
+		The candidates starting with `word` (ignoring case), sorted in their groups and without duplicates (kept in the
+		first group), without empty groups
+	**/
+	public static function result(word:String, groups:Candidates):Completed {
 		final lower = word.toLowerCase();
-		final matches = new Array<String>();
-		for (c in candidates)
-			if (c.toLowerCase().startsWith(lower) && !matches.contains(c))
-				matches.push(c);
-		matches.sort(Reflect.compare);
-		return {word: word, candidates: matches};
+		final all = new Array<String>();
+		final matches = new Array<Array<String>>();
+		for (group in groups) {
+			final m = new Array<String>();
+			for (c in group)
+				if (c.toLowerCase().startsWith(lower) && !all.contains(c)) {
+					all.push(c);
+					m.push(c);
+				}
+			m.sort(Reflect.compare);
+			if (m.length > 0)
+				matches.push(m);
+		}
+		return {word: word, candidates: [for (g in matches) for (c in g) c], groups: matches};
 	}
 
 	/** A command for `/help`, e.g. `contacts add` **/

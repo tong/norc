@@ -140,10 +140,23 @@ class Calls extends Module {
 			{
 				name: "call",
 				args: "<jid> [options...]",
-				description: "call a contact; options: video, send or receive (only one direction), a file to play instead of the microphone",
+				description: "call a contact; options (also before the jid, e.g. for an alias: /call video <jid>): video, audio, send or receive (only one direction), a file to play instead of the microphone",
 				online: true,
-				run: (args, out) -> call(args[0], args[1], out),
-				complete: ["options" => completeOptions],
+				run: (args, out) -> {
+					final line = optionsFirst(args[0], args[1]);
+					call(line.jid, line.options, out);
+				},
+				complete: [
+					"jid" => arg -> [OPTIONS, contacts.completions(arg)],
+					"options" => arg -> {
+						// only options so far (/call video al): the jid follows, also the contacts
+						final before = arg.substr(0, arg.lastIndexOf(" ") + 1);
+						final options:Array<Array<String>> = completeOptions(arg);
+						if (optionsOnly(Commands.completing))
+							options.insert(1, [for (c in contacts.completions(arg.substr(before.length))) before + c]);
+						options;
+					}
+				],
 				subcommands: [
 					{
 						name: "accept",
@@ -696,6 +709,31 @@ class Calls extends Module {
 		The options of `/call` and `/call accept`: words (`video`, `audio`: without video, `send`, `receive`), then a file
 		to play; `null` with an error if the file doesn't exist
 	**/
+	/** The words of the options of `/call` **/
+	static final OPTIONS = ["video", "audio", "send", "receive"];
+
+	/** The jid and options of `/call <first> <rest>`, also with the options before the jid (`/call video alice`) **/
+	static function optionsFirst(first:String, rest:Null<String>):{jid:String, options:Null<String>} {
+		if (!OPTIONS.contains(first))
+			return {jid: first, options: rest};
+		final words = (rest ?? "").split(" ").filter(w -> w.length > 0);
+		final options = [first];
+		while (words.length > 0 && OPTIONS.contains(words[0]))
+			options.push(words.shift());
+		// no jid after the options: the first word is the jid (e.g. a contact named "video")
+		if (words.length == 0)
+			return {jid: first, options: rest};
+		final jid = words.shift();
+		return {jid: jid, options: options.concat(words).join(" ")};
+	}
+
+	/** All words of `arg` but the last are options (the jid may still follow) **/
+	static function optionsOnly(arg:String):Bool {
+		final words = arg.split(" ");
+		words.pop();
+		return words.foreach(w -> w.length == 0 || OPTIONS.contains(w));
+	}
+
 	static function parseOptions(input:Null<String>, out:Output):Null<{video:Null<Bool>, direction:Direction, file:Null<String>}> {
 		final words = (input ?? "").split(" ");
 		var video:Null<Bool> = null;
@@ -723,10 +761,11 @@ class Calls extends Module {
 		return {video: video, direction: direction, file: file};
 	}
 
-	static function completeOptions(arg:String):Array<String> {
+	/** The options, then the files **/
+	static function completeOptions(arg:String):Commands.Candidates {
 		final i = arg.lastIndexOf(" ") + 1;
 		final word = arg.substr(i);
-		return [for (v in ["video", "audio", "send", "receive"].concat(Commands.completePath(word))) arg.substr(0, i) + v];
+		return [for (group in [OPTIONS, Commands.completePath(word)]) [for (v in group) arg.substr(0, i) + v]];
 	}
 
 	/** The words of a command line, `"…"` for words with spaces **/

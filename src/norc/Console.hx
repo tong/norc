@@ -106,7 +106,7 @@ class Console {
 			target: false,
 			description: "chat with a contact or room: lines without / are sent to it (// for a line starting with /); without jid, or Ctrl-C: leave",
 			run: (args, out) -> (args[0] == null) ? leave(out) : enter(args[0], out),
-			complete: ["jid" => arg -> contacts.completions(arg).concat(rooms.completions())]
+			complete: ["jid" => arg -> [contacts.completions(arg), rooms.completions()]]
 		});
 		commands.register({
 			name: "edit",
@@ -301,7 +301,7 @@ class Console {
 	}
 
 	/** Completes the input of the editor (on the input thread): on the main thread, as the commands use its state **/
-	function complete(before:String):Null<{word:String, candidates:Array<String>}> {
+	function complete(before:String):Null<Commands.Completed> {
 		var result = null;
 		final lock = new Lock();
 		context.post(() -> {
@@ -310,11 +310,8 @@ class Console {
 			// a command being typed: also the subcommands of /room in group chat mode
 			if (line == before && chat != null && rooms.joined(chat) && before.startsWith("/") && !before.contains(" ")) {
 				final subs = commands.complete('/room ${before.substr(1)}');
-				if (subs != null) {
-					final candidates = (result?.candidates ?? []).concat([for (s in subs.candidates) '/$s']);
-					candidates.sort(Reflect.compare);
-					result = {word: before, candidates: candidates};
-				}
+				if (subs != null)
+					result = Commands.result(before, (result?.groups ?? []).concat([for (g in subs.groups) [for (s in g) '/$s']]));
 			}
 			lock.release();
 		});
