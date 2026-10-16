@@ -22,7 +22,7 @@ def text: gsub("\n"; "\n  ");
 def bare: split("/")[0] | gsub("^\\.+"; "_");
 if .event == "message" then
 	[(.data.from | bare), "<\(.data.name)> \(.data.body | text)" + (if .data.delayed then " (delayed)" else "" end)]
-elif .event == "sent" then
+elif .event == "sent" and .data.type != "groupchat" then
 	[(.data.to | bare), "→ <\(.data.name)> \(.data.body | text)"]
 elif .event == "room" and (.data.delayed | not) then
 	[(.data.room | bare), "<\(.data.nick)> \(.data.body | text)"]

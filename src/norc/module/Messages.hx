@@ -227,6 +227,7 @@ class Messages extends Module {
 			name: contacts.name(to),
 			body: body,
 			id: m.id,
+			type: m.type ?? "normal",
 			carbon: carbon,
 			replaces: LastMessageCorrection.correction(m),
 			reply_id: reply?.id,
