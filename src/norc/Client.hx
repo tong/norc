@@ -133,7 +133,7 @@ class Client {
 					{
 						name: "status",
 						args: "[text...]",
-						description: "show or set your status message, keeping the presence state (- clears it), as /status",
+						description: "show or set your status message, keeping the presence state (- clears it)",
 						run: (args, out) -> setStatus(args[0], out)
 					},
 					{
@@ -143,12 +143,6 @@ class Client {
 						run: (args, out) -> setPriority(args[0], out)
 					}
 				]
-			},
-			{
-				name: "status",
-				args: "[text...]",
-				description: "show or set your status message, keeping the presence state (- clears it)",
-				run: (args, out) -> setStatus(args[0], out)
 			},
 			{
 				name: "xmpp-debug",
