@@ -212,7 +212,7 @@ class Client {
 		// Jingle sessions for file transfers and calls
 		final sessions = (enabled("file-transfers") || enabled("calls")) ? new JingleSessions(context) : null;
 		final fileTransfers = enabled("file-transfers") ? new FileTransfers(context, contacts, sessions, account.downloadDir ?? Config.downloadDir()) : null;
-		final calls = enabled("calls") ? new Calls(context, contacts, sessions, account) : null;
+		final calls = enabled("calls") ? new Calls(context, messages, contacts, sessions, account) : null;
 		console.counts = () -> {
 			calls: calls?.counts() ?? {active: 0, pending: 0},
 			transfers: fileTransfers?.counts() ?? {active: 0, pending: 0}

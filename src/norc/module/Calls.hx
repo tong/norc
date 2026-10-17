@@ -8,12 +8,14 @@ import norc.Files;
 import norc.Module;
 import norc.Output;
 import norc.Term;
+import norc.module.Messages;
 import sys.FileSystem;
 import sys.io.Process;
 import sys.thread.Thread;
 import xmpp.Jid;
 import xmpp.Jingle;
 import xmpp.ExternalServices;
+import xmpp.JingleMessage;
 import xmpp.JingleRtp;
 import xmpp.ServiceDiscovery;
 import xmpp.XML;
@@ -97,6 +99,18 @@ private typedef Call = {
 	/** The file of the recording, requested or running **/
 	var ?record:String;
 
+	/** The call is initiated by messages (XEP-0353): their id, the id of the session **/
+	var ?jmi:String;
+
+	/** Calling by messages: the jid the call is proposed to (bare: to all clients of the contact), until one accepts **/
+	var ?proposed:String;
+
+	/** The call initiated by messages was accepted (`proceed`): it ends with a `finish` message **/
+	var proceeded:Bool;
+
+	/** A client of the peer rings (calling by messages) **/
+	var rang:Bool;
+
 	/** The media share one connection (BUNDLE): the peer supports grouping **/
 	var bundle:Bool;
 
@@ -110,6 +124,10 @@ private typedef Call = {
 	and candidates converted from and to Jingle. Without it, calls are not available (and not advertised).
 
 	One call at a time: other requests are answered with `busy`. Only contacts can call (the media reveal the address).
+
+	Calls are also initiated by messages (Jingle Message Initiation, XEP-0353), as Conversations, Monal and Dino do: a
+	proposal rings all clients of the callee, the one accepting it gets the session. Calls go this way to contacts
+	with a client supporting it, else the session is requested directly.
 **/
 class Calls extends Module {
 	final contacts:Contacts;
@@ -117,6 +135,15 @@ class Calls extends Module {
 
 	/** The command of the media program, `null` if it is not found **/
 	final helper:Null<Array<String>>;
+
+	/** Seconds a call rings before it is given up **/
+	static inline var ANSWER_TIMEOUT = 60;
+
+	/** Seconds after accepting a call proposed by message until the caller starts it **/
+	static inline var SESSION_TIMEOUT = 30;
+
+	/** Proposals delivered later (from the offline storage) are calls which are over **/
+	static inline var PROPOSAL_MAX_AGE = 60;
 
 	final calls = new Array<Call>();
 	var nextId = 1;
@@ -127,7 +154,7 @@ class Calls extends Module {
 	/** The server offers its STUN and TURN servers (XEP-0215), `null` while unknown **/
 	var externalServices:Null<Bool>;
 
-	public function new(context:Context, contacts:Contacts, sessions:JingleSessions, account:Config.Account) {
+	public function new(context:Context, messages:Messages, contacts:Contacts, sessions:JingleSessions, account:Config.Account) {
 		super(context);
 		this.contacts = contacts;
 		this.sessions = sessions;
@@ -136,6 +163,7 @@ class Calls extends Module {
 		final path = Files.which(command[0] ?? "");
 		this.helper = (path != null) ? [path].concat(command.slice(1)) : null;
 		sessions.handle(JingleRtp.XMLNS, incoming);
+		messages.incoming.push(message);
 	}
 
 	override public function commands():Array<Commands.Command>
@@ -192,7 +220,9 @@ class Calls extends Module {
 								final line = optionsFirst("record", rest);
 								call(line.jid, line.options, out);
 						},
-						complete: ["state" => arg -> [["on", "off"], calls.length == 0 ? contacts.completions(arg) : []]]
+						complete: [
+							"state" => arg -> [["on", "off"], calls.length == 0 ? contacts.completions(arg) : []]
+						]
 					},
 					{
 						name: "mute",
@@ -228,7 +258,7 @@ class Calls extends Module {
 		];
 
 	override public function features():Array<String>
-		return (helper != null) ? JingleRtp.FEATURES : [];
+		return (helper != null) ? JingleRtp.FEATURES.concat([JingleMessage.XMLNS]) : [];
 
 	/** The calls being connected or connected (`active`), and ringing or calling (`pending`), e.g. for the prompt **/
 	public function counts():{active:Int, pending:Int} {
@@ -261,30 +291,90 @@ class Calls extends Module {
 			return;
 		final video = options.video == true;
 		final done = out.wait();
-		findCallee(jid, video, out, peer -> {
-			done();
-			if (peer == null || calls.length > 0)
-				return;
+		function calling(peer:String):Call {
 			final c = add(peer, false, options.direction, video ? options.direction : none, Calling, out);
 			c.file = options.file;
 			if (options.record)
 				c.record = recordPath(c, out);
-			out.info('#${c.id} calling ${name(c)} (${describeMedia(c)})');
-			event(c, "calling");
-			// one connection for all media only with clients supporting it (e.g. not Dino)
-			ServiceDiscovery.discoInfo(stream, peer, null, res -> {
-				c.bundle = res.payload != null && ServiceDiscovery.parseInfo(res.payload).features.contains(JingleRtp.XMLNS_GROUPING);
-				if (calls.contains(c))
-					start(c);
+			return c;
+		}
+		proposable(jid, jmi -> {
+			if (calls.length > 0)
+				return done();
+			if (jmi) {
+				// proposed by message to the jid given: without resource all clients of the contact ring
+				done();
+				final c = calling(jid);
+				c.jmi = xmpp.Uuid.make();
+				c.proposed = jid;
+				stream.send(JingleMessage.create(jid, propose, c.jmi, {media: video ? ["audio", "video"] : ["audio"]}));
+				out.info('#${c.id} calling ${name(c)} (${describeMedia(c)})');
+				event(c, "calling");
+				later(c, ANSWER_TIMEOUT, Calling, () -> if (c.proposed != null) end(c, cancel, "no answer"));
+				return;
+			}
+			findCallee(jid, video, out, peer -> {
+				done();
+				if (peer == null || calls.length > 0)
+					return;
+				final c = calling(peer);
+				out.info('#${c.id} calling ${name(c)} (${describeMedia(c)})');
+				event(c, "calling");
+				connect(c);
 			});
 		});
 	}
+
+	/** Starts the media of the outgoing call `c` to its peer (a full jid): one connection for all media only with clients supporting it (e.g. not Dino) **/
+	function connect(c:Call)
+		ServiceDiscovery.discoInfo(stream, c.peer, null, res -> {
+			c.bundle = res.payload != null && ServiceDiscovery.parseInfo(res.payload).features.contains(JingleRtp.XMLNS_GROUPING);
+			if (calls.contains(c))
+				start(c);
+		});
+
+	/** Calls to `jid` are proposed by message: a client of the contact (or `jid` itself, with resource) supports it **/
+	function proposable(jid:String, callback:Bool->Void) {
+		final candidates = (Jid.parseResource(jid) != null) ? [jid] : contacts.resources(Jid.parseBare(jid));
+		Discovery.findFeature(stream, candidates, JingleMessage.XMLNS, peer -> callback(peer != null));
+	}
+
+	/** After `seconds`, `f` if call `c` is still in `state` **/
+	function later(c:Call, seconds:Float, state:CallState, f:() -> Void)
+		Thread.create(() -> {
+			Sys.sleep(seconds);
+			context.post(() -> if (calls.contains(c) && c.state == state) f());
+		});
 
 	/** A call requested by a peer **/
 	function incoming(session:JingleSession) {
 		final media = [for (c in session.contents) JingleRtp.media(c)];
 		if (helper == null || media.contains(null)) {
 			session.terminate(unsupported_applications);
+			return;
+		}
+		// the session of a call proposed by message
+		final proposed = calls.find(c -> c.jmi == session.sid
+			&& c.incoming
+			&& c.session == null
+			&& Jid.parseBare(c.peer) == Jid.parseBare(session.peer));
+		if (proposed != null) {
+			proposed.peer = session.peer;
+			proposed.session = session;
+			proposed.bundle = JingleRtp.group(session.payload) != null;
+			listen(proposed);
+			// accepted (proceed): with the media offered, as far as accepted; else it rings on
+			if (proposed.state == Connecting) {
+				proposed.audio = proposed.audio.and(offered(session, "audio"));
+				proposed.video = proposed.video.and(offered(session, "video"));
+				if (proposed.audio == none && proposed.video == none)
+					end(proposed, failed_application, "the call offers nothing accepted");
+				else
+					start(proposed);
+			} else {
+				proposed.audio = offered(session, "audio");
+				proposed.video = offered(session, "video");
+			}
 			return;
 		}
 		if (!contacts.contains(Jid.parseBare(session.peer))) {
@@ -295,25 +385,113 @@ class Calls extends Module {
 			session.terminate(busy);
 			return;
 		}
-		// what the caller offers: the senders of each media
-		function offered(media:String):Direction {
-			final content = session.contents.find(c -> JingleRtp.media(c) == media);
-			return (content == null) ? none : switch content.senders ?? JingleSenders.both {
-				case JingleSenders.initiator: receive;
-				case JingleSenders.responder: send;
-				case JingleSenders.none: none;
-				case _: both;
-			}
-		}
-		final c = add(session.peer, true, offered("audio"), offered("video"), Ringing, TermOutput.instance);
+		final c = add(session.peer, true, offered(session, "audio"), offered(session, "video"), Ringing, TermOutput.instance);
 		c.session = session;
 		// as offered
 		c.bundle = JingleRtp.group(session.payload) != null;
 		listen(c);
 		session.info([XML.create("ringing").set("xmlns", JingleRtp.XMLNS_INFO)]);
-		// with the terminal bell
+		ring(c);
+	}
+
+	/** What the caller of `session` offers of `media`: the senders, from the own side **/
+	static function offered(session:JingleSession, media:String):Direction {
+		final content = session.contents.find(c -> JingleRtp.media(c) == media);
+		return (content == null) ? none : switch content.senders ?? JingleSenders.both {
+			case JingleSenders.initiator: receive;
+			case JingleSenders.responder: send;
+			case JingleSenders.none: none;
+			case _: both;
+		}
+	}
+
+	/** The incoming call `c` rings, with the terminal bell **/
+	function ring(c:Call) {
 		Term.notice('#${c.id} ${name(c)} is calling (${describeMedia(c)}): /call accept ${c.id} or /call decline ${c.id}\x07', 1);
 		event(c, "ringing");
+	}
+
+	/**
+		A message initiating a call (XEP-0353), not shown: a proposal rings; the caller retracting it, a client of the
+		callee ringing, accepting or declining it, another own client taking a call ringing here.
+	**/
+	function message(i:Incoming):Bool {
+		final m = i.message;
+		final jmi = JingleMessage.parse(m);
+		if (jmi == null)
+			return false;
+		if (helper == null || m.from == null)
+			return true;
+		final from = Jid.parseBare(m.from);
+		final c = calls.find(c -> c.jmi == jmi.id);
+		// another own client took or declined the call (its message to the caller, or to the own bare jid)
+		if (isOwn(from)) {
+			if (c != null && c.incoming && c.state == Ringing && i.carbon != received && m.from != stream.jid)
+				switch jmi.action {
+					case JingleMessageAction.proceed | JingleMessageAction.accept:
+						finish(c, "answered on another client");
+					case reject:
+						finish(c, "declined on another client");
+					case _:
+				}
+			return true;
+		}
+		// a copy of the messages of the other own clients
+		if (i.carbon != null)
+			return true;
+		if (jmi.action == propose) {
+			proposal(m.from, jmi, m);
+			return true;
+		}
+		if (c == null || Jid.parseBare(c.peer) != from)
+			return true;
+		switch jmi.action {
+			case retract if (c.incoming && c.session == null):
+				finish(c, (c.state == Ringing) ? "missed" : "cancelled");
+			case ringing if (!c.incoming && c.state == Calling && !c.rang):
+				c.rang = true;
+				Term.notice('#${c.id} ${name(c)} is ringing');
+			case proceed if (!c.incoming && c.proposed != null && (Jid.parseResource(c.proposed) == null || c.proposed == m.from)):
+				// the client accepting it gets the session
+				c.peer = m.from;
+				c.proposed = null;
+				c.proceeded = true;
+				connect(c);
+			case reject if (!c.incoming && c.proposed != null):
+				finish(c, (jmi.reason?.condition == busy) ? '${name(c)} is busy' : '${name(c)} declined');
+			case JingleMessageAction.finish if (c.session == null):
+				finish(c, '${name(c)} hung up');
+			case _:
+		}
+		return true;
+	}
+
+	/** A call proposed by `from` (a full jid) **/
+	function proposal(from:String, jmi:JingleMessageInfo, m:xmpp.Message) {
+		// delivered late (offline storage): the call is over
+		final delay = xmpp.DelayedDelivery.delay(m)?.date;
+		if (delay != null && Date.now().getTime() - delay.getTime() > PROPOSAL_MAX_AGE * 1000)
+			return;
+		if (calls.exists(c -> c.jmi == jmi.id))
+			return;
+		final audio = jmi.media.contains("audio"), video = jmi.media.contains("video");
+		if ((!audio && !video) || jmi.media.exists(media -> media != "audio" && media != "video")) {
+			stream.send(JingleMessage.create(from, reject, jmi.id, {reason: {condition: unsupported_applications}}));
+			return;
+		}
+		if (!contacts.contains(Jid.parseBare(from))) {
+			stream.send(JingleMessage.create(from, reject, jmi.id));
+			return;
+		}
+		if (calls.length > 0) {
+			stream.send(JingleMessage.create(from, reject, jmi.id, {reason: {condition: busy}}));
+			return;
+		}
+		final c = add(from, true, audio ? both : none, video ? both : none, Ringing, TermOutput.instance);
+		c.jmi = jmi.id;
+		stream.send(JingleMessage.create(from, ringing, jmi.id));
+		ring(c);
+		later(c, ANSWER_TIMEOUT, Ringing, () -> end(c, timeout, "missed"));
 	}
 
 	function accept(c:Null<Call>, words:Null<String>, out:Output) {
@@ -340,15 +518,25 @@ class Calls extends Module {
 			c.record = recordPath(c, out);
 		c.out = out;
 		c.state = Connecting;
+		if (c.session == null) {
+			// proposed by message: accepted, the caller requests the session
+			c.proceeded = true;
+			stream.send(JingleMessage.create(c.peer, proceed, c.jmi));
+			later(c, SESSION_TIMEOUT, Connecting, () -> if (c.session == null) end(c, timeout, "the caller didn't start the call"));
+			return;
+		}
 		start(c);
 	}
 
 	function hangup(c:Null<Call>)
 		if (c != null)
 			switch c.state {
-				case Ringing: end(c, decline, "declined");
-				case Calling: end(c, cancel, "cancelled");
-				case _: end(c, success, "hung up");
+				case Ringing:
+					end(c, decline, "declined");
+				case Calling:
+					end(c, cancel, "cancelled");
+				case _:
+					end(c, success, "hung up");
 			}
 
 	/** Ends call `c` from the own side, `text` tells why **/
@@ -358,8 +546,13 @@ class Calls extends Module {
 		c.ending = text;
 		if (c.session != null)
 			c.session.terminate(condition);
-		else
+		else {
+			// not accepted yet: the proposal retracted, or declined
+			if (c.jmi != null && !c.proceeded)
+				stream.send(c.incoming ? JingleMessage.create(c.peer, reject, c.jmi,
+					{reason: {condition: condition}}) : JingleMessage.create(c.proposed ?? c.peer, retract, c.jmi, {reason: {condition: cancel}}));
 			finish(c, text);
+		}
 	}
 
 	/** Mutes or unmutes `media` of the connecting or connected call **/
@@ -535,7 +728,9 @@ class Calls extends Module {
 		}
 		function request() {
 			ExternalServices.request(stream, res -> {
-				final services = [for (s in ExternalServices.parse(res.payload)) {type: s.type.toLowerCase(), uri: ExternalServices.uri(s)}];
+				final services = [
+					for (s in ExternalServices.parse(res.payload)) {type: s.type.toLowerCase(), uri: ExternalServices.uri(s)}
+				];
 				callback(options([for (s in services) if (s.type == "stun" && s.uri != null) s.uri], [
 					for (s in services)
 						if (s.type != "stun" && s.uri != null) s.uri
@@ -543,11 +738,14 @@ class Calls extends Module {
 			});
 		}
 		switch externalServices {
-			case true: request();
-			case false: callback(options([], []));
+			case true:
+				request();
+			case false:
+				callback(options([], []));
 			case null:
 				ServiceDiscovery.discoInfo(stream, stream.domain, null, res -> {
-					externalServices = res.payload != null && ServiceDiscovery.parseInfo(res.payload).features.contains(ExternalServices.XMLNS);
+					externalServices = res.payload != null
+						&& ServiceDiscovery.parseInfo(res.payload).features.contains(ExternalServices.XMLNS);
 					externalServices ? request() : callback(options([], []));
 				});
 		}
@@ -597,7 +795,7 @@ class Calls extends Module {
 	function initiate(c:Call, sdp:String) {
 		final offer = JingleRtp.fromSdp(sdp, true);
 		c.local = offer.contents;
-		final session = sessions.jingle.createSession(c.peer);
+		final session = sessions.jingle.createSession(c.peer, c.jmi);
 		c.session = session;
 		listen(c);
 		session.onAccept = contents -> {
@@ -682,6 +880,9 @@ class Calls extends Module {
 		if (!calls.remove(c))
 			return;
 		c.rtc?.close();
+		// initiated by message: the end, also for the other clients
+		if (c.jmi != null && c.proceeded)
+			stream?.send(JingleMessage.create(c.peer, JingleMessageAction.finish, c.jmi, {reason: {condition: success}}));
 		final duration = (c.connected != null) ? ' after ${formatDuration(Sys.time() - c.connected)}' : '';
 		Term.notice('#${c.id} call with ${name(c)} ended: $text$duration');
 		event(c, "ended", {reason: text, duration: (c.connected != null) ? Std.int(Sys.time() - c.connected) : null});
@@ -713,6 +914,8 @@ class Calls extends Module {
 			described: false,
 			bundle: true,
 			muted: [],
+			proceeded: false,
+			rang: false,
 			out: out
 		};
 		calls.push(c);
@@ -763,8 +966,11 @@ class Calls extends Module {
 			if (list.length == 0)
 				out.info("no calls");
 			for (c in list)
-				out.print('  #${c.id} ${c.incoming ? "from" : "to"} ${c.peer} (${c.media}' + (c.file != null ? ', playing ${Path.withoutDirectory(c.file)}' : '')
-					+ ') ${c.state}' + (c.duration != null ? ' ${formatDuration(c.duration)}' : '') + (c.recording != null ? ', recording' : ''));
+				out.print('  #${c.id} ${c.incoming ? "from" : "to"} ${c.peer} (${c.media}'
+					+ (c.file != null ? ', playing ${Path.withoutDirectory(c.file)}' : '')
+					+ ') ${c.state}'
+					+ (c.duration != null ? ' ${formatDuration(c.duration)}' : '')
+					+ (c.recording != null ? ', recording' : ''));
 		});
 	}
 
@@ -800,10 +1006,14 @@ class Calls extends Module {
 		final media = (c.audio == both && c.video == both) ? ["video"] : [
 			for (m in [{name: "audio", d: c.audio}, {name: "video", d: c.video}])
 				switch m.d {
-					case both: m.name;
-					case send: 'sending ${m.name}';
-					case receive: 'receiving ${m.name}';
-					case none: continue;
+					case both:
+						m.name;
+					case send:
+						'sending ${m.name}';
+					case receive:
+						'receiving ${m.name}';
+					case none:
+						continue;
 				}
 		];
 		return media.join(", ") + (c.file != null ? ', playing ${Path.withoutDirectory(c.file)}' : '');
@@ -838,7 +1048,12 @@ class Calls extends Module {
 		The options of `/call` and `/call accept`: words (`video`, `audio`: without video, `send`, `receive`, `record`),
 		then a file to play; `null` with an error if the file doesn't exist
 	**/
-	static function parseOptions(input:Null<String>, out:Output):Null<{video:Null<Bool>, direction:Direction, record:Bool, file:Null<String>}> {
+	static function parseOptions(input:Null<String>, out:Output):Null<{
+		video:Null<Bool>,
+		direction:Direction,
+		record:Bool,
+		file:Null<String>
+	}> {
 		final words = (input ?? "").split(" ");
 		var video:Null<Bool> = null;
 		var direction = both;
@@ -846,13 +1061,19 @@ class Calls extends Module {
 		var i = 0;
 		while (i < words.length) {
 			switch words[i] {
-				case "video": video = true;
-				case "audio": video = false;
-				case "send": direction = send;
-				case "receive": direction = receive;
-				case "record": record = true;
+				case "video":
+					video = true;
+				case "audio":
+					video = false;
+				case "send":
+					direction = send;
+				case "receive":
+					direction = receive;
+				case "record":
+					record = true;
 				case "":
-				case _: break;
+				case _:
+					break;
 			}
 			i++;
 		}
@@ -864,14 +1085,21 @@ class Calls extends Module {
 			out.error("a file is played to the other side: not with receive");
 			return null;
 		}
-		return {video: video, direction: direction, record: record, file: file};
+		return {
+			video: video,
+			direction: direction,
+			record: record,
+			file: file
+		};
 	}
 
 	/** The options, then the files **/
 	static function completeOptions(arg:String):Commands.Candidates {
 		final i = arg.lastIndexOf(" ") + 1;
 		final word = arg.substr(i);
-		return [for (group in [OPTIONS, Commands.completePath(word)]) [for (v in group) arg.substr(0, i) + v]];
+		return [
+			for (group in [OPTIONS, Commands.completePath(word)]) [for (v in group) arg.substr(0, i) + v]
+		];
 	}
 
 	/** The words of a command line, `"…"` for words with spaces **/

@@ -75,9 +75,15 @@ Received reactions are shown as `<alice> reacted 👍 to "text"`, replies with a
 
 ## Calls
 
-Audio and video calls with contacts, compatible with other clients (Conversations, Dino, Gajim, Movim: Jingle RTP
-with WebRTC). The audio and video run in a separate program, `norc-rtc` (see [Installation](installation));
+Audio and video calls with contacts, compatible with other clients (Conversations, Monal, Dino, Gajim, Movim: Jingle
+RTP with WebRTC). The audio and video run in a separate program, `norc-rtc` (see [Installation](installation));
 without it, calls are not available.
+
+A call to a contact whose client supports it is proposed by message (Jingle Message Initiation, as Conversations,
+Monal and Dino do): all clients of the contact ring (also on a phone in the background), the one answering gets the
+call, the others stop ringing. Calls of these clients ring in norc the same way; answered or declined on another of
+your clients, the call stops ringing in norc. Without resource (`/call alice`) all clients of the contact ring, with
+one (`/call alice@example.org/phone`) only this one.
 
 | Command | Description |
 |---|---|
