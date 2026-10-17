@@ -120,7 +120,7 @@ class Reactions extends Module {
 		if (r == null)
 			return false;
 		final nick = Jid.parseResource(m.from) ?? "";
-		final isOwn = nick == rooms.nickIn(room);
+		final isOwn = rooms.ownMessage(room, nick, m.properties);
 		if (isOwn)
 			own.set('${room.toLowerCase()} ${r.id}', r.reactions);
 		final label = Rooms.label(room);

@@ -22,6 +22,9 @@ typedef RecentMessage = {
 
 	/** `id` is the `stanza-id` of the room (needed for moderation) **/
 	var ?stanzaId:Bool;
+
+	/** The occupant id of the author in a room announcing them (XEP-0421) **/
+	var ?occupant:String;
 }
 
 /**
@@ -67,9 +70,17 @@ class Recent {
 		return null;
 	}
 
-	/** Replaces the text of the message with `id` (a correction) **/
+	/** The message with the message id `id` in `chat` (in rooms `id` is the `stanza-id`), `null` if unknown **/
+	public function findByMessageId(chat:String, id:String):Null<RecentMessage> {
+		for (m in messages(chat))
+			if ((m.messageId ?? m.id) == id)
+				return m;
+		return null;
+	}
+
+	/** Replaces the text of the message with the message id `id` (a correction) **/
 	public function correct(chat:String, id:String, body:String) {
-		final m = find(chat, id);
+		final m = findByMessageId(chat, id);
 		if (m != null)
 			m.body = body;
 	}

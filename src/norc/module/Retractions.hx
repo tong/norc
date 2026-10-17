@@ -18,7 +18,7 @@ using xmpp.DelayedDelivery;
 	rooms are shown (`<alice> retracted "text"`), the `retraction` event. Moderated Message Retraction (XEP-0425):
 	`/room moderate` removes a message of another occupant, as moderator of a room.
 
-	Retractions are accepted only of the sender of the message (the same bare jid, in rooms the same nick), moderations
+	Retractions are accepted only of the sender of the message (the same bare jid; in rooms the same occupant id if the room adds them, else the same nick), moderations
 	only of the room itself. Their clients may have kept the message: a retraction asks to delete it, it can't enforce it.
 **/
 class Retractions extends Module {
@@ -182,9 +182,10 @@ class Retractions extends Module {
 			event(room, m.from, moderator ?? "", room, target, r.id, target?.own == true, m, false, r);
 			return true;
 		}
-		if (nick == null || target != null && target.name != nick)
+		// only of the author: the same occupant id, else nick
+		if (nick == null || target != null && !rooms.isAuthor(room, target, nick, m.properties))
 			return true;
-		final isOwn = nick == rooms.nickIn(room);
+		final isOwn = rooms.ownMessage(room, nick, m.properties);
 		messages.recent.retract(room, r.id);
 		show('<$nick>', isOwn ? null : '$room/$nick', 'retracted ${quote(target)}', m.delay()?.date, prefix, label.length + 1);
 		event(room, m.from, nick, room, target, r.id, isOwn, m);

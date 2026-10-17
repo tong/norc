@@ -6,12 +6,15 @@ import norc.Module;
 import norc.Output;
 import norc.Term;
 import norc.module.Messages;
+import norc.module.Recent;
 import xmpp.Bookmarks;
 import xmpp.DataForm;
 import xmpp.Jid;
 import xmpp.Message;
+import xmpp.LastMessageCorrection;
 import xmpp.MessageReply;
 import xmpp.Muc;
+import xmpp.OccupantId;
 import xmpp.Presence;
 import xmpp.Response;
 import xmpp.ServiceDiscovery;
@@ -46,6 +49,9 @@ private typedef Room = {
 
 	/** New nicks of occupants changing their nick: their presence is no new occupant **/
 	var ?renamed:Array<String>;
+
+	/** The room adds occupant ids (XEP-0421, announced): only then they can be trusted **/
+	var ?occupantIds:Bool;
 }
 
 /**
@@ -303,6 +309,37 @@ class Rooms extends Module {
 	public function nickIn(jid:String):Null<String>
 		return find(jid)?.nick;
 
+	/**
+		The occupant id (XEP-0421) in `properties` of a message or presence from `room`, if the room announces them
+		(else the ids could be forged by the senders); `null` otherwise.
+	**/
+	public function occupantId(room:String, properties:Array<XML>):Null<String> {
+		final r = find(room);
+		return (r?.occupantIds == true) ? OccupantId.get(properties) : null;
+	}
+
+	/**
+		A message or presence (`properties`) of `nick` in `room` is from the user: the own occupant id, else the own
+		nick (e.g. of a room without occupant ids).
+	**/
+	public function ownMessage(room:String, nick:Null<String>, properties:Array<XML>):Bool {
+		final r = find(room);
+		if (r == null)
+			return false;
+		final id = occupantId(room, properties);
+		final own = r.occupants.exists(r.nick) ? occupantId(room, r.occupants.get(r.nick).properties) : null;
+		return (id != null && own != null) ? id == own : nick == r.nick;
+	}
+
+	/**
+		`nick` (with the occupant id in `properties`) is the author of `target` in `room`: the same occupant id if both
+		are known, else the same nick. For corrections and retractions, which only the author may send.
+	**/
+	public function isAuthor(room:String, target:RecentMessage, nick:Null<String>, properties:Array<XML>):Bool {
+		final id = occupantId(room, properties);
+		return (id != null && target.occupant != null) ? id == target.occupant : target.name == nick;
+	}
+
 	function find(jid:Null<String>):Null<Room>
 		return (jid == null) ? null : rooms.get(Jid.parseBare(jid).toLowerCase());
 
@@ -371,6 +408,11 @@ class Rooms extends Module {
 
 	/** Enters room `r` (again), `callback` gets the error or `null` **/
 	function enter(r:Room, callback:Null<String>->Void) {
+		// its features before the messages of its history arrive: occupant ids
+		ServiceDiscovery.discoInfo(stream, r.jid, null, res -> {
+			final info = (res.payload == null) ? null : ServiceDiscovery.parseInfo(res.payload);
+			r.occupantIds = info?.features.contains(OccupantId.XMLNS) == true;
+		});
 		r.muc.join(r.nick, r.password, res -> switch res {
 			case Result(presence):
 				r.entered = true;
@@ -559,15 +601,23 @@ class Rooms extends Module {
 	/** A message to all occupants: `12:03:41 room <nick> text`, the `room` event **/
 	function receive(r:Room, m:Message) {
 		final nick = Jid.parseResource(m.from) ?? "";
-		final own = nick == r.nick;
+		final own = ownMessage(r.jid, nick, m.properties);
+		final occupant = occupantId(r.jid, m.properties);
 		final delay = m.delay();
+		// a correction (XEP-0308) only of the author's message (shown, by message id), else a new message
+		final replaces = LastMessageCorrection.correction(m);
+		final target = (replaces != null) ? messages.recent.findByMessageId(r.jid, replaces) : null;
+		if (replaces != null && (target == null || !isAuthor(r.jid, target, nick, m.properties)))
+			for (e in m.properties.copy())
+				if (e.name == "replace" && e.is(LastMessageCorrection.XMLNS))
+					m.properties.remove(e);
 		final body = MessageReply.getBody(m) ?? "";
 		final mention = !own && r.nick.length > 0 && body.toLowerCase().contains(r.nick.toLowerCase());
-		Messages.show('<$nick>', own ? null : '${r.jid}/$nick', messages.text(r.jid, m), delay?.date, Term.style(label(r.jid), 2) + ' ',
-			label(r.jid).length + 1);
+		Messages.show('<$nick>' + Messages.corrected(m), own ? null : '${r.jid}/$nick', messages.text(r.jid, m), delay?.date,
+			Term.style(label(r.jid), 2) + ' ', label(r.jid).length + 1);
 		// reactions and replies refer to the id the room gave it
 		final id = StanzaId.getStanzaId(m, r.jid);
-		messages.remember(r.jid, m, id, own, nick);
+		messages.remember(r.jid, m, id, own, nick, occupant);
 		for (f in messages.displayed)
 			f(r.jid, m, own, true);
 		final reply = MessageReply.getReply(m);
@@ -577,6 +627,8 @@ class Rooms extends Module {
 			body: body,
 			id: m.id,
 			stanza_id: id,
+			occupant_id: occupant,
+			replaces: LastMessageCorrection.correction(m),
 			own: own,
 			delayed: delay != null,
 			mention: mention,

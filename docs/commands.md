@@ -50,7 +50,9 @@ The commands of [file transfer](file-transfer) and [scripts](scripts) are on the
 `/react` and `/reply` refer to the messages of the others shown in the chat (`/retract` to your own), also those from `/history`
 and those shown when the chat mode starts. In chat mode the jid can be left out (`/react 👍`, `/reply ^2 yes`).
 Received reactions are shown as `<alice> reacted 👍 to "text"`, replies with a line quoting the message replied to
-(`↪ <you> text`), retractions as `<alice> retracted "text"`.
+(`↪ <you> text`), retractions as `<alice> retracted "text"`, corrections with `✎`.
+In rooms only the author can correct or retract a message: rooms adding occupant ids (XEP-0421) tell the author
+also after a nick change, and nobody taking over the nick can; in other rooms the nick decides.
 
 ```
 /msg alice@example.org Hello Alice!

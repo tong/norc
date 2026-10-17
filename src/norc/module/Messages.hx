@@ -132,7 +132,7 @@ class Messages extends Module {
 		Keeps a message shown in `chat` (bare jid) in `recent`: `id` the id to refer to it (the id of the message if
 		`null`), a correction changes the text of the corrected message.
 	**/
-	public function remember(chat:String, m:Message, ?id:String, own:Bool, ?name:String) {
+	public function remember(chat:String, m:Message, ?id:String, own:Bool, ?name:String, ?occupant:String) {
 		final body = MessageReply.getBody(m);
 		final stanzaId = id != null;
 		final id = id ?? m.id;
@@ -150,7 +150,8 @@ class Messages extends Module {
 			body: body,
 			own: own,
 			messageId: (m.id != id) ? m.id : null,
-			stanzaId: stanzaId
+			stanzaId: stanzaId,
+			occupant: occupant
 		});
 	}
 
@@ -267,7 +268,7 @@ class Messages extends Module {
 	}
 
 	/** ` ✎` for a correction of the last message (XEP-0308) **/
-	static function corrected(m:Message):String
+	public static function corrected(m:Message):String
 		return (LastMessageCorrection.correction(m) != null) ? " ✎" : "";
 
 	/**

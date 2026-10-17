@@ -101,7 +101,7 @@ class History extends Module {
 								to: i.message.to,
 								body: MessageReply.getBody(i.message),
 								date: (i.date != null) ? xmpp.DelayedDelivery.formatStamp(i.date) : null,
-								own: (room != null) ? Jid.parseResource(i.message.from) == rooms.nickIn(room) : Jid.parseBare(i.message.from
+								own: (room != null) ? rooms.ownMessage(room, Jid.parseResource(i.message.from), i.message.properties) : Jid.parseBare(i.message.from
 									?? own) == own,
 								reply_id: MessageReply.getReply(i.message)?.id
 							}
@@ -135,7 +135,16 @@ class History extends Module {
 			if (id == null || body == null)
 				continue;
 			final name = (room != null) ? Jid.parseResource(m.from) ?? "" : own[i] ? "you" : contacts.name(chat);
-			older.push({id: id, from: m.from, name: name, body: body, own: own[i], messageId: (m.id != id) ? m.id : null, stanzaId: room != null});
+			older.push({
+				id: id,
+				from: m.from,
+				name: name,
+				body: body,
+				own: own[i],
+				messageId: (m.id != id) ? m.id : null,
+				stanzaId: room != null,
+				occupant: (room != null) ? rooms.occupantId(room, m.properties) : null
+			});
 		}
 		messages.recent.addOlder(chat, older);
 	}
@@ -145,9 +154,14 @@ class History extends Module {
 		return (room != null) ? item.id : item.message.id ?? item.id;
 
 	/** The ids of the messages retracted in `items`: by their sender, or by the room (moderated) **/
-	static function retractedIds(items:Array<MamItem>, room:Null<String>):Map<String, Bool> {
-		function sender(m:xmpp.Message):String
-			return (room != null) ? Jid.parseResource(m.from ?? "") ?? "" : Jid.parseBare(m.from ?? "").toLowerCase();
+	function retractedIds(items:Array<MamItem>, room:Null<String>):Map<String, Bool> {
+		// in rooms the occupant id (if the room announces them), else the nick
+		function sender(m:xmpp.Message):String {
+			if (room == null)
+				return Jid.parseBare(m.from ?? "").toLowerCase();
+			final occupant = rooms.occupantId(room, m.properties);
+			return (occupant != null) ? '#$occupant' : Jid.parseResource(m.from ?? "") ?? "";
+		}
 		final by = new Map<String, String>();
 		for (i in items) {
 			final r = MessageRetraction.getRetraction(i.message);
