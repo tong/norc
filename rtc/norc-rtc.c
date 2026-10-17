@@ -1387,7 +1387,7 @@ static gpointer read_input(gpointer data) {
   return NULL;
 }
 
-int main(int argc, char *argv[]) {
+static int run(int argc, char *argv[]) {
   GOptionContext *context =
       g_option_context_new("- the media of a norc call, controlled with JSON "
                            "lines (see protocol.md)");
@@ -1420,4 +1420,19 @@ int main(int argc, char *argv[]) {
   }
   g_main_loop_unref(loop);
   return exit_code;
+}
+
+/* On macOS windows (of the received video) need the Cocoa event loop on the main thread: gst_macos_main runs
+ * it there, and `run` in a thread */
+static int run_main(int argc, char **argv, gpointer data) {
+  (void)data;
+  return run(argc, argv);
+}
+
+int main(int argc, char *argv[]) {
+#if defined(__APPLE__) && GST_CHECK_VERSION(1, 22, 0)
+  return gst_macos_main(run_main, argc, argv, NULL);
+#else
+  return run_main(argc, argv, NULL);
+#endif
 }
