@@ -226,7 +226,7 @@ Nodes are subscribed with the full jid, so your other clients get nothing.
 | `/disco info [jid] [node]` | identities and features of an entity (default: your server) |
 | `/disco items [jid] [node]` | items of an entity, e.g. the services of your server |
 | `/lastactivity [jid]` | uptime of a server (default: yours), how long ago an account was online (if its server supports it), or the idle time of a client |
-| `/software <jid>` | software, version and operating system of a client or server; for a contact without resource, of each of its online clients |
+| `/software [jid]` | software, version and operating system of a client or server (default: yours); for a contact without resource, of each of its online clients |
 
 Note: a bare jid (`alice@example.org`) is answered by her server on behalf of the account. To see what a client
 supports, query its full jid (`alice@example.org/phone`).

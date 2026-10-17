@@ -39,10 +39,10 @@ class Discovery extends Module {
 			},
 			{
 				name: "software",
-				args: "<jid>",
-				description: "software and version of a client or server (of each online client of a contact)",
+				args: "[jid]",
+				description: "software and version of a client or server (default: yours; of each online client of a contact)",
 				online: true,
-				run: (args, out) -> software(contacts.jid(args[0]), out)
+				run: (args, out) -> software(target(args[0]), out)
 			},
 			{
 				name: "disco",
