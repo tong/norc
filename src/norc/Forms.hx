@@ -2,6 +2,7 @@ package norc;
 
 import xmpp.DataForm;
 
+using Lambda;
 using StringTools;
 
 /**
@@ -164,6 +165,18 @@ class Forms {
 		}
 		return values;
 	}
+
+	/** `field=value` arguments with short field names (the unique end of a name, e.g. `roomname`) completed **/
+	public static function fullFieldNames(form:DataForm, input:String):String
+		return ~/(^|\s)([^\s=]+)=/g.map(input, re -> {
+			final name = re.matched(2);
+			final matches = [
+				for (f in form.fields)
+					if (f.variable != null && (f.variable.endsWith('_$name') || f.variable.endsWith('#$name'))) f.variable
+			];
+			final known = form.fields.exists(f -> f.variable == name);
+			re.matched(1) + ((!known && matches.length == 1) ? matches[0] : name) + "=";
+		});
 
 	/** The required fields without value, neither in `values` nor in the form **/
 	public static function missing(form:DataForm, values:Map<String, Array<String>>):Array<String>

@@ -719,7 +719,7 @@ class Rooms extends Module {
 				});
 				return;
 			}
-			final changed = try Forms.parseValues(form, fullFieldNames(form, values)) catch (e:String) {
+			final changed = try Forms.parseValues(form, Forms.fullFieldNames(form, values)) catch (e:String) {
 				out.error(e);
 				return;
 			}
@@ -734,18 +734,6 @@ class Rooms extends Module {
 				_ -> out.info('$jid: changed ${[for (k in changed.keys()) k].join(", ")}'));
 		});
 	}
-
-	/** `field=value` arguments with short field names (the unique end of a name, e.g. `roomname`) completed **/
-	static function fullFieldNames(form:DataForm, input:String):String
-		return ~/(^|\s)([^\s=]+)=/g.map(input, re -> {
-			final name = re.matched(2);
-			final matches = [
-				for (f in form.fields)
-					if (f.variable != null && (f.variable.endsWith('_$name') || f.variable.endsWith('#$name'))) f.variable
-			];
-			final known = form.fields.exists(f -> f.variable == name);
-			re.matched(1) + ((!known && matches.length == 1) ? matches[0] : name) + "=";
-		});
 
 	/** The fields of the last configuration form, to complete `field=` **/
 	function completeConfig(arg:String):Array<String> {

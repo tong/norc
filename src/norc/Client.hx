@@ -19,6 +19,7 @@ import norc.module.InlineImages;
 import norc.module.JingleSessions;
 import norc.module.Messages;
 import norc.module.Moods;
+import norc.module.Nodes;
 import norc.module.Pings;
 import norc.module.Profile;
 import norc.module.Reactions;
@@ -235,6 +236,7 @@ class Client {
 			{name: "time", create: () -> new Time(context, contacts, account.entityTime == true)},
 			{name: "ping", create: () -> new Pings(context, contacts)},
 			{name: "adhoc", create: () -> new AdHoc(context, contacts)},
+			{name: "pubsub", create: () -> new Nodes(context, contacts)},
 			{name: "blocking", create: () -> new Blocking(context, contacts)}
 		];
 		modules = [contacts, messages, server];

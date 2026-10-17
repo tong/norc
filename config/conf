@@ -120,7 +120,7 @@
 
 # Modules not loaded, separated by commas: their commands, the features other clients see and the handling of their
 # stanzas are left out. rooms, history, carbons, receipts, chat-states, profile, moods, tunes, corrections, reactions,
-# replies, retractions, avatars, attention, time, ping, adhoc, blocking, file-transfers, calls, upload, images
+# replies, retractions, avatars, attention, time, ping, adhoc, pubsub, blocking, file-transfers, calls, upload, images
 # disable_modules = calls, tunes
 
 # Accept attention requests (/attention) of contacts: they ring the terminal bell.

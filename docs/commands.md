@@ -230,3 +230,34 @@ Nodes are subscribed with the full jid, so your other clients get nothing.
 
 Note: a bare jid (`alice@example.org`) is answered by her server on behalf of the account. To see what a client
 supports, query its full jid (`alice@example.org/phone`).
+
+## Publish-subscribe nodes
+
+What your account and your clients publish (personal eventing, PEP): avatar, nickname, tune, mood, bookmarks, the
+keys of encryption (OMEMO), …; also the nodes of a contact or of a pubsub service (`pubsub.example.org`). The
+service is the last argument, without it your own account.
+
+| Command | Description |
+|---|---|
+| `/pubsub nodes [service]` | the nodes: who can read them (for your own: the access model, `open` is anybody), their number of items, what they are for |
+| `/pubsub items <node> [service]` | the items of a node (at most 50, shortened on the terminal; complete in the data of the API) |
+| `/pubsub config <node> [service] [field=value...]` | the configuration of a node (as its owner), or change it (short names work: `access_model=presence`) |
+| `/pubsub publish <node> [service] <xml...>` | publish an item: `<item id="…">payload</item>`, or the payload alone (the service gives it an id) |
+| `/pubsub access <node> [service]` | who may read or publish (as owner): owner, publishers, members (may read a `whitelist` node), outcasts |
+| `/pubsub access <node> <jid> <affiliation> [service]` | change it: `owner`, `publisher`, `publish-only`, `member`, `none`, `outcast` |
+| `/pubsub subscribers <node> [service]` | the subscribers (as owner); your PEP nodes have none: clients of contacts get them through your presence |
+| `/pubsub subscribers <node> <jid> none\|subscribed [service]` | end a subscription (a full jid: of one client), or approve a pending one |
+| `/pubsub retract <node> <id> [service]` | delete an item |
+| `/pubsub purge <node> [service]` | delete all items of a node |
+| `/pubsub delete <node> [service]` | delete a node with its items |
+
+Nodes your other clients rely on (bookmarks, OMEMO devices and keys, OpenPGP keys, avatar, profile, displayed
+sync) of your own account are deleted, purged, retracted from or changed only with `--force` at the end: e.g. the
+keys of a device you no longer use, `/pubsub delete eu.siacs.conversations.axolotl.bundles:1234 --force`.
+
+```
+/pubsub nodes                                  your nodes and who can read them
+/pubsub config http://jabber.org/protocol/tune access_model=roster
+/pubsub access mynode alice@example.org member pubsub.example.org   alice may read the whitelist node
+echo '<entry xmlns="urn:example">hi</entry>' | norc ctl -s pubsub publish urn:example
+```
