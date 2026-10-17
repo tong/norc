@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # norc script: publish the music you are listening to (/tune, XEP-0118), from any MPRIS player
-# (mpv, Spotify, Firefox, …) via playerctl.
+# (mpv with the plugin mpv-mpris, Spotify, Firefox, …) via playerctl.
 #
 # Started by norc (enable it with `chmod +x`): stdout sends commands to norc, stdin receives the replies and
 # events (JSON lines). A playing track is published with artist, title, album and length; paused or stopped
