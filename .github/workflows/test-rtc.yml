@@ -1,0 +1,28 @@
+name: test-rtc
+
+# Builds and tests norc-rtc (the media of calls) when it changes: otherwise only the release workflow builds it
+on:
+  push:
+    paths:
+      - 'rtc/**'
+      - 'Makefile'
+      - '.github/workflows/test-rtc.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install GStreamer
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgstreamer-plugins-bad1.0-dev libjson-glib-dev \
+            gstreamer1.0-plugins-bad gstreamer1.0-plugins-good gstreamer1.0-nice
+
+      # with test signals: two norc-rtc connect to each other and receive the media of the other
+      - name: Build and test norc-rtc
+        run: |
+          make norc-rtc
+          python3 rtc/loopback.py --seconds 0 ./norc-rtc
+          python3 rtc/loopback.py --video --seconds 0 ./norc-rtc
