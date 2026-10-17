@@ -114,6 +114,11 @@ class Console {
 			description: "write the input line in your text editor ($VISUAL, $EDITOR), line breaks as \\n (also Ctrl-X Ctrl-E)",
 			run: (args, out) -> out.error("/edit: only on a terminal (-i)")
 		});
+		commands.register({
+			name: "clear",
+			description: "clear the screen and its scrollback (Ctrl-L: the screen only)",
+			run: (_, out) -> if (editor != null) editor.clear() else out.error("/clear: only on a terminal (-i)")
+		});
 		editor = LineEditor.start(prompts.normal, historyPath);
 		Term.editor = editor;
 		if (editor != null) {

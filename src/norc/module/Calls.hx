@@ -456,6 +456,7 @@ class Calls extends Module {
 				c.peer = m.from;
 				c.proposed = null;
 				c.proceeded = true;
+				connecting(c);
 				connect(c);
 			case reject if (!c.incoming && c.proposed != null):
 				finish(c, (jmi.reason?.condition == busy) ? '${name(c)} is busy' : '${name(c)} declined');
@@ -517,7 +518,7 @@ class Calls extends Module {
 		if (options.record)
 			c.record = recordPath(c, out);
 		c.out = out;
-		c.state = Connecting;
+		connecting(c);
 		if (c.session == null) {
 			// proposed by message: accepted, the caller requests the session
 			c.proceeded = true;
@@ -799,7 +800,7 @@ class Calls extends Module {
 		c.session = session;
 		listen(c);
 		session.onAccept = contents -> {
-			c.state = Connecting;
+			connecting(c);
 			// the directions the callee accepted
 			for (media in ["audio", "video"]) {
 				final content = contents.find(content -> JingleRtp.media(content) == media);
@@ -977,6 +978,8 @@ class Calls extends Module {
 	/** The `call` event: `ringing` (incoming), `calling` (outgoing), `connected`, `ended` **/
 	function event(c:Call, state:String, ?values:haxe.DynamicAccess<Dynamic>) {
 		final v = values ?? {};
+		// the peer can change (the client answering a call proposed to all): the id identifies the call
+		v.set("id", c.id);
 		v.set("from", c.peer);
 		v.set("name", name(c));
 		v.set("state", state);
@@ -986,6 +989,14 @@ class Calls extends Module {
 		v.set("incoming", c.incoming);
 		v.set("recording", c.record);
 		emit("call", [Jid.parseBare(c.peer), state], v);
+	}
+
+	/** The call was accepted: the media is connected (the `connecting` event, once) **/
+	function connecting(c:Call) {
+		if (c.state == Connecting)
+			return;
+		c.state = Connecting;
+		event(c, "connecting");
 	}
 
 	function name(c:Call):String

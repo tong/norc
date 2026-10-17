@@ -193,6 +193,22 @@ class LineEditor {
 		stty(saved);
 	}
 
+	/** Clears the screen and the scrollback (`/clear`, as the shell's `clear`), the input line stays **/
+	public function clear() {
+		mutex.acquire();
+		clearScreen(true);
+		if (active)
+			redraw();
+		mutex.release();
+	}
+
+	/** Clears the screen (with `scrollback` also that, as the shell's `clear`; Ctrl-L: not), holding the lock **/
+	function clearScreen(scrollback:Bool) {
+		write("\x1B[2J" + (scrollback ? "\x1B[3J" : "") + "\x1B[H");
+		// the printed lines are gone
+		rows += screenRows;
+	}
+
 	/** Replaces the prompt, also of the line being read **/
 	public function setPrompt(prompt:String) {
 		mutex.acquire();
@@ -362,9 +378,7 @@ class LineEditor {
 			case 9: // tab
 				completeWord();
 			case 12: // ctrl-l
-				write("\x1B[2J\x1B[H");
-				// the printed lines are gone
-				rows += screenRows;
+				clearScreen(false);
 			case 27: // escape sequence
 				final k = escape(input);
 				if (k != null) {

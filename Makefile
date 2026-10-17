@@ -61,6 +61,11 @@ endif
 STATIC := $(BUILD)/static
 BIN := norc$(EXE)
 
+# The C files (hundreds) compiled in parallel: by default on half of the CPUs (at least one), unless make got -j
+CPUS := $(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)
+JOBS ?= $(shell echo $$(( ($(CPUS) + 1) / 2 )))
+PARALLEL := $(if $(filter -j%,$(MAKEFLAGS)),,-j$(JOBS))
+
 LIBHL_OBJ := $(addprefix $(STATIC)/libhl/,$(addsuffix .o,$(LIBHL_SRC)))
 LIBHL_CFLAGS := -std=c11 -DPCRE2_CODE_UNIT_WIDTH=16 -DPCRE2_STATIC -DHAVE_CONFIG_H -I$(HASHLINK_SRC)/include/pcre
 
@@ -110,7 +115,7 @@ $(STATIC)/hlc.stamp: build.hlc.hxml $(SRC)
 	@touch $@
 
 $(BIN): $(STATIC)/hlc.stamp | $(HASHLINK_SRC)/src/hl.h
-	$(MAKE) $(STATIC)/$(BIN)
+	$(MAKE) $(PARALLEL) $(STATIC)/$(BIN)
 	cp $(STATIC)/$(BIN) $(BIN)
 	strip $(BIN)
 
@@ -130,7 +135,7 @@ build: $(BIN)
 # for building on systems without haxe (e.g. arm64)
 from-c: | $(HASHLINK_SRC)/src/hl.h
 	@test -f out/hlc.json || { echo "no generated C code in out/: run 'haxe build.hlc.hxml' first" >&2; exit 1; }
-	$(MAKE) $(STATIC)/$(BIN)
+	$(MAKE) $(PARALLEL) $(STATIC)/$(BIN)
 	cp $(STATIC)/$(BIN) $(BIN)
 	strip $(BIN)
 
