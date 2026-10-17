@@ -23,7 +23,7 @@ using StringTools;
 **/
 class Upload extends Module {
 	/** Largest file uploaded (bytes), files are read into memory **/
-	static inline var MAX_SIZE = FileTransfers.MAX_SIZE;
+	static inline var MAX_SIZE = 100 * 1024 * 1024;
 
 	final messages:Messages;
 	final contacts:Contacts;

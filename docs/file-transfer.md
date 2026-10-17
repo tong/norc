@@ -18,8 +18,10 @@ Files are sent with Jingle file transfer (XEP-0234), over a direct connection or
 /file accept 1 ~/Documents
 ```
 
-Received files never overwrite existing ones (`name (1).ext`). Files are kept in memory during the transfer,
-the size is limited to 100 MB. A direct connection shows your local address to the peer.
+Received files never overwrite existing ones (`name (1).ext`). Files of any size: they are read
+and written as they are transferred, not kept in memory. A file sent is read once before it is offered, for its size
+and hash (a few seconds for large files); a file received is written to `<name>.part`, renamed once its hash is
+verified (removed if the transfer fails). A direct connection shows your local address to the peer.
 
 ## Images in messages
 

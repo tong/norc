@@ -8,6 +8,7 @@ import norc.Output;
 import norc.Term;
 import sys.FileSystem;
 import sys.io.File;
+import sys.thread.Thread;
 import xmpp.Jid;
 import xmpp.Jingle;
 import xmpp.JingleFileTransfer;
@@ -38,7 +39,7 @@ private typedef Transfer = {
 	var state:TransferState;
 
 	/** Bytes transferred **/
-	var done:Int;
+	var done:Float;
 
 	/** Where status messages go: of the command which started or accepted the transfer **/
 	var out:Output;
@@ -53,7 +54,8 @@ private typedef Transfer = {
 
 	Direct connections offer the local address to the peer: only to contacts files are sent to or accepted from.
 
-	Files are kept in memory while they are transferred, so their size is limited (`MAX_SIZE`).
+	Files of any size: they are read and written as they are transferred, never kept in memory. A file sent is read
+	once before (in a thread) for its size and hash; a file received is written to `<file>.part`, renamed once verified.
 **/
 class FileTransfers extends Module {
 	static final FEATURES = [
@@ -65,8 +67,6 @@ class FileTransfers extends Module {
 		"urn:xmpp:hash-function-text-names:sha-256"
 	];
 
-	/** Largest file sent or accepted (bytes) **/
-	public static inline var MAX_SIZE = 100 * 1024 * 1024;
 
 	final contacts:Contacts;
 	final sessions:JingleSessions;
@@ -163,29 +163,66 @@ class FileTransfers extends Module {
 	**/
 	function send(input:String, path:String, out:Output) {
 		final jid = contacts.resolve(input, out);
-		final file = (jid != null) ? Files.find(path, MAX_SIZE, out) : null;
+		final file = (jid != null) ? Files.find(path, null, out) : null;
 		if (file == null)
 			return;
 		// done once offered (or failed): a receiver is looked for first
 		final done = out.wait();
 		findReceiver(jid, out, peer -> {
 			if (peer != null)
-				offerFile(peer, file.path, out);
-			done();
+				offerFile(peer, file.path, out, done);
+			else
+				done();
 		});
 	}
 
-	/** Offers the file at `path` to `peer` (a full jid) **/
-	function offerFile(peer:String, path:String, out:Output) {
-		final data = try File.getBytes(path) catch (e) {
-			out.error('cannot read $path: $e');
-			return;
-		}
+	/**
+		Offers the file at `path` to `peer` (a full jid): reads it first in a thread for its size and hash (seconds for
+		large files), then sends it as it is read. `done` once offered, or failed.
+	**/
+	function offerFile(peer:String, path:String, out:Output, done:() -> Void) {
+		Thread.create(() -> {
+			var error:Null<String> = null;
+			var size = 0.0;
+			var hash = "";
+			try {
+				final input = File.read(path, true);
+				final digest = xmpp.Digest.create("sha-256");
+				final buf = haxe.io.Bytes.alloc(65536);
+				var len = 0;
+				try {
+					while ((len = JingleIBB.readBlock(input, buf)) > 0)
+						digest.update(buf, 0, len);
+				} catch (e) {
+					input.close();
+					throw e;
+				}
+				input.close();
+				// counted: the size of stat is 32-bit on HashLink
+				size = digest.length;
+				hash = haxe.crypto.Base64.encode(digest.finish());
+			} catch (e)
+				error = Std.string(e);
+			context.post(() -> {
+				if (error != null)
+					out.error('cannot read $path: $error');
+				else
+					offerData(peer, path, size, hash, out);
+				done();
+			});
+		});
+	}
+
+	/** Offers the file at `path` with its `size` and sha-256 `hash` (base64) to `peer` **/
+	function offerData(peer:String, path:String, size:Float, hash:String, out:Output) {
 		final file:JingleFile = {
 			name: Path.withoutDirectory(path),
-			size: data.length,
-			date: xmpp.DelayedDelivery.formatStamp(FileSystem.stat(path).mtime)
+			size: size,
+			date: xmpp.DelayedDelivery.formatStamp(FileSystem.stat(path).mtime),
+			hashes: [{algo: "sha-256", value: hash}]
 		};
+		// read as it is sent (again after a fallback to in-band bytestreams)
+		final data:JingleFileSource = {size: size, open: () -> File.read(path, true)};
 		final t:Transfer = {
 			id: nextId++,
 			session: null,
@@ -215,7 +252,7 @@ class FileTransfers extends Module {
 						to: peer,
 						path: path,
 						file: file.name,
-						size: data.length
+						size: size
 					});
 				case JingleReason.decline:
 					out.info('#${t.id} $peer declined ${file.name}');
@@ -246,19 +283,31 @@ class FileTransfers extends Module {
 		final t = offer(id, out);
 		if (t == null)
 			return;
-		if (t.file.size != null && t.file.size > MAX_SIZE) {
-			out.error('#${t.id} file too large: ${Term.size(t.file.size)} (max ${Term.size(MAX_SIZE)})');
-			return;
-		}
 		final target = try destination(t.file, path) catch (e) {
 			out.error(Std.string(e));
 			return;
 		}
+		// written as it arrives, renamed once verified
+		final part = '$target.part';
+		final output = try File.write(part, true) catch (e) {
+			out.error('#${t.id} cannot write $part: $e');
+			return;
+		}
+		function discard() {
+			try
+				output.close()
+			catch (_) {}
+			try
+				FileSystem.deleteFile(part)
+			catch (_) {}
+		}
 		t.state = Active;
 		t.out = out;
 		out.data({id: t.id, path: target}, () -> out.info('#${t.id} receiving ${t.file.name ?? "file"} → $target'));
-		JingleFileTransfer.receiveFile(t.session, {s5b: s5b, onProgress: received -> progress(t, received)}, (reason, data) -> {
+		JingleFileTransfer.receiveFile(t.session, {s5b: s5b, onProgress: received -> progress(t, received), output: output}, (reason, _) -> {
 			transfers.remove(t);
+			if (reason.condition != JingleReason.success)
+				discard();
 			if (t.aborted == true) {
 				aborted(t);
 				return;
@@ -268,16 +317,18 @@ class FileTransfers extends Module {
 				failed(t, "cancel");
 				return;
 			}
-			if (reason.condition != JingleReason.success || data == null) {
+			if (reason.condition != JingleReason.success) {
 				out.error('#${t.id} receiving ${t.file.name ?? "file"} failed: ${formatReason(reason)}');
 				failed(t, formatReason(reason));
 				return;
 			}
 			try {
-				File.saveBytes(target, data);
+				output.close();
+				FileSystem.rename(part, target);
 				out.info('#${t.id} saved $target');
 				emit("file-received", [Jid.parseBare(t.peer), target], {from: t.peer, path: target});
 			} catch (e) {
+				discard();
 				out.error('#${t.id} cannot write $target: $e');
 				failed(t, 'cannot write $target: $e');
 			}
@@ -491,7 +542,7 @@ class FileTransfers extends Module {
 		}
 	}
 
-	function progress(t:Transfer, bytes:Int) {
+	function progress(t:Transfer, bytes:Float) {
 		final size = t.file.size;
 		if (size == null || size <= 0)
 			return;

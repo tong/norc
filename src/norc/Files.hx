@@ -42,16 +42,17 @@ class Files {
 
 	/**
 		The file at `path` (`~/` is the home directory, see `resolve`) with its size, if it exists and has at most `max`
-		bytes; else `null`, with an error written to `out`.
+		bytes (`null`: any size; the size of files over 2 GB is wrong, HashLink has it as 32-bit integer); else `null`,
+		with an error written to `out`.
 	**/
-	public static function find(path:String, max:Int, out:Output):Null<{path:String, size:Int}> {
+	public static function find(path:String, max:Null<Int>, out:Output):Null<{path:String, size:Int}> {
 		path = resolve(path);
 		if (!FileSystem.exists(path) || FileSystem.isDirectory(path)) {
 			out.error('no such file: $path');
 			return null;
 		}
 		final size = FileSystem.stat(path).size;
-		if (size > max) {
+		if (max != null && size > max) {
 			out.error('file too large: ${Term.size(size)} (max ${Term.size(max)})');
 			return null;
 		}
