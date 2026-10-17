@@ -24,6 +24,10 @@ norc ctl events message call         # print events (JSON lines) until norc quit
 norc ctl -t 60 wait login            # wait for an event (at most 60 seconds), print it
 ```
 
+`norc complete -- <words...>` prints the candidates for the last word of a `norc ctl` command, one per line (nothing
+and exit code 1 without a running norc): the zsh and bash completion use it, `norc ctl msg al<Tab>` completes the
+contacts of the running norc, `norc ctl file share alice ./<Tab>` the files of your current directory.
+
 E.g. in the config of other programs: `on-timeout = norc ctl presence away` (an idle daemon), a key binding for
 `norc ctl calls hangup`.
 
@@ -70,6 +74,12 @@ Requests:
   text of `msg`) gets all remaining arguments, joined with spaces. Without `args`, `cmd` is a command line as in the
   interactive prompt (`"cmd":"msg alice hi there"`).
 - `id`: optional, any JSON value, copied into all replies of the request.
+- `cwd`: optional, the directory of your program: relative paths in the command (`file share alice ./pic.png`,
+  `call alice video clip.webm`) are relative to it, else to the directory of norc. `norc ctl` sends its own.
+- `complete`: instead of `cmd`, a command line to complete as Tab does on the terminal (with `cwd` for files). The
+  reply `complete` has `word` (the end of the line completed), `candidates` (each replacing `word`) and the same in
+  `groups` by kind (subcommands, options, contacts, rooms, files):
+  `{"id":1,"complete":"msg al"}` → `{"type":"complete","id":1,"word":"al","candidates":["alice@example.org"],"groups":[["alice@example.org"]]}`.
 
 Replies:
 

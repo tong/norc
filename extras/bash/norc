@@ -19,6 +19,53 @@ _norc_accounts() {
 	done
 }
 
+# norc ctl: its options, then a command completed by the running norc (norc complete: commands, contacts, rooms,
+# files in the current directory, …)
+_norc_ctl() {
+	# the words after ctl as typed, split on spaces only (jids and nodes contain : and =)
+	local line=${COMP_LINE:0:COMP_POINT}
+	line=${line#* ctl }
+	local -a words opts=()
+	read -ra words <<<"$line"
+	[[ -z $line || $line == *' ' ]] && words+=("")
+	# the account and config of norc before ctl
+	local i
+	for ((i = 1; i < ${#COMP_WORDS[@]} - 1; i++)); do
+		[[ ${COMP_WORDS[i]} == ctl ]] && break
+		case ${COMP_WORDS[i]} in
+		-a | --account | -c | --config) opts+=("${COMP_WORDS[i]}" "${COMP_WORDS[i + 1]}") ;;
+		esac
+	done
+	# the options of norc ctl
+	i=0
+	while ((i < ${#words[@]} - 1)) && [[ ${words[i]} == -* ]]; do
+		case ${words[i]} in
+		-a | --account | -c | --config)
+			opts+=("${words[i]}" "${words[i + 1]}")
+			((i += 2))
+			;;
+		-t | --timeout | -n | --name) ((i += 2)) ;;
+		*) ((i++)) ;;
+		esac
+	done
+	# the value of an option
+	((i >= ${#words[@]})) && return
+	local cur=${words[${#words[@]} - 1]}
+	if ((i == ${#words[@]} - 1)) && [[ $cur == -* ]]; then
+		COMPREPLY=($(compgen -W "-a --account -c --config --json -t --timeout -s --stdin -l --lines -n --name -h --help" -- "$cur"))
+		return
+	fi
+	local out
+	out=$(norc complete "${opts[@]}" -- "${words[@]:i}" 2>/dev/null) || return
+	[[ -n $out ]] || return
+	mapfile -t COMPREPLY <<<"$out"
+	# readline replaces the text after the last : or = of the word
+	local cut=${cur%"${cur##*[:=]}"}
+	[[ -n $cut ]] && COMPREPLY=("${COMPREPLY[@]#"$cut"}")
+	# a directory: no space after it
+	((${#COMPREPLY[@]} == 1)) && [[ ${COMPREPLY[0]} == */ ]] && compopt -o nospace 2>/dev/null
+}
+
 _norc() {
 	local cur=${COMP_WORDS[COMP_CWORD]} prev=${COMP_WORDS[COMP_CWORD - 1]}
 	COMPREPLY=()
@@ -68,8 +115,13 @@ _norc() {
 		if [[ $cur == -* ]]; then
 			COMPREPLY=($(compgen -W "$options" -- "$cur"))
 		else
-			COMPREPLY=($(compgen -W "account check ctl" -- "$cur"))
+			COMPREPLY=($(compgen -W "account check ctl complete" -- "$cur"))
 		fi
+		return
+	fi
+
+	if [[ $command == ctl ]]; then
+		_norc_ctl
 		return
 	fi
 

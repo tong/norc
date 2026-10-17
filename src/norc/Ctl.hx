@@ -43,7 +43,15 @@ Needs a norc with the socket interface (api = 1 or --api). Examples:
   norc ctl --json contacts
   norc ctl events message call';
 
-	public static function run(args:Array<String>, ?account:String):Int {
+	/** `norc complete`: errors are not shown (they would appear in the shell's completion) **/
+	static var quiet = false;
+
+	/**
+		Runs `norc ctl` with `args`; with `completing` (`norc complete`) the words are a command line to complete:
+		prints the candidates for the last word, one per line (nothing without a running norc).
+	**/
+	public static function run(args:Array<String>, ?account:String, completing = false):Int {
+		quiet = completing;
 		var json = false;
 		var timeout:Null<Float> = null;
 		var stdin = false;
@@ -52,6 +60,11 @@ Needs a norc with the socket interface (api = 1 or --api). Examples:
 		var i = 0;
 		// options before the command
 		while (i < args.length && args[i].startsWith("-")) {
+			// the end of the options: the words follow (e.g. a word being completed starting with -)
+			if (args[i] == "--") {
+				i++;
+				break;
+			}
 			switch args[i] {
 				case "-a", "--account" if (i + 1 < args.length):
 					account = args[++i];
@@ -78,7 +91,7 @@ Needs a norc with the socket interface (api = 1 or --api). Examples:
 			i++;
 		}
 		final words = args.slice(i);
-		if (words.length == 0)
+		if (words.length == 0 && !completing)
 			return fail(USAGE, 2);
 		final name = try (account != null) ? Config.findAccount(account).name : Config.defaultAccount().name catch (e) {
 			// e.g. an account run with --jid: its state directory is named by the jid
@@ -111,6 +124,8 @@ Needs a norc with the socket interface (api = 1 or --api). Examples:
 		if (timeout != null && (words[0] == "events" || words[0] == "wait"))
 			socket.setTimeout(timeout);
 		final code = switch words[0] {
+			case _ if (completing):
+				complete(send, read, words);
 			case "events":
 				follow(read, words.slice(1), false);
 			case "wait" if (words.length == 2):
@@ -124,7 +139,8 @@ Needs a norc with the socket interface (api = 1 or --api). Examples:
 					id: 1,
 					cmd: words[0],
 					args: words.slice(1),
-					text: !json
+					text: !json,
+					cwd: Sys.getCwd()
 				});
 				replies(read, json, 1);
 		}
@@ -190,7 +206,8 @@ Needs a norc with the socket interface (api = 1 or --api). Examples:
 				id: 1,
 				cmd: words[0],
 				args: args.concat([path]),
-				text: !json
+				text: !json,
+				cwd: Sys.getCwd()
 			});
 			final code = replies(read, json, 1);
 			try {
@@ -205,7 +222,8 @@ Needs a norc with the socket interface (api = 1 or --api). Examples:
 				id: id,
 				cmd: words[0],
 				args: args.concat([name == "text" ? Commands.escape(text) : text]),
-				text: !json
+				text: !json,
+				cwd: Sys.getCwd()
 			});
 			return replies(read, json, id);
 		}
@@ -264,6 +282,34 @@ Needs a norc with the socket interface (api = 1 or --api). Examples:
 			}
 		}
 		return code;
+	}
+
+	/**
+		Prints the candidates completing the last of `words` (a command line), one per line: as the shell replaces
+		that word, without the words before it (a parameter taking the rest of the line completes several).
+		Files are completed in the directory of the shell (`cwd`).
+	**/
+	static function complete(send:Dynamic->Void, read:() -> Null<Dynamic>, words:Array<String>):Int {
+		final line = words.join(" ");
+		send({id: 1, complete: line, cwd: Sys.getCwd()});
+		while (true) {
+			final r = read();
+			if (r == null)
+				return 1;
+			if (r.id != 1)
+				continue;
+			if (r.type == "done")
+				return 0;
+			if (r.type != "complete")
+				continue;
+			final word:String = r.word;
+			final first = words.length <= 1;
+			// the command itself: without `/`, also the words of norc ctl
+			final candidates:Array<String> = (r.candidates : Array<String>).concat(first ? ["events", "wait"].filter(w -> w.startsWith(line)) : []);
+			final cut = first ? (word.startsWith("/") ? 1 : 0) : word.lastIndexOf(" ") + 1;
+			for (c in candidates)
+				Sys.println(first && !c.startsWith("/") ? c : c.substr(cut));
+		}
 	}
 
 	/** The extension of a file by its first bytes (`.png`, …), `""` if not known **/
@@ -335,7 +381,8 @@ Needs a norc with the socket interface (api = 1 or --api). Examples:
 	}
 
 	static function fail(msg:String, code = 1):Int {
-		Sys.stderr().writeString(msg + "\n");
+		if (!quiet)
+			Sys.stderr().writeString(msg + "\n");
 		return code;
 	}
 }

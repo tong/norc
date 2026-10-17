@@ -468,7 +468,7 @@ class Commands {
 			return ["~/"];
 		final i = arg.lastIndexOf("/");
 		final dir = arg.substr(0, i + 1);
-		final path = (dir.length == 0) ? "." : Config.expandHome(dir);
+		final path = Files.resolve((dir.length == 0) ? "." : dir);
 		final hidden = arg.substr(i + 1).startsWith(".");
 		final names = try FileSystem.readDirectory(path) catch (_) [];
 		return [

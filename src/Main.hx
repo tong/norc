@@ -10,6 +10,7 @@ private final USAGE = 'Usage: norc [options]
        norc account <command> [options]   (norc account help)
        norc check <domain...> [--json] [--timeout <s>]   what servers offer, e.g. registration (norc check)
        norc ctl <command> [args...]                      run a command in the running norc (norc ctl --help)
+       norc complete [-a <account>] -- <words...>        complete the last word of a norc ctl command (for shells)
 
 Options:
   -a, --account <name>   account to use (config: <config dir>/accounts/<name>)
@@ -58,6 +59,9 @@ function main() {
 		// norc ctl: its own options and the words of a command, as given
 		if (args[i] == "ctl" && positional.length == 0)
 			Sys.exit(norc.Ctl.run(args.slice(i + 1), accountName));
+		// norc complete: the candidates of a command line of norc ctl (for the shell's completion)
+		if (args[i] == "complete" && positional.length == 0)
+			Sys.exit(norc.Ctl.run(args.slice(i + 1), accountName, true));
 		switch args[i] {
 			case "-c", "--config":
 				Config.dir = haxe.io.Path.removeTrailingSlashes(value());

@@ -52,4 +52,6 @@ GStreamer plugins): add `norc\bin` to `PATH`.
 ## Shell completion
 
 zsh: [`extras/zsh/_norc`](https://github.com/tong/norc/blob/main/extras/zsh/_norc), bash: [`extras/bash/norc`](https://github.com/tong/norc/blob/main/extras/bash/norc), installed by
-`make install-completion` (see the comments in the files for manual installation).
+`make install-completion` (see the comments in the files for manual installation). The commands of `norc ctl` are
+completed by the running norc (`norc complete`): its commands, aliases, contacts, rooms, and files of your current
+directory.

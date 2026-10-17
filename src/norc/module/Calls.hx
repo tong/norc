@@ -993,7 +993,7 @@ class Calls extends Module {
 
 	/** The file at `path` (`~/` is the home directory, also a named pipe) to play in a call, `null` with an error if there is none **/
 	static function mediaFile(path:String, out:Output):Null<String> {
-		final file = Config.expandHome(path);
+		final file = Files.resolve(path);
 		if (!FileSystem.exists(file) || FileSystem.isDirectory(file)) {
 			out.error('no such file: $path (options: video, audio, send, receive, record, a file to play)');
 			return null;

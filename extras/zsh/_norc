@@ -22,6 +22,57 @@ _norc_accounts() {
 	_describe -t accounts 'account' accounts
 }
 
+# norc ctl: its options, then a command completed by the running norc (norc complete: commands, contacts, rooms,
+# files in the current directory, …); $words starts with ctl
+_norc_ctl() {
+	local -a opts
+	# the account and config of norc before ctl
+	local v
+	for v in -a --account -c --config; do
+		[[ -n ${opt_args[$v]} ]] && opts+=($v ${opt_args[$v]})
+	done
+	local i=2
+	while (( i < CURRENT )) && [[ $words[i] == -* ]]; do
+		case $words[i] in
+			-a|--account|-c|--config) opts+=($words[i] ${(Q)words[i+1]}); (( i += 2 )) ;;
+			-t|--timeout|-n|--name) (( i += 2 )) ;;
+			*) (( i++ )) ;;
+		esac
+	done
+	# the value of an option
+	if (( i > CURRENT )); then
+		case $words[CURRENT-1] in
+			-a|--account) _norc_accounts ;;
+			-c|--config) _directories ;;
+		esac
+		return
+	fi
+	if (( i == CURRENT )) && [[ $words[CURRENT] == -* ]]; then
+		local -a options
+		options=(
+			'(-a --account)'{-a,--account}'[account of the running norc]'
+			'(-c --config)'{-c,--config}'[config directory]'
+			'--json[the replies as JSON lines]'
+			'(-t --timeout)'{-t,--timeout}'[wait and events: stop after seconds]'
+			'(-s --stdin)'{-s,--stdin}'[the last argument from stdin]'
+			'(-l --lines)'{-l,--lines}'[a text from stdin line by line]'
+			'(-n --name)'{-n,--name}'[the name of the file from stdin]'
+		)
+		_describe -t options 'option' options
+		return
+	fi
+	local -a candidates
+	candidates=(${(f)"$(norc complete $opts -- "${(@Q)words[i,CURRENT]}" 2>/dev/null)"})
+	(( $#candidates )) || return 1
+	# directories without a space after them
+	local -a dirs others
+	dirs=(${(M)candidates:#*/})
+	others=(${candidates:#*/})
+	(( $#dirs )) && compadd -S '' -- $dirs
+	(( $#others )) && compadd -- $others
+	return 0
+}
+
 _norc() {
 	local curcontext=$curcontext state line ret=1
 	typeset -A opt_args
@@ -56,11 +107,15 @@ _norc() {
 				'account:manage accounts'
 				'check:what servers offer before the login, e.g. registration'
 				'ctl:run a command in the running norc (norc ctl --help)'
+				'complete:complete a norc ctl command (for shells)'
 			)
 			_describe -t commands 'command' commands && ret=0
 			;;
 		args)
 			case $line[1] in
+				ctl)
+					_norc_ctl && ret=0
+					;;
 				check)
 					_arguments \
 						'--json[one JSON object per server and line]' \

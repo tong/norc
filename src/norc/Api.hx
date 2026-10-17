@@ -27,7 +27,10 @@ using StringTools;
 
 	Requests: `cmd` is a command (e.g. `contacts add`) with its arguments in `args` (one per parameter, a parameter
 	taking the rest of the line gets the remaining ones), or without `args` a command line as in the REPL (`/` optional).
-	With `"text": true` results are text (`out`) as on the terminal instead of `data`.
+	With `"text": true` results are text (`out`) as on the terminal instead of `data`. `cwd`: the directory of the
+	program, relative paths in the command are relative to it (`Files.cwd`), else to the directory of norc.
+	`{"complete": "msg al"}` completes a command line as Tab on the terminal: `complete` with `word` (the end of the
+	line completed) and `candidates` (replacing it), in `groups` by kind (subcommands, options, contacts, files, …).
 	`id` (any JSON value) is copied into the replies of the request.
 	For use by hand (e.g. with socat), plain lines work too: `auth <token>`, then command lines, optionally prefixed
 	with `@<id> `.
@@ -44,6 +47,10 @@ using StringTools;
 class Api {
 	final post:(() -> Void)->Void;
 	final dispatch:(cmd:String, args:Null<Array<Null<String>>>, out:Output) -> Bool;
+
+	/** Completes a command line (without `/`), as Tab in the terminal; `null` if not set **/
+	public var complete:Null<(line:String) -> Null<Commands.Completed>>;
+
 	final clients = new Array<ApiClient>();
 
 	var server:Null<Socket>;
@@ -159,6 +166,21 @@ class Api {
 		}
 		// "text": true, the text of data results (as on the terminal) instead of the data
 		final out = new RequestOutput(client, Reflect.field(request, "id"), post, Reflect.field(request, "text") == true);
+		final cwd:Dynamic = Reflect.field(request, "cwd");
+		final line:Dynamic = Reflect.field(request, "complete");
+		if (line != null) {
+			if (!Std.isOfType(line, String) || complete == null) {
+				out.error("invalid request: complete must be a command line");
+				out.ran(false);
+				return;
+			}
+			Files.cwd = Std.isOfType(cwd, String) ? cwd : null;
+			final c = try complete(line) catch (_) null;
+			Files.cwd = null;
+			out.completed(c);
+			out.ran(true);
+			return;
+		}
 		final cmd:Dynamic = Reflect.field(request, "cmd");
 		final args:Dynamic = Reflect.field(request, "args");
 		if (!Std.isOfType(cmd, String)) {
@@ -178,11 +200,14 @@ class Api {
 			(a, String)
 			? a : Json.stringify(a)
 		];
+		// relative paths of the command: of the program sending it (resolved while the command starts)
+		Files.cwd = Std.isOfType(cwd, String) ? cwd : null;
 		final ran = try dispatch(cmd, list, out) catch (e) {
 			// a bug in a command must not end the client
 			out.error('internal error: $e');
 			false;
 		}
+		Files.cwd = null;
 		out.ran(ran);
 	}
 
@@ -376,6 +401,15 @@ private class RequestOutput implements Output {
 		});
 		return finish;
 	}
+
+	/** The candidates of a completion (`null`: none) **/
+	public function completed(c:Null<Commands.Completed>)
+		send({
+			type: "complete",
+			word: c?.word ?? "",
+			candidates: c?.candidates ?? [],
+			groups: c?.groups ?? []
+		});
 
 	/** The command returned, `false` if it could not run **/
 	public function ran(ok:Bool) {

@@ -120,6 +120,7 @@ class Client {
 			lastInput = Sys.time();
 			return (args == null) ? commands.run(line, out, false) : commands.call(line, args, out);
 		}, post);
+		api.complete = line -> commands.complete('/' + (line.startsWith("/") ? line.substr(1) : line));
 		final env = ["account" => account.name, "config" => Config.configDir()];
 		if (accountDir != null)
 			env.set("account_dir", accountDir);

@@ -469,7 +469,7 @@ class FileTransfers extends Module {
 		if (name == "" || name == "." || name == "..")
 			name = "file";
 		if (path != null) {
-			path = Config.expandHome(path);
+			path = Files.resolve(path);
 			if (!FileSystem.exists(path) || !FileSystem.isDirectory(path))
 				return unique(path);
 		}

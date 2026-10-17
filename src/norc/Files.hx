@@ -29,11 +29,23 @@ class Files {
 	];
 
 	/**
-		The file at `path` (`~/` is the home directory) with its size, if it exists and has at most `max` bytes;
-		else `null`, with an error written to `out`.
+		The directory of the program a request of the API comes from (its `cwd`) while it runs: relative paths in
+		commands are of that program, not of norc. `null`: the directory of norc (e.g. on the terminal).
+	**/
+	public static var cwd:Null<String>;
+
+	/** A path given in a command: `~/` is the home directory, a relative path is relative to `cwd` (if set) **/
+	public static function resolve(path:String):String {
+		path = Config.expandHome(path);
+		return (cwd != null && !Path.isAbsolute(path)) ? Path.join([cwd, path]) : path;
+	}
+
+	/**
+		The file at `path` (`~/` is the home directory, see `resolve`) with its size, if it exists and has at most `max`
+		bytes; else `null`, with an error written to `out`.
 	**/
 	public static function find(path:String, max:Int, out:Output):Null<{path:String, size:Int}> {
-		path = Config.expandHome(path);
+		path = resolve(path);
 		if (!FileSystem.exists(path) || FileSystem.isDirectory(path)) {
 			out.error('no such file: $path');
 			return null;
