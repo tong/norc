@@ -93,7 +93,7 @@ private typedef Call = {
 	/** Muted media (`audio`, `video`) **/
 	var muted:Array<String>;
 
-	/** A file played instead of the microphone **/
+	/** A file played instead of the microphone, and of the camera if it has video (also a named pipe) **/
 	var ?file:String;
 
 	/** The file of the recording, requested or running **/
@@ -171,7 +171,7 @@ class Calls extends Module {
 			{
 				name: "call",
 				args: "<jid> [options...]",
-				description: "call a contact; options (also before the jid, e.g. for an alias: /call video <jid>): video, audio, send or receive (only one direction), record, a file to play instead of the microphone",
+				description: "call a contact; options (also before the jid, e.g. for an alias: /call video <jid>): video, audio, send or receive (only one direction), record, a file to play instead of the microphone (and camera, if it has video)",
 				online: true,
 				run: (args, out) -> {
 					final line = optionsFirst(args[0], args[1]);
@@ -507,8 +507,8 @@ class Calls extends Module {
 			out.error('nothing left to accept: in this call you can only do ${describeMedia(c)}');
 			return;
 		}
-		if (options.file != null && !audio.sends()) {
-			out.error("the file can't be played: you don't send audio");
+		if (options.file != null && !audio.sends() && !video.sends()) {
+			out.error("the file can't be played: you send nothing");
 			return;
 		}
 		c.audio = audio;
@@ -662,7 +662,7 @@ class Calls extends Module {
 					.concat(c.bundle ? [] : ["--no-bundle"])
 					.concat(['--audio=${c.audio}'])
 					.concat(c.video != none ? ['--video=${c.video}'] : [])
-					.concat(c.file != null ? ["--audio-file", c.file] : [])
+					.concat(c.file != null ? ["--file", c.file] : [])
 					.concat(c.record != null ? ["--record", c.record] : []);
 				c.rtc = new Rtc(helper.concat(options), context.post, msg -> media(c, msg), code -> stopped(c, code));
 			} catch (e) {
@@ -991,8 +991,8 @@ class Calls extends Module {
 	function name(c:Call):String
 		return contacts.name(Jid.parseBare(c.peer));
 
-	/** The file at `path` (`~/` is the home directory) to play in a call, `null` with an error if there is none **/
-	static function audioFile(path:String, out:Output):Null<String> {
+	/** The file at `path` (`~/` is the home directory, also a named pipe) to play in a call, `null` with an error if there is none **/
+	static function mediaFile(path:String, out:Output):Null<String> {
 		final file = Config.expandHome(path);
 		if (!FileSystem.exists(file) || FileSystem.isDirectory(file)) {
 			out.error('no such file: $path (options: video, audio, send, receive, record, a file to play)');
@@ -1078,7 +1078,7 @@ class Calls extends Module {
 			i++;
 		}
 		final path = words.slice(i).join(" ");
-		final file = (path.length > 0) ? audioFile(path, out) : null;
+		final file = (path.length > 0) ? mediaFile(path, out) : null;
 		if (path.length > 0 && file == null)
 			return null;
 		if (file != null && direction == receive) {

@@ -91,9 +91,11 @@ static GOptionEntry options[] = {
      "turn://USER:PASSWORD@HOST:PORT"},
     {"audio-source", 0, 0, G_OPTION_ARG_STRING, &audio_source,
      "Audio source (default autoaudiosrc)", "PIPELINE"},
-    {"audio-file", 0, 0, G_OPTION_ARG_FILENAME, &audio_file,
-     "Play a file (any format GStreamer decodes) instead of the audio source",
+    {"file", 0, 0, G_OPTION_ARG_FILENAME, &audio_file,
+     "Play a file (any format GStreamer decodes, also a named pipe) instead of the microphone, and of the "
+     "camera if it has video",
      "PATH"},
+    {"audio-file", 0, G_OPTION_FLAG_HIDDEN, G_OPTION_ARG_FILENAME, &audio_file, "Same as --file", "PATH"},
     {"audio-sink", 0, 0, G_OPTION_ARG_STRING, &audio_sink,
      "Audio sink (default autoaudiosink)", "PIPELINE"},
     {"video-source", 0, 0, G_OPTION_ARG_STRING, &video_source,
@@ -454,9 +456,11 @@ static void mute(const char *media, gboolean muted) {
 static void fail_with(GstMessage *msg) {
   GError *error = NULL;
   gst_message_parse_error(msg, &error, NULL);
-  const gboolean busy = error->domain == GST_RESOURCE_ERROR && error->code == GST_RESOURCE_ERROR_BUSY;
+  // PipeWire reports a device in use as a stream error with EBUSY
+  const gboolean busy = (error->domain == GST_RESOURCE_ERROR && error->code == GST_RESOURCE_ERROR_BUSY) ||
+                        strstr(error->message, "busy") != NULL;
   fail("%s: %s%s", GST_OBJECT_NAME(msg->src), error->message,
-       busy ? " (used by another program? a PipeWire source, e.g. pipewiresrc, can be shared)" : "");
+       busy ? " (the device is used by another program? a PipeWire source, e.g. pipewiresrc, can be shared)" : "");
   g_error_free(error);
 }
 
@@ -676,20 +680,95 @@ static void print_devices(void) {
 
 /* The pipeline: the own audio (and video) into webrtcbin, Opus (payload 111)
  * and VP8 (96) as browsers use them */
-/* The audio source playing `audio_file`: at the speed it plays (a file is read
- * as fast as possible), its path quoted for the pipeline description */
-static gchar *file_source(void) {
-  GString *path = g_string_new(NULL);
-  for (const char *c = audio_file; *c; c++) {
-    if (*c == '"' || *c == '\\')
-      g_string_append_c(path, '\\');
-    g_string_append_c(path, *c);
+/* The source of `slot` (file-audio, file-video) without media of the file: the microphone or camera */
+static void file_fallback(const char *slot) {
+  GstElement *element = gst_bin_get_by_name(GST_BIN(pipeline), slot);
+  if (element == NULL)
+    return;
+  GstPad *sinkpad = gst_element_get_static_pad(element, "sink");
+  const gboolean linked = gst_pad_is_linked(sinkpad);
+  gst_object_unref(sinkpad);
+  if (linked) {
+    gst_object_unref(element);
+    return;
   }
-  gchar *source = g_strdup_printf("filesrc location=\"%s\" ! decodebin ! "
-                                  "audioconvert ! identity sync=true",
-                                  path->str);
-  g_string_free(path, TRUE);
-  return source;
+  const gboolean is_audio = g_str_equal(slot, "file-audio");
+  const char *device = is_audio ? microphone : camera;
+  GstElement *source = NULL;
+  if (device != NULL && !test)
+    source = device_element(is_audio ? "Audio/Source" : "Video/Source", device, is_audio ? "microphone" : "camera");
+  else {
+    const char *desc = is_audio ? (test ? "audiotestsrc is-live=true wave=sine volume=0.2"
+                                        : audio_source ? audio_source : "autoaudiosrc")
+                                : (test ? "videotestsrc is-live=true pattern=ball ! video/x-raw,width=320,height=240"
+                                        : video_source ? video_source : "autovideosrc");
+    GError *error = NULL;
+    // a bin can't end in caps (video/x-raw,…)
+    gchar *bin = g_strdup_printf("%s ! identity", desc);
+    source = gst_parse_bin_from_description(bin, TRUE, &error);
+    g_free(bin);
+    if (error != NULL) {
+      fail("cannot create the %s: %s", is_audio ? "audio source" : "video source", error->message);
+      g_error_free(error);
+      gst_clear_object(&source);
+    }
+  }
+  if (source != NULL) {
+    gst_bin_add(GST_BIN(pipeline), source);
+    if (gst_element_link(source, element))
+      gst_element_sync_state_with_parent(source);
+    else
+      fail("cannot use the %s", is_audio ? "microphone" : "camera");
+  }
+  gst_object_unref(element);
+}
+
+/* All streams of the file decoded: the media sent and not in the file from the microphone or camera */
+static gboolean on_file_complete(gpointer user_data) {
+  file_fallback("file-audio");
+  file_fallback("file-video");
+  write_message(message("ready"));
+  return G_SOURCE_REMOVE;
+}
+
+static void on_file_pads(GstElement *decodebin, gpointer user_data) {
+  g_main_context_invoke(NULL, on_file_complete, NULL);
+}
+
+/* A decoded stream of the file: to the sent audio or video, else discarded (e.g. a second audio track) */
+static void on_file_decoded(GstElement *decodebin, GstPad *pad, gpointer user_data) {
+  GstCaps *caps = gst_pad_get_current_caps(pad);
+  if (caps == NULL)
+    caps = gst_pad_query_caps(pad, NULL);
+  const char *name = gst_structure_get_name(gst_caps_get_structure(caps, 0));
+  const char *slot = g_str_has_prefix(name, "audio/") ? "file-audio" : g_str_has_prefix(name, "video/") ? "file-video" : NULL;
+  gst_caps_unref(caps);
+  GstElement *element = (slot != NULL) ? gst_bin_get_by_name(GST_BIN(pipeline), slot) : NULL;
+  GstPad *sinkpad = (element != NULL) ? gst_element_get_static_pad(element, "sink") : NULL;
+  if (sinkpad != NULL && !gst_pad_is_linked(sinkpad) && gst_pad_link(pad, sinkpad) == GST_PAD_LINK_OK) {
+    gst_object_unref(sinkpad);
+    gst_object_unref(element);
+    return;
+  }
+  gst_clear_object(&sinkpad);
+  gst_clear_object(&element);
+  GstElement *sink = gst_element_factory_make("fakesink", NULL);
+  gst_bin_add(GST_BIN(pipeline), sink);
+  gst_element_sync_state_with_parent(sink);
+  GstPad *fake = gst_element_get_static_pad(sink, "sink");
+  gst_pad_link(pad, fake);
+  gst_object_unref(fake);
+}
+
+/* The file `audio_file` decoded into the sent audio and video (`file-audio`, `file-video` of the pipeline) */
+static void add_file(void) {
+  GstElement *src = gst_element_factory_make("filesrc", NULL);
+  GstElement *decodebin = gst_element_factory_make("decodebin", NULL);
+  g_object_set(src, "location", audio_file, NULL);
+  g_signal_connect(decodebin, "pad-added", G_CALLBACK(on_file_decoded), NULL);
+  g_signal_connect(decodebin, "no-more-pads", G_CALLBACK(on_file_pads), NULL);
+  gst_bin_add_many(GST_BIN(pipeline), src, decodebin, NULL);
+  gst_element_link(src, decodebin);
 }
 
 static gboolean start(void) {
@@ -697,7 +776,9 @@ static gboolean start(void) {
     fail("no media (--audio none without --video)");
     return FALSE;
   }
-  gchar *file = (audio_file != NULL) ? file_source() : NULL;
+  // a file: decoded into these (add_file), at the speed it plays (a file is read as fast as possible)
+  const char *file_audio = audio_file ? "identity name=file-audio ! audioconvert ! identity sync=true" : NULL;
+  const char *file_video = audio_file ? "identity name=file-video ! videoconvert ! identity sync=true" : NULL;
   // echo cancellation: of the sent audio, with the received audio played
   const gboolean echo = echo_cancel && sends(audio) && (audio == BOTH);
   gchar *dsp = (echo_cancel && sends(audio))
@@ -712,7 +793,6 @@ static gboolean start(void) {
     fail("invalid video size: %s (e.g. 1280x720)", video_size);
     g_free(opus);
     g_free(dsp);
-    g_free(file);
     return FALSE;
   }
   GString *scale = g_string_new("");
@@ -737,14 +817,13 @@ static gboolean start(void) {
       "valve name=audio-send ! tee name=tap-own-audio allow-not-linked=true ! opusenc %s ! rtpopuspay pt=111 "
       "! application/x-rtp,media=audio,encoding-name=OPUS,payload=111,encoding-params=(string)2 ! "
       "webrtc. ",
-      file           ? file
+      file_audio     ? file_audio
       : test         ? "audiotestsrc is-live=true wave=sine volume=0.2"
       : microphone   ? "identity name=microphone"
       : audio_source ? audio_source
                      : "autoaudiosrc",
       dsp ? dsp : "", opus);
   g_free(opus);
-  g_free(file);
   g_free(dsp);
   // the played audio for the echo cancellation, the received audio is linked to it
   if (echo)
@@ -762,7 +841,8 @@ static gboolean start(void) {
         "keyframe-max-dist=60 ! tee name=tap-own-video allow-not-linked=true ! rtpvp8pay pt=96 "
         "! application/x-rtp,media=video,encoding-name=VP8,payload=96 ! "
         "webrtc. ",
-        test ? "videotestsrc is-live=true pattern=ball ! "
+        file_video ? file_video
+        : test ? "videotestsrc is-live=true pattern=ball ! "
                "video/x-raw,width=320,height=240"
         : camera       ? "identity name=camera"
         : video_source ? video_source
@@ -787,6 +867,8 @@ static gboolean start(void) {
     pipeline = gst_pipeline_new(NULL);
     gst_bin_add(GST_BIN(pipeline), parsed);
   }
+  if (audio_file != NULL)
+    add_file();
   if (!test &&
       !((microphone == NULL ||
          link_device("microphone", TRUE, "Audio/Source", microphone, "microphone")) &&
@@ -835,7 +917,9 @@ static gboolean start(void) {
       fail("cannot start the media (audio or video device?)");
     return FALSE;
   }
-  write_message(message("ready"));
+  // with a file: once its streams are linked (on_file_complete), the offer describes them
+  if (audio_file == NULL)
+    write_message(message("ready"));
   if (record_option != NULL)
     request_recording(record_option);
   return TRUE;

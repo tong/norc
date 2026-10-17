@@ -87,7 +87,7 @@ one (`/call alice@example.org/phone`) only this one.
 
 | Command | Description |
 |---|---|
-| `/call <jid> [options...]` | call a contact (audio); options: `video`, `audio`, `send` or `receive` (only one direction, for all media), `record` (see [Recording calls](#recording-calls)), and a file to play instead of your microphone (any audio format, `~/` is the home directory); without resource a client of the contact supporting calls. The options can also come before the jid (`/call video alice`), e.g. for an alias: `alias.videocall = call video` |
+| `/call <jid> [options...]` | call a contact (audio); options: `video`, `audio`, `send` or `receive` (only one direction, for all media), `record` (see [Recording calls](#recording-calls)), and a file to play instead of your microphone, and of your camera if it has video and the call too (any format GStreamer plays, `~/` is the home directory; also a named pipe, see below); without resource a client of the contact supporting calls. The options can also come before the jid (`/call video alice`), e.g. for an alias: `alias.videocall = call video` |
 | `/call accept [#id] [options...]` | accept a call (the only one, if no number is given); options: `audio` (accept a video call without video), `send` or `receive` (only one direction), `record`, a file to play |
 | `/call decline [#id]` | decline a call |
 | `/call hangup [#id]` | end a call, or cancel it while it rings |
@@ -103,6 +103,16 @@ one (`/call alice@example.org/phone`) only this one.
 /call alice send ~/song.ogg      play a file to alice, hear nothing back
 /call accept 1 audio             accept a video call without video
 /call cam video receive record   watch and record a camera
+/call alice video ~/clip.webm    show alice a video (its sound instead of your microphone)
+```
+
+A file without video in a video call sends your camera, a file without audio your microphone. A named pipe
+plays a live stream, e.g. of another program (in a format with a container: Matroska, WebM, Ogg, MPEG-TS):
+
+```sh
+mkfifo /tmp/stream
+ffmpeg -nostdin -i rtsp://camera.local/stream -c:v libvpx -deadline realtime -c:a libopus -f matroska /tmp/stream &
+norc ctl call alice video /tmp/stream
 ```
 
 The other side can only narrow the directions: a call to receive can only be accepted to send.
