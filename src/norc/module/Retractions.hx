@@ -40,7 +40,7 @@ class Retractions extends Module {
 		final commands:Array<Commands.Command> = [
 			{
 				name: "retract",
-				args: "<jid> [message]",
+				args: "<jid> [^n]",
 				description: "retract (delete) your last message to a contact or in a room, for everyone (^2: the one before it); " +
 				"their clients may have kept it",
 				online: true,
@@ -75,7 +75,7 @@ class Retractions extends Module {
 			return;
 		final ref = Recent.reference(text);
 		if (ref.n == 0 || ref.rest.length > 0) {
-			out.error('invalid message: $text (^2: the one before your last)');
+			out.error('not a message number: $text (/retract retracts your last message, /retract ^2 the one before it, …)');
 			return;
 		}
 		final target = messages.recent.last(chat, ref.n, true);

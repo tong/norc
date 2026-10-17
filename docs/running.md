@@ -69,6 +69,7 @@ alice> /chat
 | ← / →, Home / End, Ctrl-A / Ctrl-E | move the cursor |
 | Backspace / Delete | delete before / under the cursor |
 | Ctrl-U / Ctrl-K / Ctrl-W | delete to the start / to the end / the word before the cursor |
+| Shift-Enter, Alt-Enter | a line break in the message (shown as `↵`; sent as a newline, in commands as `\n`). Shift-Enter in terminals with the kitty keyboard protocol (kitty, foot, WezTerm, Ghostty, Alacritty, iTerm2), not in tmux or screen; Alt-Enter in all |
 | Ctrl-L | clear the screen |
 | Ctrl-X Ctrl-E | edit the line in your text editor (`$VISUAL`, `$EDITOR`, else `vi`), see `/edit` |
 | Ctrl-C | clear the line, on an empty line: leave the chat mode, else quit |

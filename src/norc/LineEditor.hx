@@ -15,7 +15,11 @@ using StringTools;
 	Ctrl-C included. Only on Unix terminals (`start` returns `null` otherwise); call `stop` to restore the terminal.
 
 	Keys: Tab (complete), ←/→, Home/End, Backspace/Delete, ↑/↓ history (the lines starting with the text typed), Ctrl-A/E (start/end), Ctrl-U/K (delete to start/end),
-	Ctrl-W (delete word), Ctrl-L (clear screen), Ctrl-C (clear the line; on an empty line `INTERRUPT`), Ctrl-D (quit on an empty line).
+	Ctrl-W (delete word), Ctrl-L (clear screen), Ctrl-C (clear the line; on an empty line `INTERRUPT`), Ctrl-D (quit on an empty line),
+	Shift-Enter or Alt-Enter (a line break: shown as `↵`, the line read has it as `\n`).
+
+	Terminals with the kitty keyboard protocol tell Shift-Enter from Enter once it is switched on: they report
+	keys with Ctrl as `CSI code;modifiers u` then, these are handled as the keys they stand for.
 **/
 /** Where printed text ended on the screen: its row (counted by the editor) and column, at a terminal width **/
 typedef Position = {
@@ -32,6 +36,11 @@ class LineEditor {
 	public static inline var INTERRUPT = "\x03";
 
 	static inline var MAX_HISTORY = 1000;
+
+	/** Switches the kitty keyboard protocol on (pushed: disambiguate escape codes), and off (popped) **/
+	static inline var KEYBOARD_ON = "\x1B[>1u";
+
+	static inline var KEYBOARD_OFF = "\x1B[<u";
 
 	var prompt:String;
 
@@ -105,6 +114,9 @@ class LineEditor {
 	/** Ctrl-X was pressed: Ctrl-E follows for the text editor **/
 	var ctrlX = false;
 
+	/** The kitty keyboard protocol was switched on (disambiguated keys): switched off again when stopping **/
+	var keyboard = false;
+
 	/** The file keeping the history (lines appended), `null` without **/
 	var historyFile:Null<FileOutput>;
 
@@ -131,6 +143,11 @@ class LineEditor {
 		if (queryImages && Sys.getEnv("TMUX") == null && !term.startsWith("screen") && !term.startsWith("tmux"))
 			// and the size of a cell in pixels, e.g. to scale images exactly
 			write("\x1B_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1B\\\x1B[16t");
+		// Shift-Enter told from Enter (terminals without the protocol ignore it), not in multiplexers either
+		if (Sys.getEnv("TMUX") == null && !term.startsWith("screen") && !term.startsWith("tmux")) {
+			write(KEYBOARD_ON);
+			editor.keyboard = true;
+		}
 		if (historyPath != null)
 			try
 				editor.loadHistory(historyPath)
@@ -169,6 +186,9 @@ class LineEditor {
 		active = false;
 		historyFile?.close();
 		historyFile = null;
+		if (keyboard)
+			write(KEYBOARD_OFF);
+		keyboard = false;
 		mutex.release();
 		stty(saved);
 	}
@@ -228,7 +248,7 @@ class LineEditor {
 		}
 		final up = rows - pos.row;
 		// the input line on one row: the cursor is on the row after the printed text
-		final input = Term.displayWidth(prompt) + Term.displayWidth(line.join(""));
+		final input = Term.displayWidth(prompt) + Term.displayWidth(line.join("").replace("\n", " "));
 		final ok = active && !suspended && pos.columns == columns && up >= 1 && up < screenRows && input < columns
 			&& pos.column + Term.displayWidth(text) < columns;
 		// up to the line, the text at its end, down again; the input line is drawn again (the cursor back in it).
@@ -284,7 +304,8 @@ class LineEditor {
 			case -1:
 				return finish(null);
 			case 13, 10: // enter
-				final text = line.join("");
+				// line breaks (Shift-Enter) as in messages
+				final text = line.join("").replace("\n", "\\n");
 				if (text.trim().length > 0 && history[history.length - 1] != text) {
 					history.push(text);
 					if (history.length > MAX_HISTORY)
@@ -345,7 +366,12 @@ class LineEditor {
 				// the printed lines are gone
 				rows += screenRows;
 			case 27: // escape sequence
-				escape(input);
+				final k = escape(input);
+				if (k != null) {
+					// a key reported by the keyboard protocol, e.g. Ctrl-E after Ctrl-X
+					ctrlX = x;
+					return key(k, input);
+				}
 			case _ if (c >= 32):
 				final char = utf8Char(c, input);
 				line.insert(cursor, char);
@@ -356,25 +382,35 @@ class LineEditor {
 		return Continue;
 	}
 
-	function escape(input:haxe.io.Input) {
+	/**
+		Handles an escape sequence (after ESC); returns the code of a key to handle (e.g. 3 for Ctrl-C reported by the
+		keyboard protocol), `null` if done.
+	**/
+	function escape(input:haxe.io.Input):Null<Int> {
 		mutex.release();
 		final c1 = try input.readByte() catch (_:haxe.io.Eof) -1;
+		if (c1 == 13 || c1 == 10) {
+			// Alt-Enter: a line break
+			mutex.acquire();
+			lineBreak();
+			return null;
+		}
 		if (c1 == "_".code) {
 			// an answer of the terminal (APC): to the query of the kitty graphics protocol `i=31;OK`
 			final answer = applicationCommand(input);
 			mutex.acquire();
 			if (answer.startsWith("Gi=31;") && answer.endsWith(";OK"))
 				images = true;
-			return;
+			return null;
 		}
 		if (c1 != "[".code && c1 != "O".code) {
 			mutex.acquire();
-			return;
+			return null;
 		}
 		// CSI parameters (e.g. "3~", "?62;4" of an answer of the terminal) and the final byte
 		var params = "";
 		var c = try input.readByte() catch (_:haxe.io.Eof) -1;
-		while (c >= "0".code && c <= "9".code || c == ";".code || c == "?".code || c == ">".code) {
+		while (c >= "0".code && c <= "9".code || c == ";".code || c == ":".code || c == "?".code || c == ">".code) {
 			params += String.fromCharCode(c);
 			c = try input.readByte() catch (_:haxe.io.Eof) -1;
 		}
@@ -397,6 +433,14 @@ class LineEditor {
 			case ["~".code, "3"]:
 				if (cursor < line.length)
 					line.splice(cursor, 1);
+			case ["u".code, _] if (!params.startsWith("?")):
+				// a key of the keyboard protocol: code;modifiers (`:` adds alternatives and events)
+				final v = params.split(";");
+				return reported(Std.parseInt(v[0].split(":")[0]) ?? 0, Std.parseInt((v[1] ?? "1").split(":")[0]) ?? 1);
+			case ["~".code, _] if (params.startsWith("27;")):
+				// xterm's modifyOtherKeys: 27;modifiers;code
+				final v = params.split(";");
+				return reported(Std.parseInt(v[2] ?? "") ?? 0, Std.parseInt(v[1]) ?? 1);
 			case ["t".code, _] if (params.startsWith("6;")):
 				// the size of a cell (answer of the terminal): 6;height;width
 				final v = params.split(";");
@@ -405,6 +449,30 @@ class LineEditor {
 					cellSize = {width: w, height: h};
 			case _:
 		}
+		return null;
+	}
+
+	/**
+		A key reported with its modifiers (1 + Shift 1, Alt 2, Ctrl 4): Enter with modifiers a line break,
+		Ctrl with a letter its control code, Ctrl or Alt with Backspace deletes the word; `null` if handled or ignored.
+	**/
+	function reported(code:Int, modifiers:Int):Null<Int> {
+		final m = modifiers - 1;
+		return switch code {
+			case 13 if (m > 0):
+				lineBreak();
+				null;
+			case 127 | 8 if (m & 6 != 0): 23;
+			case 13 | 9 | 127 | 8: code;
+			case _ if (m & 4 != 0 && code >= "a".code && code <= "z".code): code - 96;
+			case _: null;
+		}
+	}
+
+	/** Inserts a line break at the cursor **/
+	function lineBreak() {
+		line.insert(cursor, "\n");
+		cursor++;
 	}
 
 	/** The rest of an application program command (after `ESC _`), up to `ESC \` (at most 4096 bytes) **/
@@ -480,6 +548,8 @@ class LineEditor {
 			Sys.command("chmod", ["600", path]);
 			File.saveContent(path, Commands.unescape(text));
 			stty(saved);
+			if (keyboard)
+				write(KEYBOARD_OFF);
 			final editor = Sys.getEnv("VISUAL") ?? Sys.getEnv("EDITOR") ?? "vi";
 			// the editor may have options (e.g. `code --wait`)
 			if (Sys.command("sh", ["-c", editor + ' "$$1" </dev/tty >/dev/tty', "sh", path]) == 0)
@@ -489,6 +559,8 @@ class LineEditor {
 			FileSystem.deleteFile(path)
 		catch (_) {}
 		stty("-icanon -echo -isig min 1 time 0");
+		if (keyboard)
+			write(KEYBOARD_ON);
 		mutex.acquire();
 		suspended = false;
 		mutex.release();
@@ -522,17 +594,21 @@ class LineEditor {
 
 	function finish(text:Null<String>):KeyResult {
 		active = false;
-		write("\r\x1B[K" + ((text != null && (echo == null || echo(text))) ? prompt + line.join("") + "\n" : ""));
+		write("\r\x1B[K" + ((text != null && (echo == null || echo(text))) ? prompt + shown() + "\n" : ""));
 		return Done(text);
 	}
 
 	function redraw() {
-		var s = "\r" + prompt + line.join("") + "\x1B[K";
+		var s = "\r" + prompt + shown() + "\x1B[K";
 		final back = line.length - cursor;
 		if (back > 0)
 			s += '\x1B[${back}D';
 		write(s);
 	}
+
+	/** The input line as shown: line breaks as a dim `↵` (one column, the line stays on one row) **/
+	function shown():String
+		return line.join("").replace("\n", "\x1B[2m↵\x1B[22m");
 
 	/** Reads the rest of a UTF-8 sequence starting with `lead` **/
 	static function utf8Char(lead:Int, input:haxe.io.Input):String {
