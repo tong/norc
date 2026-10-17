@@ -169,6 +169,8 @@ Needs a norc with the socket interface (api = 1 or --api). Examples:
 			else if (r.type == "done")
 				break;
 		}
+		if (commands == null || commands.length == 0)
+			return fail('${words[0]}: unknown command');
 		// the command, or its subcommand named by the next word
 		var command:Dynamic = commands[0];
 		var used = 1;

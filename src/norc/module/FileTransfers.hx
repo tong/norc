@@ -2,7 +2,6 @@ package norc.module;
 
 import haxe.io.Path;
 import norc.Commands;
-import norc.Config;
 import norc.Files;
 import norc.Module;
 import norc.Output;

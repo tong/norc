@@ -122,7 +122,7 @@ class Forms {
 
 	/**
 		The values of `field=value` arguments (`"…"` for values with spaces, a field repeated for several values,
-		`\n` for newlines); booleans as `yes`/`no` (or `1`/`0`, `true`/`false`), options by value or label.
+		`\n` for newlines, `\\` for a backslash, see `Commands.unescape`); booleans as `yes`/`no` (or `1`/`0`, `true`/`false`), options by value or label.
 		Throws a message if a field is unknown or a value invalid.
 	**/
 	public static function parseValues(form:DataForm, input:Null<String>):Map<String, Array<String>> {
@@ -133,7 +133,7 @@ class Forms {
 			if (!re.match(rest))
 				throw 'expected field=value: ${rest.split(" ")[0]}';
 			final name = re.matched(1);
-			var value = (re.matched(3) ?? re.matched(4)).replace("\\n", "\n");
+			var value = Commands.unescape(re.matched(3) ?? re.matched(4));
 			rest = re.matchedRight();
 			final field = form.getField(name);
 			if (field == null || DataForm.fieldType(field) == fixed || DataForm.fieldType(field) == hidden)
