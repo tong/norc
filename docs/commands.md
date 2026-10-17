@@ -160,7 +160,7 @@ side is illegal. The `recording` event (hook `on-recording`) has the file, e.g. 
 
 A room can be given by its jid, or by its local part (`norc`) if you are in only one room with that name.
 In room mode, occupants entering and leaving the room are shown (`norc alice entered`, `norc alice left`,
-`norc alice is now alicia`). Joining a room on the terminal starts the group chat mode (see [Running norc](running-norc)): lines without `/`
+`norc alice is now alicia`). Joining a room on the terminal starts the group chat mode (see [Running norc](running)): lines without `/`
 go to the room, and its commands work without `/room` and the jid: `/subject`, `/who`, `/nick tester`, `/invite bob`,
 `/leave` (there `/nick` changes your nick in the room, not your published nickname); `/chat <room>` or `/room join <room>` returns to a joined room (Tab completes the rooms you are in). Leaving
 the room ends it. Messages to a room go to all its occupants, also `/msg norc@conference.example.org hi`.

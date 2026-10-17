@@ -3,7 +3,7 @@ hooks and a socket interface. One norc process handles one account.
 
 - [Installation](installation)
 - [Configuration](configuration)
-- [Running norc](running-norc)
+- [Running norc](running)
 - [Commands](commands)
 - [Account Management](account-management)
 - [Checking Servers](checking-servers)

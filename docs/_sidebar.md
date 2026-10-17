@@ -2,7 +2,7 @@
 
 - [Installation](installation)
 - [Configuration](configuration)
-- [Running norc](running-norc)
+- [Running norc](running)
 - [Commands](commands)
 - [Account Management](account-management)
 - [Checking Servers](checking-servers)

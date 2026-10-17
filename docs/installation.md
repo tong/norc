@@ -1,4 +1,6 @@
-norc is written in [Haxe](https://haxe.org) and runs on [HashLink](https://hashlink.haxe.org).
+## Build
+
+norc is written in [haxe](https://haxe.org) and runs on [hashlink](https://hashlink.haxe.org).
 It needs the haxelibs [hxmpp](https://github.com/tong/hxmpp) and [sasl](https://github.com/tong/hxsasl).
 
 ```sh
@@ -9,7 +11,7 @@ make norc       # norc: single binary (Linux: static with musl, needs musl-gcc)
 make install    # /usr/local/bin/norc (PREFIX=~/.local for your user)
 ```
 
-`make norc` needs the `hashlink` haxelib (for HashLink/C code), from the submodule:
+`make norc` needs the `hashlink` haxelib (for hashlink/C code), from the submodule:
 `haxelib dev hashlink lib/hashlink/other/haxelib`.
 It compiles HashLink from the submodule `lib/hashlink` into the binary (`HASHLINK_SRC` to use another
 checkout). `make install-completion` installs the zsh or bash completion of your login shell
@@ -30,8 +32,10 @@ and run `make from-c`.
 ## Calls: norc-rtc
 
 The audio and video of calls run in a separate program, `norc-rtc` (C, with GStreamer). It needs GStreamer with
-`webrtcbin`, libnice and json-glib (Arch: `gst-plugins-bad gst-plugins-good libnice json-glib`, Debian/Ubuntu:
-`libgstreamer-plugins-bad1.0-dev gstreamer1.0-plugins-bad gstreamer1.0-plugins-good gstreamer1.0-nice libjson-glib-dev`):
+`webrtcbin`, libnice and json-glib.
+
+* arch: `gst-plugins-bad gst-plugins-good libnice json-glib`
+* debian/ubuntu: `libgstreamer-plugins-bad1.0-dev gstreamer1.0-plugins-bad gstreamer1.0-plugins-good gstreamer1.0-nice libjson-glib-dev`):
 
 ```sh
 make norc-rtc       # then make install installs it next to norc
