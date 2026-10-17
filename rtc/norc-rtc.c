@@ -771,6 +771,15 @@ static void add_file(void) {
   gst_element_link(src, decodebin);
 }
 
+/* GStreamer has the element `name` */
+static gboolean has_element(const char *name) {
+  GstElementFactory *factory = gst_element_factory_find(name);
+  if (factory == NULL)
+    return FALSE;
+  gst_object_unref(factory);
+  return TRUE;
+}
+
 static gboolean start(void) {
   if (audio == NONE && video == NONE) {
     fail("no media (--audio none without --video)");
@@ -779,8 +788,13 @@ static gboolean start(void) {
   // a file: decoded into these (add_file), at the speed it plays (a file is read as fast as possible)
   const char *file_audio = audio_file ? "identity name=file-audio ! audioconvert ! identity sync=true" : NULL;
   const char *file_video = audio_file ? "identity name=file-video ! videoconvert ! identity sync=true" : NULL;
-  // echo cancellation: of the sent audio, with the received audio played
-  const gboolean echo = echo_cancel && sends(audio) && (audio == BOTH);
+  // echo cancellation: of the sent audio, with the received audio played; without it if GStreamer has no webrtcdsp
+  // (gst-plugins-bad built without webrtc-audio-processing, e.g. on macOS)
+  if (echo_cancel && sends(audio) && !has_element("webrtcdsp")) {
+    g_printerr("norc-rtc: no echo cancellation: GStreamer has no webrtcdsp (call_echo_cancel = 0 hides this)\n");
+    echo_cancel = FALSE;
+  }
+  const gboolean echo = echo_cancel && sends(audio) && (audio == BOTH) && has_element("webrtcechoprobe");
   gchar *dsp = (echo_cancel && sends(audio))
                    ? g_strdup_printf("webrtcdsp probe=echo-probe echo-cancel=%s ! "
                                      "audioconvert ! ",
