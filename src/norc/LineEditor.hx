@@ -478,12 +478,12 @@ class LineEditor {
 		try {
 			File.saveContent(path, "");
 			Sys.command("chmod", ["600", path]);
-			File.saveContent(path, text.replace("\\n", "\n"));
+			File.saveContent(path, Commands.unescape(text));
 			stty(saved);
 			final editor = Sys.getEnv("VISUAL") ?? Sys.getEnv("EDITOR") ?? "vi";
 			// the editor may have options (e.g. `code --wait`)
 			if (Sys.command("sh", ["-c", editor + ' "$$1" </dev/tty >/dev/tty', "sh", path]) == 0)
-				result = ~/\n+$/.replace(File.getContent(path), "").replace("\n", "\\n");
+				result = Commands.escape(~/\n+$/.replace(File.getContent(path), ""));
 		} catch (_) {}
 		try
 			FileSystem.deleteFile(path)

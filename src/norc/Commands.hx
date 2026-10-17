@@ -299,9 +299,35 @@ class Commands {
 				+ (entry.command.subcommands != null ? ' (/help ${entry.path.substr(1)} for its subcommands)' : ''));
 			return false;
 		}
+		// line breaks in texts as \n
+		for (i in 0...entry.params.length)
+			if (entry.params[i].name == "text" && args[i] != null)
+				args[i] = unescape(args[i]);
 		command.run(args, out);
 		return true;
 	}
+
+	/**
+		Line breaks for a `text` argument: newlines as `\n`, a `\` before `n`, `\` or a newline doubled.
+		The reverse of `unescape`.
+	**/
+	public static function escape(text:String):String {
+		final b = new StringBuf();
+		for (i in 0...text.length) {
+			final c = text.charCodeAt(i);
+			if (c == "\n".code)
+				b.add("\\n");
+			else if (c == "\\".code && ["n", "\\", "\n"].contains(text.charAt(i + 1)))
+				b.add("\\\\");
+			else
+				b.addChar(c);
+		}
+		return b.toString();
+	}
+
+	/** The text of a `text` argument: `\n` a newline, `\\` a `\`, other backslashes as they are **/
+	public static function unescape(text:String):String
+		return ~/\\(n|\\)/g.map(text, re -> re.matched(1) == "n" ? "\n" : "\\");
 
 	/**
 		Completes the end of `before` (the input up to the cursor): the command, a subcommand or an argument.

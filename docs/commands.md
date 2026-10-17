@@ -15,7 +15,7 @@ The commands of [file transfer](file-transfer) and [scripts](scripts) are on the
 
 | Command | Description |
 |---|---|
-| `/msg <jid> <text...>` | send a message to a jid or contact name (`\n` for a newline) |
+| `/msg <jid> <text...>` | send a message to a jid or contact name (`\n` for a newline, `\\n` for the characters `\n`) |
 | `/history <jid> [count]` | the last messages with a contact (or in a joined room) from the archive of the server, 20 or `count` (at most 100); needs message archiving on the server (MAM, Prosody: `mod_mam`, rooms: `mod_muc_mam`) |
 | `/edit [text...]` | write the input line in your text editor (`$VISUAL`, `$EDITOR`, else `vi`), e.g. a long message: when the editor closes, the text is the input line (line breaks as `\n`), to send with Enter (in chat mode as a message); also Ctrl-X Ctrl-E with the line being typed |
 | `/chat [jid]` | chat mode (interactive): lines without `/` are sent to the contact, `//` sends a line starting with `/`; without jid (or Ctrl-C on an empty line) leave it |

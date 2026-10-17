@@ -27,6 +27,24 @@ norc ctl -t 60 wait login            # wait for an event (at most 60 seconds), p
 E.g. in the config of other programs: `on-timeout = norc ctl presence away` (an idle daemon), a key binding for
 `norc ctl calls hangup`.
 
+### From stdin
+
+With `-s` (`--stdin`), the last argument of the command comes from stdin, e.g. the text of a message, or a file for
+an argument `path` (`file share`, `file send`, `file upload`, `avatar set`). With `-l` (`--lines`), each line is sent
+as it comes, until the end of the input: lines arriving together (e.g. a burst of a log) go in one message, at most
+one message a second.
+
+```sh
+make 2>&1 | tail -20 | norc ctl -s msg alice          # one message, line breaks kept
+tail -f /var/log/app.log | norc ctl -l msg alice
+grim - | norc ctl -s -n screen.png file share alice    # the name of the file (-n), else stdin.png
+pg_dump db | gzip | norc ctl -s file send alice@example.org/laptop
+```
+
+A text is at most 64 KiB (a file for more). A file from stdin is stored in a temporary directory readable only by
+you and removed once norc has read it; without `-n` it is named `stdin` with the extension of its type, recognized
+by its first bytes (`.png`, `.jpg`, `.pdf`, `.webm`, `.txt`, …).
+
 ## Protocol
 
 One JSON object per line, for requests, replies and events. The first request authenticates, then commands follow:

@@ -49,7 +49,7 @@ class Replies extends Module {
 			out.error('invalid message: ${text.split(" ")[0]} (^2: the one before the last)');
 			return;
 		}
-		final body = StringTools.replace(ref.rest, "\\n", "\n");
+		final body = ref.rest;
 		if (StringTools.trim(body).length == 0) {
 			out.error("no text to reply");
 			return;

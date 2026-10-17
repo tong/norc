@@ -80,7 +80,7 @@ class Messages extends Module {
 				args: "<jid> <text...>",
 				description: "send a message to a jid or contact name (\\n for a newline)",
 				online: true,
-				run: (args, out) -> msg(args[0], args[1].replace("\\n", "\n"), out)
+				run: (args, out) -> msg(args[0], args[1], out)
 			}
 		];
 

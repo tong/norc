@@ -39,7 +39,7 @@ class Corrections extends Module {
 				args: "<text...>",
 				description: "correct your last sent message: replace it with text (\\n for a newline)",
 				online: true,
-				run: (args, out) -> correct(StringTools.replace(args[0], "\\n", "\n"), out)
+				run: (args, out) -> correct(args[0], out)
 			}
 		];
 
