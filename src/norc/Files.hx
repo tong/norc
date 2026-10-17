@@ -60,6 +60,33 @@ class Files {
 	}
 
 	/**
+		Reads the file at `path` for its size (counted: stat's is 32-bit on HashLink) and sha-256 (base64), e.g. in a
+		thread; `aborted` stops it (`null` then), `progress` gets the bytes read. Throws if it can't be read.
+	**/
+	public static function hashFile(path:String, ?aborted:() -> Bool, ?progress:Float->Void):Null<{size:Float, hash:String}> {
+		final input = sys.io.File.read(path, true);
+		final digest = xmpp.Digest.create("sha-256");
+		final buf = haxe.io.Bytes.alloc(65536);
+		var len = 0;
+		try {
+			while ((len = xmpp.JingleIBB.readBlock(input, buf)) > 0) {
+				if (aborted != null && aborted()) {
+					input.close();
+					return null;
+				}
+				digest.update(buf, 0, len);
+				if (progress != null)
+					progress(digest.length);
+			}
+		} catch (e) {
+			input.close();
+			throw e;
+		}
+		input.close();
+		return {size: digest.length, hash: haxe.crypto.Base64.encode(digest.finish())};
+	}
+
+	/**
 		The path of program `name`: a path, or a name searched in `PATH` and then next to norc (e.g. unpacked from a
 		release); on Windows also with `.exe`. `null` if there is none.
 	**/

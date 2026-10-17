@@ -166,6 +166,10 @@ class Contacts extends Module {
 	public function contains(bare:String):Bool
 		return find(bare) != null;
 
+	/** The roster groups of a contact (bare jid), none if it is no contact **/
+	public function groups(bare:String):Array<String>
+		return find(bare)?.groups ?? [];
+
 	/** The contact (bare jid) may see the own presence (subscription `from` or `both`) **/
 	public function seesPresence(bare:String):Bool {
 		final item = find(bare);

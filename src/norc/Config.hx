@@ -64,6 +64,12 @@ typedef Account = {
 	/** Aliases of commands (`alias.h = help`): the name without `/`, the command it runs with its first arguments **/
 	var ?aliases:Map<String, String>;
 
+	/** Shared directories (`share.music = ~/Music`, XEP-0329): the name contacts see, the directory **/
+	var ?shares:Map<String, String>;
+
+	/** Who may list and download the shared directories: `roster` (default), `none`, `group:<name>`, jids (`,`) **/
+	var ?shareAccess:String;
+
 	/** Priority of the presence (-128 to 127), none (0) if not set **/
 	var ?priority:Int;
 
@@ -165,6 +171,9 @@ private typedef Key = {
 	`autojoin_bookmarks` (`0`: don't join bookmarked rooms after the login),
 	`priority` (of the presence, -128 to 127),
 	`alias.<name>` (an alias of a command, e.g. `alias.h = help`, `alias.away = presence away`),
+	`share.<name>` (a directory shared with contacts, e.g. `share.music = ~/Music`, see `/file shared`),
+	`share_access` (who may list and download them: `roster` (contacts seeing your presence, the default), `none`,
+	`group:<name>` (a roster group), jids; several separated by `,`),
 	`persistent_command_history` (`0`: the history of the input line is not kept),
 	`chat_history` (messages of the archive shown when the chat mode starts, `0`: none),
 	`prompt` (of the input line, in `"` to keep spaces at the start or end),
@@ -183,6 +192,7 @@ class Config {
 		{name: "port", get: a -> Std.string(a.port), set: (a, v) -> a.port = parsePort(v)},
 		{name: "resource", get: a -> a.resource, set: (a, v) -> a.resource = v},
 		{name: "password_cmd", get: a -> a.passwordCmd, set: (a, v) -> a.passwordCmd = v},
+		{name: "share_access", get: a -> a.shareAccess, set: (a, v) -> a.shareAccess = v},
 		{name: "download_dir", get: a -> (a.downloadDir != null) ? contractHome(a.downloadDir) : null, set: (a, v) -> a.downloadDir = expandHome(v)},
 		{name: "keepalive", get: a -> (a.keepalive != null) ? Std.string(a.keepalive) : null, set: (a, v) -> a.keepalive = parseSeconds(v)},
 		flag("api", a -> a.api, (a, v) -> a.api = v),
@@ -317,7 +327,9 @@ class Config {
 	public static function values(account:Account):Array<{key:String, value:Null<String>}> {
 		final aliases = [for (name => command in account.aliases ?? []) {key: 'alias.$name', value: command}];
 		aliases.sort((a, b) -> Reflect.compare(a.key, b.key));
-		return [for (k in KEYS) {key: k.name, value: k.get(account)}].concat(aliases);
+		final shares = [for (name => dir in account.shares ?? []) {key: 'share.$name', value: contractHome(dir)}];
+		shares.sort((a, b) -> Reflect.compare(a.key, b.key));
+		return [for (k in KEYS) {key: k.name, value: k.get(account)}].concat(aliases).concat(shares);
 	}
 
 	/**
@@ -463,6 +475,14 @@ class Config {
 				if (!~/^[^\s\/]+$/.match(alias) || command.trim().length == 0)
 					throw '$source: invalid alias: $name = $value (alias.<name> = <command>)';
 				(account.aliases ??= new Map()).set(alias, command);
+				continue;
+			}
+			if (name.startsWith("share.")) {
+				// the name is the first part of the paths contacts see
+				final share = name.substr("share.".length);
+				if (!~/^[^\s\/.][^\s\/]*$/.match(share) || value.trim().length == 0)
+					throw '$source: invalid share: $name = $value (share.<name> = <directory>)';
+				(account.shares ??= new Map()).set(share, expandHome(value.trim()));
 				continue;
 			}
 			final key = Lambda.find(KEYS, k -> k.name == name);

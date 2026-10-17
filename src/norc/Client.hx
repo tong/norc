@@ -214,7 +214,10 @@ class Client {
 			console.entered = (jid, out) -> history.recent(jid, account.chatHistory ?? 10, out);
 		// Jingle sessions for file transfers and calls
 		final sessions = (enabled("file-transfers") || enabled("calls")) ? new JingleSessions(context) : null;
-		final fileTransfers = enabled("file-transfers") ? new FileTransfers(context, contacts, sessions, account.downloadDir ?? Config.downloadDir()) : null;
+		// shared directories (share.<name>): their listing, the hashes of their files kept in the state dir
+		final shares = (account.shares != null) ? new Shares(account.shares, account.shareAccess, Config.stateDir(account.name)) : null;
+		final fileTransfers = enabled("file-transfers") ? new FileTransfers(context, contacts, sessions, account.downloadDir ?? Config.downloadDir(),
+			shares) : null;
 		final calls = enabled("calls") ? new Calls(context, messages, contacts, sessions, account) : null;
 		console.counts = () -> {
 			calls: calls?.counts() ?? {active: 0, pending: 0},

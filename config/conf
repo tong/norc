@@ -30,6 +30,11 @@
 # Default: $XDG_DOWNLOAD_DIR or ~/Downloads.
 # download_dir = ~/Downloads
 
+# directories your contacts can browse and download (/file browse, /file get), and who may: roster (contacts seeing
+# your presence), group:<name>, jids, none
+# share.music = ~/Music
+# share_access = roster
+
 # Ping the server after this many seconds without data from it, to detect dead connections
 # (e.g. after a network change); without answer within 30 seconds norc reconnects. 0 disables it.
 # keepalive = 60
