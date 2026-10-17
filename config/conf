@@ -47,6 +47,9 @@
 # Echo cancellation and noise suppression of the microphone in calls; 0 disables it (e.g. with headphones).
 # call_echo_cancel = 1
 
+# A small window with your own video (mirrored) in video calls; 0 disables it.
+# call_self_view = 1
+
 # The sent video: size and frames per second (default: of the camera), bitrates of video and audio in kbit/s
 # (default: of the codecs), e.g. lower on mobile data.
 # call_video_size = 1280x720

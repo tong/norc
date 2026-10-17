@@ -34,7 +34,7 @@ typedef enum { NONE, SEND, RECEIVE, BOTH } Direction;
 
 static Direction audio = BOTH, video = NONE;
 static gboolean test = FALSE, bundle = TRUE, echo_cancel = FALSE,
-                list_devices = FALSE;
+                list_devices = FALSE, self_view = FALSE;
 static gchar *microphone = NULL, *speaker = NULL, *camera = NULL,
              *video_size = NULL;
 static gint video_fps = 0, video_bitrate = 0, audio_bitrate = 0;
@@ -120,6 +120,8 @@ static GOptionEntry options[] = {
      "Bitrate of the sent audio in kbit/s (default: Opus' choice)", "KBPS"},
     {"echo-cancel", 0, 0, G_OPTION_ARG_NONE, &echo_cancel,
      "Echo cancellation and noise suppression of the microphone", NULL},
+    {"self-view", 0, 0, G_OPTION_ARG_NONE, &self_view,
+     "A window with the own video as sent (small, mirrored)", NULL},
     {"no-bundle", 0, G_OPTION_FLAG_REVERSE, G_OPTION_ARG_NONE, &bundle,
      "A connection for each media (the peer doesn't support BUNDLE)", NULL},
     {"test", 0, 0, G_OPTION_ARG_NONE, &test,
@@ -847,10 +849,12 @@ static gboolean start(void) {
         : speaker   ? "identity name=speaker"
         : audio_sink ? audio_sink
                      : "autoaudiosink");
+  // cameras have square pixels: some (e.g. through PipeWire) leave it open, and fixed to 1/2147483647 scaling
+  // (the self view, --video-size) fails; files keep theirs
   if (sends(video))
     g_string_append_printf(
         desc,
-        "%s ! queue ! videoconvert ! %svalve name=video-mute ! valve name=video-send ! "
+        "%s ! queue ! videoconvert ! %s%svalve name=video-mute ! %svalve name=video-send ! "
         "vp8enc deadline=1 %s "
         "keyframe-max-dist=60 ! tee name=tap-own-video allow-not-linked=true ! rtpvp8pay pt=96 "
         "! application/x-rtp,media=video,encoding-name=VP8,payload=96 ! "
@@ -861,7 +865,14 @@ static gboolean start(void) {
         : camera       ? "identity name=camera"
         : video_source ? video_source
                        : "autovideosrc",
-        scale->str, vp8);
+        file_video ? "" : "video/x-raw,pixel-aspect-ratio=1/1 ! ", scale->str, self_view ? "tee name=self-view ! queue ! " : "", vp8);
+  // the own video in a small window, mirrored as in a mirror; it stands still while the video is muted
+  if (sends(video) && self_view)
+    g_string_append_printf(
+        desc,
+        "self-view. ! queue leaky=downstream max-size-buffers=1 ! videoconvert ! videoflip method=horizontal-flip ! "
+        "videoscale ! video/x-raw,width=320,pixel-aspect-ratio=1/1 ! videoconvert ! %s ",
+        test ? "fakesink" : video_sink ? video_sink : "autovideosink");
   g_string_free(scale, TRUE);
   g_free(vp8);
   GError *error = NULL;

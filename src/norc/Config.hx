@@ -116,6 +116,7 @@ typedef Account = {
 
 	/** Echo cancellation and noise suppression of the microphone in calls, `true` if not set **/
 	var ?callEchoCancel:Bool;
+	var ?callSelfView:Bool;
 
 	/** Program for the media of calls with its options, `norc-rtc` if not set **/
 	var ?callHelper:String;
@@ -182,6 +183,7 @@ private typedef Key = {
 	`call_helper` (program for the media of calls, with options),
 	`call_microphone`, `call_speaker`, `call_camera` (devices of calls by name, see `/calls devices`),
 	`call_echo_cancel` (`0`: no echo cancellation and noise suppression in calls),
+	`call_self_view` (`0`: no window with the own video in video calls),
 	`call_video_size` (`1280x720`), `call_video_fps`, `call_video_bitrate`, `call_audio_bitrate` (kbit/s) of the sent media,
 	`call_recording` (`1`: calls can be recorded, `/call record`), `call_record_dir` (the recordings),
 	`stun`, `turn` (servers for calls, `stun://host:port`, `turn://user:password@host:port`, several separated by `,`),
@@ -239,6 +241,7 @@ class Config {
 		{name: "call_video_bitrate", get: a -> number(a.callVideoBitrate), set: (a, v) -> a.callVideoBitrate = positive("call_video_bitrate", v)},
 		{name: "call_audio_bitrate", get: a -> number(a.callAudioBitrate), set: (a, v) -> a.callAudioBitrate = positive("call_audio_bitrate", v)},
 		flag("call_echo_cancel", a -> a.callEchoCancel, (a, v) -> a.callEchoCancel = v),
+		flag("call_self_view", a -> a.callSelfView, (a, v) -> a.callSelfView = v),
 		{
 			name: "stun",
 			get: a -> a.stun,

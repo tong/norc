@@ -51,6 +51,7 @@ An account file overrides any value of `conf`:
 | `autojoin_bookmarks` | `0`: don't join the rooms bookmarked with autojoin after the login (e.g. for a norc used by scripts) | `1` |
 | `call_microphone`, `call_speaker`, `call_camera` | devices of calls: their names, or parts of them (`/calls devices` lists them) | the default devices |
 | `call_echo_cancel` | `0`: no echo cancellation and noise suppression of the microphone in calls | `1` |
+| `call_self_view` | `0`: no window with your own video (small, mirrored) in video calls | `1` |
 | `call_video_size`, `call_video_fps` | size (e.g. `1280x720`) and frames per second of the sent video | of the camera |
 | `call_video_bitrate`, `call_audio_bitrate` | bitrates of the sent video and audio in kbit/s, e.g. lower on mobile data | of the codecs |
 | `stun` | STUN server for calls (`stun://host:port`), in addition to those of your server (XEP-0215) | |

@@ -672,7 +672,7 @@ class Calls extends Module {
 			}
 		});
 
-	/** The options of norc-rtc of the settings (devices, echo cancellation, video size and rate, bitrates) **/
+	/** The options of norc-rtc of the settings (devices, echo cancellation, self view, video size and rate, bitrates) **/
 	function settings():Array<String> {
 		final options = [];
 		for (o in [
@@ -684,6 +684,8 @@ class Calls extends Module {
 				options.push('${o.option}=${o.value}');
 		if (account.callEchoCancel != false)
 			options.push("--echo-cancel");
+		if (account.callSelfView != false)
+			options.push("--self-view");
 		for (o in [
 			{option: "--video-size", value: account.callVideoSize},
 			{option: "--video-fps", value: (account.callVideoFps != null) ? Std.string(account.callVideoFps) : null},

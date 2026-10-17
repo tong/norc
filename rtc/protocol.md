@@ -23,6 +23,7 @@ norc-rtc [--audio=DIRECTION] [--video[=DIRECTION]] [--stun URI] [--turn URI ...]
 | `--echo-cancel` | echo cancellation (of the played audio) and noise suppression of the microphone (`webrtcdsp`; without it if GStreamer has none, as on some macOS installs) |
 | `--audio-file PATH` | play a file instead of the audio source (any format GStreamer decodes, at its speed; silence after its end) |
 | `--video-source`, `--video-sink` | default `autovideosrc`, `autovideosink` |
+| `--self-view` | a small window with the own video as sent (mirrored, at 320 pixels wide), in the video sink; it stands still while the video is muted |
 | `--no-bundle` | a connection for each media, for peers without BUNDLE (e.g. Dino); by default all media share one |
 | `--record PATH` | record the call into a file (WebM), see [Recording](#recording) |
 | `--test` | test signals as sources (a tone, a test picture), received media is discarded |
