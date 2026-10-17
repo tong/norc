@@ -126,6 +126,7 @@ class Client {
 			env.set("account_dir", accountDir);
 		scripts = new Scripts([for (dir in dirs) '$dir/scripts'], api, env, post);
 		commands.registerAll(scripts.commands());
+		commands.registerAll(hooks.commands());
 		commands.registerAll([
 			{
 				name: "presence",

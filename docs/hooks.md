@@ -5,6 +5,9 @@ Files without execute permission are skipped (disabled hooks, enabled with `chmo
 Several hooks for one event: names starting with `on-<event>.` (e.g. `on-message.notify`, `on-message.log`).
 All of them run, started in the order of their names.
 
+`/hooks` lists the files of the hook directories: their event, enabled or disabled, how often they ran and failed
+since the start (with the last error), and files with an unknown event (e.g. a typo: `on-mesage`).
+
 | Hook | Arguments | Environment |
 |---|---|---|
 | `on-message` | from, body | `NORC_FROM` (full jid), `NORC_NAME`, `NORC_BODY`, `NORC_TYPE`, `NORC_DELAYED` (`1` for messages delivered on login), `NORC_CARBON` (`1`: received by another of your clients), `NORC_ID`, `NORC_REPLACES` (a correction: the id of the corrected message), `NORC_REPLY_ID` and `NORC_REPLY_TO` (a reply: the id and author of the message replied to; `NORC_BODY` is without its quote), `NORC_AVATAR` (the file of the contact's avatar, if known: e.g. the icon of a notification) |

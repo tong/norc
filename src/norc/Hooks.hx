@@ -18,6 +18,17 @@ using StringTools;
 	ignored, a failure (exit code other than 0) is reported.
 **/
 class Hooks {
+	/** The events with hooks: those emitted, and the filters of stanzas **/
+	public static final EVENTS = [
+		"message", "sent", "reaction", "retraction", "server", "avatar", "receipt", "chatstate", "nickname", "mood", "tune", "call",
+		"recording", "room", "room-invite", "attention", "presence", "subscribe", "subscription", "roster", "file-offer", "file-received",
+		"file-sent", "file-failed", "share", "share-deleted", "share-invite", "share-resync", "login", "logout", "error", "stanza-send",
+		"stanza-recv"
+	];
+
+	/** Runs and failures of each hook (by path) since the start, with the last error **/
+	final stats = new Map<String, {runs:Int, failures:Int, ?error:String}>();
+
 	/** Directories of hooks, in the order their hooks run **/
 	final dirs:Array<String>;
 
@@ -46,11 +57,13 @@ class Hooks {
 			return;
 		final started = withEnv(environment(event, values), () -> [
 			for (h in hooks) {
+				count(h.path);
 				final proc = try start(h.path, args) catch (e) {
+					failure(h.path, Std.string(e));
 					Term.error('hook ${h.name}: $e');
 					null;
 				}
-				if (proc != null) {name: h.name, proc: proc};
+				if (proc != null) {name: h.name, path: h.path, proc: proc};
 			}
 		]);
 		for (h in started)
@@ -63,7 +76,10 @@ class Hooks {
 				final code = h.proc.exitCode();
 				h.proc.close();
 				if (code != 0)
-					post(() -> Term.error('hook ${h.name} ${failed(code, err)}'));
+					post(() -> {
+						failure(h.path, failed(code, err));
+						Term.error('hook ${h.name} ${failed(code, err)}');
+					});
 			});
 	}
 
@@ -84,7 +100,9 @@ class Hooks {
 			var result:Null<String> = data;
 			for (h in hooks) {
 				final name = h.name;
+				count(h.path);
 				final out = try runFilter(h.path, result).trim() catch (e) {
+					failure(h.path, Std.string(e));
 					Term.error('hook $name: $e');
 					continue;
 				}
@@ -99,6 +117,83 @@ class Hooks {
 				result = out;
 			}
 			result;
+		});
+	}
+
+	function count(path:String) {
+		final s = stats.get(path) ?? {runs: 0, failures: 0};
+		s.runs++;
+		stats.set(path, s);
+	}
+
+	function failure(path:String, error:String) {
+		final s = stats.get(path) ?? {runs: 0, failures: 0};
+		s.failures++;
+		s.error = error;
+		stats.set(path, s);
+	}
+
+	public function commands():Array<Commands.Command>
+		return [
+			{
+				name: "hooks",
+				description: "list the hooks (config dir and account dir hooks/): their event, enabled (executable) or not, "
+				+ "how often they ran and failed since the start",
+				run: (_, out) -> list(out)
+			}
+		];
+
+	/** Lists the files of the hook directories: hooks with their event and state, and files which are no hooks **/
+	function list(out:Output) {
+		final found = [];
+		for (dir in dirs) {
+			if (!FileSystem.exists(dir) || !FileSystem.isDirectory(dir))
+				continue;
+			final enabled = executables(dir);
+			final names = [
+				for (name in FileSystem.readDirectory(dir))
+					if (!name.startsWith(".") && !name.endsWith("~") && !FileSystem.isDirectory('$dir/$name')) name
+			];
+			names.sort(Reflect.compare);
+			for (name in names) {
+				final path = '$dir/$name';
+				// on-<event> or on-<event>.<anything>
+				final event = name.startsWith("on-") ? name.substr(3).split(".")[0] : null;
+				final s = stats.get(path);
+				found.push({
+					dir: dir,
+					name: name,
+					path: path,
+					event: event,
+					known: event != null && EVENTS.contains(event),
+					enabled: enabled.contains(name),
+					runs: s?.runs ?? 0,
+					failures: s?.failures ?? 0,
+					error: s?.error
+				});
+			}
+		}
+		out.data({hooks: found}, () -> {
+			if (found.length == 0) {
+				out.info('no hooks (executables named on-<event> in ${[for (d in dirs) Config.contractHome(d)].join(", ")})');
+				return;
+			}
+			var width = 0;
+			for (h in found)
+				width = Std.int(Math.max(width, h.name.length));
+			var dir = null;
+			for (h in found) {
+				if (h.dir != dir) {
+					dir = h.dir;
+					out.print(Term.style(Config.contractHome(dir), 2));
+				}
+				final state = if (h.event == null) Term.style("not a hook (named on-<event>)", 2)
+				else if (!h.known) Term.style('unknown event ${h.event}', 31)
+				else if (!h.enabled) Term.style("disabled (chmod +x to enable)", 2)
+				else if (h.runs == 0) "enabled"
+				else 'enabled, ran ${h.runs}×' + (h.failures > 0 ? Term.style(', failed ${h.failures}×: ${h.error}', 31) : '');
+				out.print('  ${h.name.rpad(" ", width)}  $state');
+			}
 		});
 	}
 
