@@ -140,16 +140,16 @@
 
 # --- Socket interface for other programs (also: --api) ---
 
-# norc listens on 127.0.0.1 and writes the port and a token to <state dir>/api
-# (~/.local/state/norc/<account>/api), readable only by you. Clients authenticate with the token, then
-# send commands as JSON lines (or as in the REPL). Programs starting norc can use --stdin instead.
+# Off by default. 1: at a Unix socket ($XDG_RUNTIME_DIR/norc/<account>.sock, only you can connect, no token)
+# and over TCP on 127.0.0.1 (a free port, with a token). Or where: socket, tcp, a port, host:port, the path of
+# a socket, several separated by , (e.g. socket,9990). Where it listens, and the token, are written to
+# <state dir>/api (~/.local/state/norc/<account>/api), readable only by you. Clients send commands as JSON
+# lines (or as in the REPL). Programs starting norc can use --stdin instead.
 # api = 0
 
-# Address to listen on. Other addresses make the api reachable over the network, unencrypted: the token
-# can be read from the traffic. Prefer an SSH tunnel to 127.0.0.1.
+# For api = 1: the address and port of TCP. Other addresses make the api reachable over the network,
+# unencrypted: the token can be read from the traffic. Prefer the socket, or an SSH tunnel to 127.0.0.1.
 # api_host = 127.0.0.1
-
-# Port, a free one if not set.
 # api_port = 5280
 
 # --- Aliases of commands ---

@@ -6,6 +6,12 @@ import xmpp.Jid;
 
 using StringTools;
 
+/** Where the socket interface listens: a Unix socket (its path), TCP (host and port, `0`: a free one) **/
+typedef ApiEndpoints = {
+	var ?socket:String;
+	var ?tcp:{host:String, port:Int};
+}
+
 typedef Account = {
 	/** Name of the account (file name of its config, or the bare jid) **/
 	var name:String;
@@ -33,6 +39,15 @@ typedef Account = {
 
 	/** Port of the socket interface, a free port if not set **/
 	var ?apiPort:Int;
+
+	/** Where the socket interface listens (`api = socket,9990`, see `Config.parseApi`), `null`: by the other keys **/
+	var ?apiSpec:String;
+
+	/** The socket interface also at a Unix socket (`<state dir>/api.sock`, where supported), `true` if not set **/
+	var ?apiSocket:Bool;
+
+	/** The socket interface also over TCP (`api_host`, `api_port`, with a token), `true` if not set **/
+	var ?apiTcp:Bool;
 
 	/** Receive copies of the messages of the other clients of the account (Message Carbons), `true` if not set **/
 	var ?carbons:Bool;
@@ -155,7 +170,9 @@ private typedef Key = {
 
 	Keys: `jid`, `host`, `port`, `resource`, `password_cmd`, `download_dir` (`~/` is the home directory),
 	`keepalive` (seconds without data before pinging the server, `0` to disable),
-	`api` (`1`: socket interface for other programs), `api_host`, `api_port`,
+	`api` (`1`: socket interface for other programs, at the Unix socket and over TCP; or where: `socket`, `tcp`, a
+	port, `host:port`, a path of a Unix socket, several separated by `,`, see `parseApi`), `api_host`, `api_port`,
+	`api_socket` and `api_tcp` (`0`: not at the Unix socket, not over TCP) for `api = 1`,
 	`last_activity` (`1`: answer last activity requests with the idle time),
 	`carbons` (`0`: no copies of the messages of your other clients),
 	`chat_states` (`0`: don't send chat states),
@@ -195,8 +212,10 @@ class Config {
 		{name: "share_access", get: a -> a.shareAccess, set: (a, v) -> a.shareAccess = v},
 		{name: "download_dir", get: a -> (a.downloadDir != null) ? contractHome(a.downloadDir) : null, set: (a, v) -> a.downloadDir = expandHome(v)},
 		{name: "keepalive", get: a -> (a.keepalive != null) ? Std.string(a.keepalive) : null, set: (a, v) -> a.keepalive = parseSeconds(v)},
-		flag("api", a -> a.api, (a, v) -> a.api = v),
+		{name: "api", get: a -> a.apiSpec ?? ((a.api == null) ? null : a.api ? "1" : "0"), set: (a, v) -> setApi(a, v)},
 		{name: "api_host", get: a -> a.apiHost, set: (a, v) -> a.apiHost = v},
+		flag("api_socket", a -> a.apiSocket, (a, v) -> a.apiSocket = v),
+		flag("api_tcp", a -> a.apiTcp, (a, v) -> a.apiTcp = v),
 		{name: "api_port", get: a -> (a.apiPort != null) ? Std.string(a.apiPort) : null, set: (a, v) -> a.apiPort = parsePort(v)},
 		flag("last_activity", a -> a.lastActivity, (a, v) -> a.lastActivity = v),
 		flag("carbons", a -> a.carbons, (a, v) -> a.carbons = v),
@@ -274,6 +293,15 @@ class Config {
 
 	public static function stateDir(account:String):String
 		return (windows() ? env("LOCALAPPDATA", "AppData/Local") : env("XDG_STATE_HOME", ".local/state")) + '/norc/$account';
+
+	/**
+		The Unix socket of the socket interface of `account`: `$XDG_RUNTIME_DIR/norc/<account>.sock` (the place of
+		sockets, only the user may access it; paths of sockets are limited to 107 bytes), else `<state dir>/api.sock`.
+	**/
+	public static function socketPath(account:String):String {
+		final runtime = Sys.getEnv("XDG_RUNTIME_DIR");
+		return (runtime != null && runtime.length > 0 && FileSystem.exists(runtime)) ? '$runtime/norc/$account.sock' : '${stateDir(account)}/api.sock';
+	}
 
 	/** Names of the configured accounts **/
 	public static function listAccounts():Array<String> {
@@ -512,6 +540,81 @@ class Config {
 				case _: throw 'invalid $name: $v (1 or 0)';
 			})
 		};
+
+	/** `api = <value>` (also `--api <value>`): `1`, `0`, or where it listens (`parseApi`); throws a message if invalid **/
+	public static function setApi(a:Account, value:String) {
+		switch value.trim().toLowerCase() {
+			case "1", "true", "yes", "on":
+				a.api = true;
+				a.apiSpec = null;
+			case "0", "false", "no", "off":
+				a.api = false;
+				a.apiSpec = null;
+			case _:
+				parseApi(value, a.name ?? "account");
+				a.api = true;
+				a.apiSpec = value.trim();
+		}
+	}
+
+	/** `value` is where the socket interface listens (`--api` takes the next argument then): see `parseApi` **/
+	public static function isApiSpec(value:String):Bool
+		return try {
+			parseApi(value, "account");
+			true;
+		} catch (_)
+			false;
+
+	/**
+		Where the socket interface listens, by `spec` (`api = …`, `--api …`), separated by `,`: `socket` (the Unix
+		socket, `socketPath`), a path (a Unix socket there: with `/`, or starting with `~`), `tcp` (`127.0.0.1`, a free
+		port), a port (`9990`, on `127.0.0.1`), `host:port` (`0.0.0.0:9990`, `[::1]:9990`, port `0`: a free one). At most
+		one Unix socket and one TCP address. Throws a message if invalid.
+	**/
+	public static function parseApi(spec:String, account:String):ApiEndpoints {
+		final e:ApiEndpoints = {};
+		for (part in spec.split(",")) {
+			final w = part.trim();
+			if (w.length == 0)
+				continue;
+			final unix = (w == "socket" || w == "unix") ? socketPath(account) : (w.contains("/") || w.startsWith("~")) ? expandHome(w) : null;
+			if (unix != null) {
+				if (e.socket != null)
+					throw 'invalid api: several Unix sockets: $spec';
+				e.socket = unix;
+				continue;
+			}
+			final tcp = if (w == "tcp") {host: "127.0.0.1", port: 0} else if (~/^[0-9]+$/.match(w)) {host: "127.0.0.1", port: parsePort(w)} else {
+				final i = w.lastIndexOf(":");
+				if (i <= 0)
+					throw 'invalid api: $w (socket, tcp, a port, host:port, the path of a Unix socket)';
+				var host = w.substr(0, i);
+				if (host.startsWith("[") && host.endsWith("]"))
+					host = host.substr(1, host.length - 2);
+				final port = w.substr(i + 1);
+				{host: host, port: (port == "0") ? 0 : parsePort(port)};
+			}
+			if (e.tcp != null)
+				throw 'invalid api: several TCP addresses: $spec';
+			e.tcp = tcp;
+		}
+		if (e.socket == null && e.tcp == null)
+			throw 'invalid api: $spec';
+		return e;
+	}
+
+	/**
+		Where the socket interface of `a` listens: by `api = <where>` (`--api <where>`), else (`api = 1`, `--api`) at the
+		Unix socket (unless `api_socket = 0`) and over TCP on `api_host:api_port` (unless `api_tcp = 0`).
+	**/
+	public static function apiEndpoints(a:Account):ApiEndpoints {
+		if (a.apiSpec != null)
+			return parseApi(a.apiSpec, a.name);
+		return {
+			socket: (a.apiSocket != false) ? socketPath(a.name) : null,
+			tcp: (a.apiTcp != false) ? {host: a.apiHost ?? "127.0.0.1", port: a.apiPort ?? 0} : null
+		};
+	}
 
 	public static function parsePort(value:String):Int {
 		final port = Std.parseInt(value);

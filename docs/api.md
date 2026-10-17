@@ -1,18 +1,41 @@
 With `api = 1` (or `--api`), other programs can use a running norc: send commands and receive events.
 A program starting norc itself can use the same protocol over stdin and stdout instead: `norc --stdin` (see
 [Over stdin and stdout](#over-stdin-and-stdout)).
-norc listens on `127.0.0.1` (`api_host`) on a free port (`api_port`), and writes the address and a random token
-to `~/.local/state/norc/<account>/api`, readable only by you:
+norc listens at a Unix socket, `$XDG_RUNTIME_DIR/norc/<account>.sock` (else `~/.local/state/norc/<account>/api.sock`),
+and on `127.0.0.1` (`api_host`) on a free port (`api_port`). It writes where, and a random token for TCP, to
+`~/.local/state/norc/<account>/api`, readable only by you:
 
 ```
+socket = /run/user/1000/norc/alice.sock
 host = 127.0.0.1
 port = 41735
 token = ebd072ad0ae7…
 ```
 
+Prefer the Unix socket: only you can connect to it. It is a file with the permissions `0600`, in a directory
+only you may access, and norc refuses connections of other users (their user id). It needs no token: the first
+`{"auth": …}` is answered `ok` whatever its token, so clients written for TCP work unchanged. Over TCP any process of
+the machine can connect (other users, containers, pages in your browser): the token is all that protects it.
+Where it listens is the value of `api` (or `--api`), several separated by `,`:
+
+```
+api = 1                      # the Unix socket and TCP (127.0.0.1, a free port)
+api = socket                 # only the Unix socket
+api = socket,9990            # and TCP on 127.0.0.1:9990
+api = ~/run/norc.sock        # a Unix socket at this path
+api = 0.0.0.0:9990           # TCP on all interfaces: reachable over the network, unencrypted
+```
+
+On the command line the same: `norc --api socket`, `norc --api=socket,9990`. Unix sockets are in the single
+binary on Linux and macOS (not in the bytecode `norc.hl`, nor on Windows): there it is TCP only.
+
+```sh
+socat - UNIX-CONNECT:$XDG_RUNTIME_DIR/norc/alice.sock     # by hand: command lines, as in the prompt
+```
+
 ## From the shell: norc ctl
 
-`norc ctl` runs a command in the running norc of an account and prints
+`norc ctl` (through the Unix socket if there is one, else TCP) runs a command in the running norc of an account and prints
 its output, as on the terminal; the exit code is `1` if the command failed or no norc runs with the socket
 interface. The words are passed as they are, no quoting for norc needed.
 

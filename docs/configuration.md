@@ -44,6 +44,8 @@ An account file overrides any value of `conf`:
 | `disable_modules` | modules not loaded, separated by commas: their commands, the features other clients see and the handling of their stanzas are left out, e.g. `calls, tunes, avatars`; the modules: `rooms`, `history`, `carbons`, `receipts`, `chat-states`, `profile`, `moods`, `tunes`, `corrections`, `reactions`, `replies`, `retractions`, `avatars`, `attention`, `time`, `ping`, `adhoc`, `pubsub`, `blocking`, `file-transfers`, `calls`, `upload`, `images` (contacts, messages and service discovery are always loaded) | none |
 | `attention` | `0`: ignore attention requests (`/attention`) of contacts; else they ring the terminal bell | `1` |
 | `stream_management` | `0`: no stream management (XEP-0198): no resuming of the session after a disconnection; a killed norc then goes offline at once instead of when the server drops the session | `1` |
+| `share.<name>` | a directory shared with your contacts (browsed and downloaded with `/file browse` and `/file get`), e.g. `share.music = ~/Music`, see [Sharing files](file-transfer#sharing-files) | none |
+| `share_access` | who may list and download the shared directories: `roster` (contacts seeing your presence), `none`, `group:<name>` (a roster group), jids; several separated by `,` | `roster` |
 | `alias.<name>` | an alias of a command: `/<name>` runs it, with its first arguments if given, e.g. `alias.m = msg`, `alias.away = presence away` (`/away lunch` runs `/presence away lunch`); a command of the same name is run instead | `alias.h = help` (in the default `conf`) |
 | `priority` | priority of your presence (-128 to 127), see `/presence priority` | `0` (not sent) |
 | `autojoin_bookmarks` | `0`: don't join the rooms bookmarked with autojoin after the login (e.g. for a norc used by scripts) | `1` |
@@ -63,9 +65,9 @@ An account file overrides any value of `conf`:
 | `prompt` | prompt of the input line (interactive mode), in `"` to keep spaces at the start or end, e.g. `"me> "`; `{status}` shows the calls (active/pending), rooms joined and file transfers (active/pending) there are, e.g. `☎1/0 #3 ⇅0/1 ` (nothing without), the numbers alone are `{calls_active}`, `{calls_pending}`, `{rooms}`, `{transfers_active}`, `{transfers_pending}` (in all three prompts), e.g. `"{calls_active}/{calls_pending}\|{rooms}> "` | `"{status}> "` |
 | `chat_prompt` | prompt in chat mode (`/chat`): `{name}` is the name of the contact (in its color), `{jid}` its jid, `{state}` its chat state unless active (e.g. ` (typing)`), `{avatar}` its avatar (a small image, with `inline_avatars = 1` in terminals showing images, else nothing), e.g. `"{avatar}{name}{state}> "` | `"{name}{state}> "` |
 | `room_prompt` | prompt in group chat mode (in a room): `{name}` is the room's local part (in its color), `{jid}` its jid, `{nick}` your nick in it | `"#{name}> "` |
-| `api` | `1`: socket interface for other programs | `0` |
-| `api_host` | address of the socket interface | `127.0.0.1` |
-| `api_port` | port of the socket interface | a free port |
+| `api` | the socket interface for other programs, see [API](api): `1` (at the Unix socket and over TCP), or where: `socket` (the Unix socket `$XDG_RUNTIME_DIR/norc/<account>.sock`), the path of a Unix socket, `tcp` (`127.0.0.1`, a free port), a port, `host:port`; several separated by `,`, e.g. `socket,9990` | `0` |
+| `api_host`, `api_port` | for `api = 1`: address and port of TCP | `127.0.0.1`, a free port |
+| `api_socket`, `api_tcp` | for `api = 1`: `0`: not at the Unix socket, not over TCP | `1` (the socket in the single binary on Linux and macOS) |
 
 Example account `~/.config/norc/accounts/work`:
 

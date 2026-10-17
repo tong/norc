@@ -33,6 +33,7 @@ norc.hl: build.hl.hxml $(SRC)
 #   libhl     HashLink runtime
 #   ssl.hdll  with the mbedtls sources bundled with HashLink (its SSL_STATIC build)
 #   fmt.hdll  only `digest` is used: lib/hl/fmt.c (with mbedtls and HashLink's zlib)
+#   unix.c    norc's natives: Unix sockets (lib/hl/unix.c)
 #
 # Linux:   fully static with musl (glibc can't resolve hostnames in static binaries)
 # macOS:   links only system libraries and frameworks (macOS has no static libc)
@@ -77,6 +78,9 @@ SSL_OBJ := $(addprefix $(STATIC)/ssl/,$(addsuffix .o,libs/ssl/ssl $(MBEDTLS_SRC)
 ZLIB_OBJ := $(addprefix $(STATIC)/zlib/,$(addsuffix .o,include/zlib/crc32 include/zlib/adler32))
 FMT_OBJ := $(STATIC)/lib/hl/fmt.o $(ZLIB_OBJ)
 
+# norc's own natives: Unix sockets of the socket interface (norc.UnixSocket, -D norc_unix in build.hlc.hxml)
+NORC_OBJ := $(STATIC)/lib/hl/unix.o
+
 # Generated code: the files listed in out/hlc.json (out/ may contain stale files of removed classes).
 # Only known once out/ exists, so the link runs in a sub-make
 OUT_OBJ := $(addprefix $(STATIC)/out/,$(patsubst %.c,%.o,$(shell grep -o '"[^"]*\.c"' out/hlc.json 2>/dev/null | tr -d '"')))
@@ -93,6 +97,10 @@ $(STATIC)/zlib/%.o: $(HASHLINK_SRC)/%.c
 	@mkdir -p $(dir $@)
 	$(STATIC_CC) $(STATIC_CFLAGS) -c $< -o $@
 
+$(STATIC)/lib/hl/unix.o: lib/hl/unix.c
+	@mkdir -p $(dir $@)
+	$(STATIC_CC) $(STATIC_CFLAGS) -c $< -o $@
+
 $(STATIC)/lib/hl/fmt.o: lib/hl/fmt.c
 	@mkdir -p $(dir $@)
 	$(STATIC_CC) $(STATIC_CFLAGS) $(MBEDTLS_INC) -I$(HASHLINK_SRC)/include/zlib -c $< -o $@
@@ -105,7 +113,7 @@ $(STATIC)/out/%.o: out/%.c
 
 -include $(OUT_OBJ:.o=.d)
 
-$(STATIC)/$(BIN): $(OUT_OBJ) $(SSL_OBJ) $(FMT_OBJ) $(LIBHL_OBJ)
+$(STATIC)/$(BIN): $(OUT_OBJ) $(SSL_OBJ) $(FMT_OBJ) $(NORC_OBJ) $(LIBHL_OBJ)
 	$(STATIC_CC) $(STATIC_LDFLAGS) -o $@ $^ $(STATIC_LIBS)
 
 # haxe only rewrites generated files whose content changed: track the last run with a stamp

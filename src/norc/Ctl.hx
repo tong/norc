@@ -104,12 +104,8 @@ Needs a norc with the socket interface (api = 1 or --api). Examples:
 			for (line in File.getContent(path).split("\n"))
 				if (line.contains(" = ")) line.substr(0, line.indexOf(" = ")) => line.substr(line.indexOf(" = ") + 3).trim()
 		] catch (_) null;
-		final socket = new Socket();
-		try {
-			if (info == null)
-				throw "no api file";
-			socket.connect(new Host(info.get("host")), Std.parseInt(info.get("port")));
-		} catch (_)
+		final socket = try connect(info) catch (_) null;
+		if (socket == null)
 			return fail('norc doesn\'t run for $name with the socket interface (api = 1 or --api)');
 		function send(request:Dynamic) {
 			socket.output.writeString(Json.stringify(request) + "\n");
@@ -117,7 +113,8 @@ Needs a norc with the socket interface (api = 1 or --api). Examples:
 		}
 		function read():Null<Dynamic>
 			return try Json.parse(socket.input.readLine()) catch (_) null;
-		send({auth: info.get("token")});
+		// the Unix socket needs no token (answered ok)
+		send({auth: info.get("token") ?? ""});
 		final auth = read();
 		if (auth == null || auth.ok != true)
 			return fail('$name: not authorized (an old api file?)');
@@ -346,6 +343,26 @@ Needs a norc with the socket interface (api = 1 or --api). Examples:
 					return false;
 		}
 		return true;
+	}
+
+	/**
+		Connects to the norc of `info` (the api file): its Unix socket if it has one (and this binary supports them),
+		else over TCP. Throws if it can't connect.
+	**/
+	static function connect(info:Null<Map<String, String>>):{input:haxe.io.Input, output:haxe.io.Output, setTimeout:Float->Void, close:() -> Void} {
+		if (info == null)
+			throw "no api file";
+		final path = info.get("socket");
+		if (path != null && UnixSocket.available) {
+			final s = try UnixSocket.connect(path) catch (_) null;
+			if (s != null)
+				return {input: s.input, output: s.output, setTimeout: s.setTimeout, close: s.close};
+		}
+		if (!info.exists("port"))
+			throw "no tcp";
+		final socket = new Socket();
+		socket.connect(new Host(info.get("host")), Std.parseInt(info.get("port")));
+		return {input: socket.input, output: socket.output, setTimeout: socket.setTimeout, close: socket.close};
 	}
 
 	/** Prints the replies of request `id` until it is done: 0, or 1 if it failed **/

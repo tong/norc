@@ -2,3 +2,4 @@ norc.hxml
 -hl out/main.c
 --dce full
 -D analyzer-optimize
+-D norc_unix

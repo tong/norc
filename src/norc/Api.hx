@@ -54,6 +54,12 @@ class Api {
 	final clients = new Array<ApiClient>();
 
 	var server:Null<Socket>;
+
+	/** The Unix socket listening, and its path **/
+	var unixServer:Null<UnixSocket>;
+
+	var socketPath:Null<String>;
+
 	var file:Null<String>;
 	var token = "";
 
@@ -67,23 +73,71 @@ class Api {
 	}
 
 	/**
-		Listens on `host:port` (port `0`: a free port) and writes host, port and token to `<dir>/api`.
-		Other hosts than `127.0.0.1` make the API reachable over the network: the connection is not encrypted.
+		Listens at the Unix socket `socket` (if set, where `UnixSocket.available`) and on `host:port` (`tcp`, port `0`:
+		a free port), and writes where to `<dir>/api`: `socket = <path>`, `host`, `port` and `token`. If the Unix
+		socket can't be opened (reported), TCP is used.
+
+		The Unix socket is readable only by the user, and connections of other users are refused: no token needed,
+		clients are authenticated (an `auth` request is answered `ok`). Over TCP any local process can connect, the
+		token authenticates. Other hosts than `127.0.0.1` make the API reachable over the network: the connection is not
+		encrypted.
 	**/
-	public function start(dir:String, host = "127.0.0.1", port = 0) {
-		final socket = new Socket();
-		socket.bind(new Host(host), port);
-		socket.listen(10);
-		server = socket;
-		token = xmpp.Random.bytes(24).toHex();
+	public function start(dir:String, host = "127.0.0.1", port = 0, tcp = true, ?socket:String) {
 		FileSystem.createDirectory(dir);
+		final lines = [];
+		final unix = (socket != null && UnixSocket.available) ? try listenUnix(socket) catch (e) {
+			Term.error('api: no Unix socket ($e), over TCP');
+			tcp = true;
+			null;
+		} : null;
+		if (unix != null)
+			lines.push(unix);
+		if (tcp)
+			lines.push(listenTcp(host, port));
 		final path = '$dir/api';
 		// create it empty and private before writing the token
 		File.saveContent(path, "");
 		if (Sys.systemName() != "Windows")
 			Sys.command("chmod", ["600", path]);
-		File.saveContent(path, 'host = $host\nport = ${socket.host().port}\ntoken = $token\n');
+		File.saveContent(path, lines.join("\n") + "\n");
 		file = path;
+	}
+
+	/** Listens at the Unix socket `path` (in a directory only the user may access), returns the line of the api file **/
+	function listenUnix(path:String):String {
+		final dir = haxe.io.Path.directory(path);
+		if (!FileSystem.exists(dir)) {
+			FileSystem.createDirectory(dir);
+			Sys.command("chmod", ["700", dir]);
+		}
+		final socket = UnixSocket.listen(path);
+		unixServer = socket;
+		socketPath = path;
+		final uid = UnixSocket.uid();
+		Thread.create(() -> while (true) {
+			final s = try socket.accept() catch (_) return;
+			// only the own user (the permissions of the socket refuse others already)
+			final peer = s.peerUid();
+			if (uid >= 0 && peer >= 0 && peer != uid) {
+				s.close();
+				continue;
+			}
+			post(() -> {
+				final client = new ApiClient(s.input, s.output, s.close, this);
+				client.authenticated = true;
+				clients.push(client);
+			});
+		});
+		return 'socket = $path';
+	}
+
+	/** Listens on `host:port`, returns the lines of the api file **/
+	function listenTcp(host:String, port:Int):String {
+		final socket = new Socket();
+		socket.bind(new Host(host), port);
+		socket.listen(10);
+		server = socket;
+		token = xmpp.Random.bytes(24).toHex();
 		Thread.create(() -> while (true) {
 			final s = try socket.accept() catch (_) return;
 			post(() -> clients.push(new ApiClient(s.input, s.output, () -> {
@@ -95,6 +149,7 @@ class Api {
 				catch (_) {};
 			}, this)));
 		});
+		return 'host = $host\nport = ${socket.host().port}\ntoken = $token';
 	}
 
 	/**
@@ -130,6 +185,14 @@ class Api {
 				server.close()
 			catch (_) {};
 		server = null;
+		if (unixServer != null)
+			unixServer.close();
+		unixServer = null;
+		if (socketPath != null)
+			try
+				FileSystem.deleteFile(socketPath)
+			catch (_) {};
+		socketPath = null;
 	}
 
 	/** Sends an event to all authenticated clients **/
@@ -162,6 +225,11 @@ class Api {
 				client.send(Json.stringify({type: "auth", ok: false, text: "not authorized"}));
 				client.close();
 			}
+			return;
+		}
+		// already authenticated (the Unix socket, stdin): as clients of TCP authenticate first
+		if (Reflect.hasField(request, "auth")) {
+			client.send(Json.stringify({type: "auth", ok: true}));
 			return;
 		}
 		// "text": true, the text of data results (as on the terminal) instead of the data

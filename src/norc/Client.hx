@@ -281,10 +281,16 @@ class Client {
 			api.stdio(quit);
 		if (account.api == true) {
 			try {
-				final host = account.apiHost ?? "127.0.0.1";
-				api.start(Config.stateDir(account.name), host, account.apiPort ?? 0);
+				final endpoints = Config.apiEndpoints(account);
+				var tcp = endpoints.tcp;
+				if (endpoints.socket != null && !UnixSocket.available && tcp == null) {
+					Term.error('api: no Unix sockets here (only in the single binary on Linux and macOS), over TCP');
+					tcp = {host: "127.0.0.1", port: 0};
+				}
+				final host = tcp?.host ?? "127.0.0.1";
+				api.start(Config.stateDir(account.name), host, tcp?.port ?? 0, tcp != null, endpoints.socket);
 				Term.info('api: ${Config.stateDir(account.name)}/api');
-				if (!host.startsWith("127.") && host != "localhost" && host != "::1")
+				if (tcp != null && !host.startsWith("127.") && host != "localhost" && host != "::1")
 					Term.error('warning: the api is reachable over the network ($host), unencrypted: '
 						+ 'the token can be read from the traffic, giving control over the account');
 			} catch (e)

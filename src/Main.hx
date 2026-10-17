@@ -21,7 +21,8 @@ Options:
       --resource <res>   resource of the jid (default: from the config, or norc)
   -i, --interactive      read commands from stdin, also if it is no terminal (default: on a terminal, in the foreground)
       --no-input         don\'t read commands from the terminal (e.g. for norc running in the background)
-      --api              socket interface for other programs (port and token in the state dir: api)
+      --api [where]      socket interface for other programs, at a Unix socket and over TCP (where, in the state
+                         dir: api); or only where: socket, tcp, a port, host:port, a socket path; several with ,
       --stdin            the api over stdin and stdout (JSON lines, no token), other output to stderr
       --xmpp-debug       print the XMPP stream
       --no-color         disable colored output
@@ -40,6 +41,7 @@ function main() {
 	// null: on a terminal (in the foreground)
 	var interactive:Null<Bool> = null;
 	var api = false;
+	var apiSpec:Null<String> = null;
 	var stdin = false;
 	var silent = false;
 	var save = false;
@@ -83,6 +85,12 @@ function main() {
 				interactive = false;
 			case "--api":
 				api = true;
+				// where: the next argument if it is an endpoint (socket, tcp, a port, host:port, a path)
+				if (i + 1 < args.length && Config.isApiSpec(args[i + 1]))
+					apiSpec = args[++i];
+			case arg if (arg.startsWith("--api=")):
+				api = true;
+				apiSpec = arg.substr("--api=".length);
 			case "--stdin":
 				stdin = true;
 			case "--xmpp-debug":
@@ -170,6 +178,11 @@ function main() {
 		account.resource = resource;
 	if (api)
 		account.api = true;
+	if (apiSpec != null)
+		try
+			Config.setApi(account, apiSpec)
+		catch (e:String)
+			exit(e);
 	if (port != null)
 		account.port = port;
 	if (stdin) {
