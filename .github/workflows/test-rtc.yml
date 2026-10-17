@@ -14,11 +14,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # the packages cached (installing them takes most of the time): a new cache when the list or the version changes
       - name: Install GStreamer
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libgstreamer-plugins-bad1.0-dev libjson-glib-dev \
-            gstreamer1.0-plugins-bad gstreamer1.0-plugins-good gstreamer1.0-nice
+        uses: awalsh128/cache-apt-pkgs-action@v1.6.3
+        with:
+          packages: libgstreamer-plugins-bad1.0-dev libjson-glib-dev gstreamer1.0-plugins-bad gstreamer1.0-plugins-good gstreamer1.0-nice
+          version: 1
 
       # with test signals: two norc-rtc connect to each other and receive the media of the other
       - name: Build and test norc-rtc
