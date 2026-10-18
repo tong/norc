@@ -1,0 +1,26 @@
+#!/bin/sh
+#
+# norc hook: the status in a file, e.g. for a status bar: "☎ alice ringing · 4 unread · @1 · +1 request"
+#
+# Run on the status event, when something changed: calls, unread messages, file transfers, subscription requests,
+# rooms, who is typing, an ad-hoc command waiting for input, the connection (often: keep it fast).
+# Enable it with `chmod +x on-status`. Several hooks per event: on-status.<anything> (e.g. on-status.log).
+#
+# Arguments: summary (empty: nothing going on)
+# NORC_SUMMARY       the status in a few words, as the argument
+# NORC_CONNECTION    online, connecting, reconnecting, offline
+# NORC_PRESENCE      your presence: available, chat, away, xa, dnd
+# NORC_UNREAD        unread messages of contacts; NORC_UNREAD_ROOMS of rooms, NORC_MENTIONS of them mentioning you
+# NORC_CALLS         calls, of them NORC_RINGING ringing (a contact calls you)
+# NORC_TRANSFERS     file transfers running; NORC_OFFERS files offered to you
+# NORC_REQUESTS      contacts asking to see your presence
+# NORC_ROOMS         rooms you are in
+# NORC_TYPING        contacts typing (bare jids, separated by spaces)
+# NORC_COMMAND       1: an ad-hoc command waits for your input
+# Always set: NORC_EVENT NORC_ACCOUNT (the account name) NORC_JID (your jid)
+# All details (who, which files, progress) are in the status event of the API (norc ctl events status).
+
+# $XDG_RUNTIME_DIR/norc/<account>.overview: the summary
+dir="${XDG_RUNTIME_DIR:-/tmp}/norc"
+mkdir -p "$dir"
+printf '%s\n' "$1" > "$dir/$NORC_ACCOUNT.overview"

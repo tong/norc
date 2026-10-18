@@ -173,6 +173,25 @@ class FileTransfers extends Module {
 		return {active: transfers.length - pending, pending: pending};
 	}
 
+	/** The offers and transfers, for the status (`norc.Status`) **/
+	public function status():Array<norc.Status.StatusTransfer>
+		return [
+			for (t in transfers)
+				{
+					id: t.id,
+					jid: Jid.parseBare(t.peer),
+					file: t.file.name ?? "file",
+					direction: t.incoming ? "receive" : "send",
+					state: switch t.state {
+						case Preparing: "preparing";
+						case Offered: "offered";
+						case Active: "active";
+					},
+					size: t.file.size,
+					bytes: t.done
+				}
+		];
+
 	override public function features():Array<String>
 		return FEATURES;
 

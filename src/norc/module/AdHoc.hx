@@ -32,6 +32,10 @@ class AdHoc extends Module {
 		this.contacts = contacts;
 	}
 
+	/** The command waiting for input (`/command submit`), `null` if none **/
+	public function waiting():Null<{jid:String, node:String, name:Null<String>}>
+		return (current == null) ? null : {jid: current.jid, node: current.command.node, name: null};
+
 	override public function commands():Array<Commands.Command>
 		return [
 			{

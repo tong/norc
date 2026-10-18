@@ -1,6 +1,8 @@
 package norc;
 
 import norc.Config.Account;
+import norc.Status.StatusData;
+import norc.Status.Unread;
 import norc.Module;
 import norc.Output;
 import norc.module.AdHoc;
@@ -108,6 +110,9 @@ class Client {
 	/** The session was online (for the logout event) **/
 	var wasOnline = false;
 
+	/** What is going on (calls, unread messages, transfers, …): `/overview`, the prompt, the `status` event **/
+	var overview:norc.Status;
+
 	/** When the current session went online (kept when it is resumed), `null` before **/
 	var onlineSince:Null<Float>;
 
@@ -181,6 +186,11 @@ class Client {
 				]
 			},
 			{
+				name: "overview",
+				description: "what is going on: calls, unread messages, file transfers, subscription requests, rooms, who is typing, a command waiting for input",
+				run: (args, out) -> showOverview(out)
+			},
+			{
 				name: "account",
 				description: "your account: jid, connection, login, presence, your other clients online, the api, config and state",
 				run: (args, out) -> showAccount(out)
@@ -230,11 +240,14 @@ class Client {
 		for (name => command in account.aliases ?? [])
 			commands.aliases.set(name, command);
 		commands.completers.set("jid", arg -> contacts.completions(arg));
+		// unread messages: of chats other than the current chat mode
+		final unread = new Unread();
 		final history = enabled("history") ? new History(context, contacts, rooms, messages, server) : null;
 		// the local log of the chats (chatlog = 1)
 		final chatlog = new Chatlog(context, messages, contacts, account);
 		// entering a chat: its last messages, of the chatlog (contacts), else of the archive
 		console.entered = (jid, out) -> {
+			unread.clear(xmpp.Jid.parseBare(jid));
 			final count = account.chatHistory ?? 10;
 			if (!rooms.joined(xmpp.Jid.parseBare(jid)) && chatlog.recent(jid, count, out))
 				return;
@@ -248,9 +261,47 @@ class Client {
 		final fileTransfers = enabled("file-transfers") ? new FileTransfers(context, contacts, sessions, account.downloadDir ?? Config.downloadDir(),
 			shares) : null;
 		final calls = enabled("calls") ? new Calls(context, messages, contacts, sessions, account) : null;
+		// the status: what is going on, for the prompt, /overview and the status event
+		final adHoc = new AdHoc(context, contacts);
+		messages.displayed.push((chat, m, own, room) -> {
+			// writing in a chat reads it (also from another client); the history of a room on joining isn't new
+			if (own)
+				unread.clear(chat);
+			else if (console.current()?.toLowerCase() != chat.toLowerCase() && !(room && xmpp.DelayedDelivery.delay(m) != null)) {
+				final nick = room ? rooms.nickIn(chat) : null;
+				unread.add(chat, room, nick != null && nick.length > 0 && (m.body ?? "").toLowerCase().contains(nick.toLowerCase()));
+			}
+		});
+		overview = new norc.Status(() -> {
+			final chats = unread.list((jid, room) -> room ? Rooms.label(jid) : contacts.name(jid));
+			final s:StatusData = {
+				connection: online() ? "online" : (session != null) ? "connecting" : quitting ? "offline" : "reconnecting",
+				presence: (show : Null<String>) ?? "available",
+				status: this.status,
+				unread: Lambda.fold(chats, (c, n) -> c.room ? n : n + c.unread, 0),
+				unread_rooms: Lambda.fold(chats, (c, n) -> c.room ? n + c.unread : n, 0),
+				mentions: Lambda.fold(chats, (c, n) -> n + c.mentions, 0),
+				chats: chats,
+				calls: calls?.status() ?? [],
+				transfers: fileTransfers?.status() ?? [],
+				requests: contacts.pendingRequests(),
+				rooms: rooms.joinedRooms(),
+				typing: [for (jid => state in chatStates.typing) {jid: jid, name: contacts.name(jid), state: state}],
+				command: enabled("adhoc") ? adHoc.waiting() : null
+			};
+			s;
+		}, statusChanged);
 		console.counts = () -> {
-			calls: calls?.counts() ?? {active: 0, pending: 0},
-			transfers: fileTransfers?.counts() ?? {active: 0, pending: 0}
+			final s = overview.get();
+			final pending = s.calls.filter(c -> c.state == "ringing" || c.state == "calling").length;
+			final offers = s.transfers.filter(t -> t.state == "offered").length;
+			{
+				calls: {active: s.calls.length - pending, pending: pending},
+				transfers: {active: s.transfers.length - offers, pending: offers},
+				unread: s.unread,
+				mentions: s.mentions,
+				requests: s.requests.length
+			};
 		};
 		// in this order: modules handle received messages in the order they were created
 		final optional:Array<{name:String, create:() -> Module}> = [
@@ -269,7 +320,7 @@ class Client {
 			{name: "attention", create: () -> new Attention(context, messages, contacts, account.attention != false)},
 			{name: "time", create: () -> new Time(context, contacts, account.entityTime == true)},
 			{name: "ping", create: () -> new Pings(context, contacts)},
-			{name: "adhoc", create: () -> new AdHoc(context, contacts)},
+			{name: "adhoc", create: () -> adHoc},
 			{name: "pubsub", create: () -> new Nodes(context, contacts)},
 			{name: "blocking", create: () -> new Blocking(context, contacts)}
 		];
@@ -337,6 +388,7 @@ class Client {
 		while (exitCode == null) {
 			handle(events.pop(true));
 			// e.g. a call or file transfer started or ended
+			overview.update();
 			console.refreshPrompt();
 		}
 		scripts.stopAll();
@@ -766,6 +818,63 @@ class Client {
 		exitCode = code;
 
 	/** See `Module.Emit` **/
+	/**
+		The status changed: the `status` event, to the API with all of it, to the hooks (`on-status`) the counts and
+		the summary (their environment has no lists)
+	**/
+	function statusChanged(s:StatusData) {
+		final offers = s.transfers.filter(t -> t.state == "offered").length;
+		hooks.run("status", [norc.Status.summary(s)], {
+			connection: s.connection,
+			presence: s.presence,
+			unread: s.unread,
+			unread_rooms: s.unread_rooms,
+			mentions: s.mentions,
+			calls: s.calls.length,
+			ringing: s.calls.filter(c -> c.state == "ringing").length,
+			transfers: s.transfers.length - offers,
+			offers: offers,
+			requests: s.requests.length,
+			rooms: s.rooms.length,
+			typing: [for (t in s.typing) t.jid].join(" "),
+			command: s.command != null,
+			summary: norc.Status.summary(s)
+		});
+		api.event("status", s);
+	}
+
+	/** `/overview`: what is going on **/
+	function showOverview(out:Output) {
+		final s = overview.get();
+		out.data(s, () -> {
+			function line(key:String, value:String)
+				out.print('  ${key.rpad(" ", 10)}$value');
+			line("account", '${s.connection}, ${Contacts.describe({state: s.presence, status: s.status})}');
+			for (c in s.calls)
+				line("call", '#${c.id} ${c.name} ${c.media}, ${c.state}' + ((c.since != null) ? ' ${Term.duration(Std.int(Sys.time() - c.since))}' : '')
+					+ (c.muted.length > 0 ? ', muted ${c.muted.join(", ")}' : '') + (c.recording ? ', recording' : ''));
+			line("unread", (s.chats.length == 0) ? Term.style("nothing", 2) : [
+				for (c in s.chats)
+					(c.room ? '#${c.name}' : c.name) + ' ${c.unread}' + (c.mentions > 0 ? ' (@${c.mentions})' : '')
+			].join(", "));
+			for (t in s.transfers)
+				line("file", '#${t.id} ${t.file} ' + switch t.state {
+					case "offered": 'offered by ${t.jid}: /file accept ${t.id}';
+					case "preparing": 'being read, then offered to ${t.jid}';
+					case _: (t.direction == "send" ? 'to ' : 'from ') + t.jid
+						+ ((t.size != null && t.size > 0) ? ' ${Std.int(t.bytes / t.size * 100)}%' : '');
+				});
+			if (s.requests.length > 0)
+				line("requests", s.requests.join(", ") + Term.style(" (/contacts accept <jid>)", 2));
+			if (s.rooms.length > 0)
+				line("rooms", [for (r in s.rooms) r.name].join(", "));
+			if (s.typing.length > 0)
+				line("typing", [for (t in s.typing) t.name + (t.state == "paused" ? " (paused)" : "")].join(", "));
+			if (s.command != null)
+				line("command", '${s.command.node} of ${s.command.jid} waits for input: /command submit');
+		});
+	}
+
 	function emit(event:String, args:Array<String>, values:haxe.DynamicAccess<Dynamic>) {
 		hooks.run(event, args, values);
 		api.event(event, values);

@@ -38,6 +38,7 @@ since the start (with the last error), and files with an unknown event (e.g. a t
 | `on-stanza-send`, `on-stanza-recv` | (stanza on stdin) | see [Filter hooks](#filter-hooks-modifying-stanzas) |
 | `on-logout` | reason | `NORC_REASON` (`quit` or the error), `NORC_RECONNECT` (`1` if norc reconnects, `0` if it exits) |
 | `on-error` | kind, text | `NORC_KIND` (`connection`, `stream`, `login`, `message`), `NORC_TEXT`, `NORC_FROM` (message errors) |
+| `on-status` | summary | something changed (often: keep it fast): `NORC_SUMMARY` (e.g. `☎ alice ringing · 4 unread · @1`, empty: nothing going on), `NORC_CONNECTION`, `NORC_PRESENCE`, `NORC_UNREAD`, `NORC_UNREAD_ROOMS`, `NORC_MENTIONS`, `NORC_CALLS`, `NORC_RINGING`, `NORC_TRANSFERS`, `NORC_OFFERS`, `NORC_REQUESTS`, `NORC_ROOMS`, `NORC_TYPING` (bare jids), `NORC_COMMAND` (`1`: an ad-hoc command waits for input); the details are in the `status` event of the API |
 
 Always set: `NORC_EVENT`, `NORC_ACCOUNT`, `NORC_JID`. A hook failing (exit code other than 0) is reported.
 

@@ -22,7 +22,7 @@ class Hooks {
 	public static final EVENTS = [
 		"message", "sent", "reaction", "retraction", "server", "avatar", "receipt", "chatstate", "nickname", "mood", "tune", "call",
 		"recording", "room", "room-invite", "attention", "presence", "subscribe", "subscription", "roster", "file-offer", "file-received",
-		"file-sent", "file-failed", "share", "share-deleted", "share-invite", "share-resync", "login", "logout", "error", "stanza-send",
+		"file-sent", "file-failed", "share", "share-deleted", "share-invite", "share-resync", "login", "logout", "error", "status", "stanza-send",
 		"stanza-recv"
 	];
 

@@ -289,6 +289,13 @@ class Rooms extends Module {
 			r.muc = null;
 	}
 
+	/** The rooms the user is in (joined), with the own nick **/
+	public function joinedRooms():Array<{jid:String, name:String, nick:Null<String>}> {
+		final list = [for (r in rooms) if (r.entered == true) {jid: r.jid, name: label(r.jid), nick: r.nick}];
+		list.sort((a, b) -> Reflect.compare(a.jid, b.jid));
+		return list;
+	}
+
 	/** The number of rooms the user is in (joined) **/
 	public function count():Int
 		return Lambda.count(rooms, r -> r.entered == true);

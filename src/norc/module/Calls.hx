@@ -266,6 +266,28 @@ class Calls extends Module {
 		return {active: calls.length - pending, pending: pending};
 	}
 
+	/** The calls, for the status (`norc.Status`) **/
+	public function status():Array<norc.Status.StatusCall>
+		return [
+			for (c in calls)
+				{
+					id: c.id,
+					jid: Jid.parseBare(c.peer),
+					name: name(c),
+					state: switch c.state {
+						case Ringing: "ringing";
+						case Calling: "calling";
+						case Connecting: "connecting";
+						case Connected: "connected";
+					},
+					incoming: c.incoming,
+					media: (c.video != none) ? "video" : "audio",
+					since: c.connected,
+					muted: c.muted.copy(),
+					recording: c.record != null
+				}
+		];
+
 	override public function detach() {
 		for (c in calls.copy())
 			finish(c, "disconnected");

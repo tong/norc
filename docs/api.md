@@ -114,9 +114,37 @@ Replies:
   of a file transfer started with `file send`.
 
 Events are the same as for [hooks](hooks) (`message`, `sent`, `receipt`, `reaction`, `retraction`, `avatar`, `server`, `chatstate`, `nickname`, `mood`, `tune`, `attention`, `call`, `room`, `room-invite`, `presence`, `subscribe`, `subscription`, `roster`, `file-offer`,
-`file-received`, `file-sent`, `file-failed`, `login`, `logout`, `error`), with the values of their environment
+`file-received`, `file-sent`, `file-failed`, `login`, `logout`, `error`, `status`), with the values of their environment
 variables (lowercase, without `NORC_`) as `data`, typed: numbers, booleans (`true` instead of `1`), `null` for unset
 values. They are sent to all authenticated clients.
+
+The `status` event is what is going on, in one object, sent when it changed (the progress of file transfers at most
+once a second): a status bar or a frontend can show it without following the other events. `/overview` returns
+the same (`norc ctl --json overview`, e.g. once at the start). Hooks (`on-status`) get only the counts.
+
+```json
+{"type":"event","event":"status","data":{
+  "connection":"online", "presence":"away", "status":"lunch",
+  "unread":3, "unread_rooms":12, "mentions":1,
+  "chats":[{"jid":"alice@example.org","name":"Alice","unread":3,"mentions":0,"room":false},
+           {"jid":"norc@conference.example.org","name":"norc","unread":12,"mentions":1,"room":true}],
+  "calls":[{"id":1,"jid":"bob@example.org","name":"Bob","state":"ringing","incoming":true,"media":"video",
+            "since":null,"muted":[],"recording":false}],
+  "transfers":[{"id":2,"jid":"carol@example.org","file":"photo.jpg","direction":"receive","state":"active",
+                "size":2400000,"bytes":1000000}],
+  "requests":["dave@example.org"],
+  "rooms":[{"jid":"norc@conference.example.org","name":"norc","nick":"me"}],
+  "typing":[{"jid":"alice@example.org","name":"Alice","state":"composing"}],
+  "command":null}}
+```
+
+- `connection`: `online`, `connecting`, `reconnecting`, `offline`.
+- `unread`: messages of contacts that arrived while you were not in their chat (`/chat`); entering the chat, or
+  writing in it (also from another of your clients), reads it. `unread_rooms` the same of rooms (not the history
+  sent when joining), `mentions` the messages of rooms with your nick.
+- `calls[].state`: `ringing` (a contact calls you), `calling`, `connecting`, `connected` (`since`: when).
+- `transfers[].state`: `offered` (to you, `/file accept`), `preparing` (your file being read), `active`.
+- `command`: an ad-hoc command waiting for your input (`/command submit`), else `null`.
 
 For use by hand (e.g. `socat - TCP:127.0.0.1:<port>`), plain lines work too: `auth <token>`, then command lines,
 optionally prefixed with `@<id> `. The replies are JSON.

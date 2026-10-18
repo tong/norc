@@ -20,10 +20,13 @@ using StringTools;
 	Chat states (XEP-0085) are sent: `active` in the chat, `composing` while typing a message, `paused` after some seconds
 	without typing, `gone` when leaving it; the state of the contact is shown in the prompt (e.g. `alice (typing)> `).
 **/
-/** Counts shown in the prompt **/
+/** Counts shown in the prompt (`{status}`, `{calls_active}`, …), of the status (`norc.Status`) **/
 typedef PromptCounts = {
 	var calls:{active:Int, pending:Int};
 	var transfers:{active:Int, pending:Int};
+	var unread:Int;
+	var mentions:Int;
+	var requests:Int;
 }
 
 /** The prompts of the modes, see `Config.Account` **/
@@ -66,6 +69,10 @@ class Console {
 
 	/** The jid of the chat mode; set on the main thread, read by the input thread (Ctrl-C) **/
 	var chat:Null<String>;
+
+	/** The chat of the chat mode (bare jid), `null` outside of it **/
+	public function current():Null<String>
+		return (chat != null) ? Jid.parseBare(chat) : null;
 
 	/** The chat state of the contact of the chat mode, `null` if active or unknown **/
 	var theirState:Null<String>;
@@ -240,8 +247,17 @@ class Console {
 				.replace("{avatar}", room ? "" : Term.avatarIcon(Jid.parseBare(jid), PROMPT_PLACEMENT))
 				.replace("{state}", (!room && theirState != null) ? Term.style(' (${theirState == "composing" ? "typing" : theirState})', 2) : "");
 		if (prompt.contains("{")) {
-			final c = (counts != null) ? counts() : {calls: {active: 0, pending: 0}, transfers: {active: 0, pending: 0}};
-			prompt = prompt.replace("{calls_active}", Std.string(c.calls.active))
+			final c = (counts != null) ? counts() : {
+				calls: {active: 0, pending: 0},
+				transfers: {active: 0, pending: 0},
+				unread: 0,
+				mentions: 0,
+				requests: 0
+			};
+			prompt = prompt.replace("{unread}", Std.string(c.unread))
+				.replace("{mentions}", Std.string(c.mentions))
+				.replace("{requests}", Std.string(c.requests))
+				.replace("{calls_active}", Std.string(c.calls.active))
 				.replace("{calls_pending}", Std.string(c.calls.pending))
 				.replace("{rooms}", Std.string(rooms.count()))
 				.replace("{transfers_active}", Std.string(c.transfers.active))
@@ -257,16 +273,25 @@ class Console {
 		}
 	}
 
-	/** `☎1/0 #3 ⇅2/1 `: calls (active/pending), rooms, file transfers (active/pending), only those there are; dimmed **/
+	/**
+		`☎1/0 ✉4 @1 #3 ⇅2/1 +1 `: calls (active/pending), unread messages of contacts, mentions in rooms, rooms, file
+		transfers (active/pending), subscription requests; only those there are, dimmed
+	**/
 	function status(c:PromptCounts):String {
 		final parts = [];
 		if (c.calls.active + c.calls.pending > 0)
 			parts.push('☎${c.calls.active}/${c.calls.pending}');
+		if (c.unread > 0)
+			parts.push('✉${c.unread}');
+		if (c.mentions > 0)
+			parts.push('@${c.mentions}');
 		final n = rooms.count();
 		if (n > 0)
 			parts.push('#$n');
 		if (c.transfers.active + c.transfers.pending > 0)
 			parts.push('⇅${c.transfers.active}/${c.transfers.pending}');
+		if (c.requests > 0)
+			parts.push('+${c.requests}');
 		return (parts.length > 0) ? Term.style(parts.join(" "), 2) + " " : "";
 	}
 

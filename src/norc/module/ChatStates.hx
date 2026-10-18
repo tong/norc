@@ -27,6 +27,9 @@ class ChatStates extends Module {
 	/** Last state sent to each jid, a state is not sent twice in a row **/
 	final sent = new Map<String, String>();
 
+	/** Contacts typing (bare jid → `composing` or `paused`), by the states they sent **/
+	public final typing = new Map<String, String>();
+
 	/** Without `handling` (the module is disabled), chat states are neither sent nor received **/
 	public function new(context:Context, messages:Messages, contacts:Contacts, enabled:Bool, handling = true) {
 		super(context);
@@ -61,6 +64,7 @@ class ChatStates extends Module {
 	override public function detach() {
 		super.detach();
 		sent.clear();
+		typing.clear();
 	}
 
 	function send(input:String, state:String, out:Output) {
@@ -98,10 +102,17 @@ class ChatStates extends Module {
 		final state = ChatState.getChatState(m);
 		if (state == null) {
 			// a message of a client without chat states: not typing anymore
-			if (m.body != null && received != null)
-				received(from, "active");
+			if (m.body != null) {
+				typing.remove(from);
+				if (received != null)
+					received(from, "active");
+			}
 			return false;
 		}
+		if (state == "composing" || state == "paused")
+			typing.set(from, state);
+		else
+			typing.remove(from);
 		emit("chatstate", [from, state], {from: m.from, name: contacts.name(from), state: state});
 		if (received != null)
 			received(from, state);
