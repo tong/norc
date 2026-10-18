@@ -977,7 +977,7 @@ class Calls extends Module {
 		});
 	}
 
-	/** The `call` event: `ringing` (incoming), `calling` (outgoing), `connected`, `ended` **/
+	/** The `call` event: `ringing` (incoming), `calling` (outgoing), `connecting` (accepted), `connected`, `ended` **/
 	function event(c:Call, state:String, ?values:haxe.DynamicAccess<Dynamic>) {
 		final v = values ?? {};
 		// the peer can change (the client answering a call proposed to all): the id identifies the call
@@ -993,7 +993,7 @@ class Calls extends Module {
 		emit("call", [Jid.parseBare(c.peer), state], v);
 	}
 
-	/** The call was accepted: the media is connected (the `connecting` event, once) **/
+	/** The call was accepted: the media is being connected (the `connecting` event, once) **/
 	function connecting(c:Call) {
 		if (c.state == Connecting)
 			return;

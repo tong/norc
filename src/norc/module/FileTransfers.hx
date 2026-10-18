@@ -272,7 +272,7 @@ class FileTransfers extends Module {
 		final file:JingleFile = {
 			name: Path.withoutDirectory(path),
 			size: size,
-			date: xmpp.DelayedDelivery.formatStamp(FileSystem.stat(path).mtime),
+			date: try xmpp.DelayedDelivery.formatStamp(FileSystem.stat(path).mtime) catch (_) null,
 			hashes: [{algo: "sha-256", value: hash}]
 		};
 		// read as it is sent (again after a fallback to in-band bytestreams)
@@ -427,8 +427,10 @@ class FileTransfers extends Module {
 		t.aborted = true;
 		t.out = out;
 		if (t.state == Preparing) {
-			// the thread reading it stops
+			// the thread reading it stops; a contact downloading a shared file is told
 			transfers.remove(t);
+			if (t.session != null)
+				t.session.terminate(JingleReason.cancel);
 			out.info('#${t.id} aborted offering ${t.file.name ?? "file"}');
 			failed(t, "aborted");
 			return;
@@ -577,18 +579,18 @@ class FileTransfers extends Module {
 		return null;
 	}
 
-	/** Picks the full jid to send a file to: `jid` itself, or a resource supporting file transfer **/
 	/** `/file shared`: the shared directories, their files (hashed), who may download them **/
 	function listShares(out:Output) {
 		if (shares == null) {
 			out.info("no shared directories (share.<name> = <directory> in the config, share_access: who may download)");
 			return;
 		}
-		final list = [for (s in shares.list()) {name: s.name, dir: s.dir, count: shares.count(s.name)}];
+		final counts = shares.counts();
+		final list = [for (s in shares.list()) {name: s.name, dir: s.dir, count: counts.get(s.name)}];
 		out.data({shares: [for (s in list) {name: s.name, dir: s.dir, files: s.count.files, hashed: s.count.hashed}], access: shares.describeAccess()}, () -> {
 			for (s in list)
 				out.print('  ${s.name}  ${Config.contractHome(s.dir)}  ${s.count.files} files'
-					+ (s.count.hashed < s.count.files ? Term.style(' (${s.count.files - s.count.hashed} being hashed)', 2) : ''));
+					+ (s.count.hashed < s.count.files ? Term.style(' (${s.count.files - s.count.hashed} not hashed yet)', 2) : ''));
 			out.info('who may list and download: ${shares.describeAccess()} (share_access); contacts: /file browse ${Jid.parseBare(stream?.jid ?? "you")}');
 		});
 	}
@@ -701,11 +703,11 @@ class FileTransfers extends Module {
 	function answerRequest(session:JingleSession) {
 		final request = JingleFileTransfer.getFileRequest(session);
 		final path = request.name ?? "";
-		final local = (shares != null && allowedToShare(session.peer)) ? shares.resolve(path) : null;
+		final allowed = shares != null && allowedToShare(session.peer);
+		final local = allowed ? shares.resolve(path) : null;
 		if (local == null || FileSystem.isDirectory(local)) {
-			// not shared with this contact, or no such file: the same answer
-			session.terminate((shares != null && allowedToShare(session.peer)) ? failed_application : JingleReason.decline,
-				(local == null) ? 'no such file' : 'a directory');
+			// not shared with this contact (declined), or no such file: the same text, nothing revealed
+			session.terminate(allowed ? failed_application : JingleReason.decline, (local == null) ? 'no such file' : 'a directory');
 			return;
 		}
 		final t:Transfer = {
@@ -750,6 +752,7 @@ class FileTransfers extends Module {
 		});
 	}
 
+	/** Picks the full jid to send a file to: `jid` itself, or a resource supporting file transfer **/
 	function findReceiver(jid:String, out:Output, callback:Null<String>->Void) {
 		if (Jid.parseResource(jid) != null) {
 			callback(jid);

@@ -106,7 +106,9 @@ Needs a norc with the socket interface (api = 1 or --api). Examples:
 		] catch (_) null;
 		final socket = try connect(info) catch (_) null;
 		if (socket == null)
-			return fail('norc doesn\'t run for $name with the socket interface (api = 1 or --api)');
+			return fail((info != null && info.exists("socket") && !info.exists("port") && !UnixSocket.available)
+				? '$name: norc listens only at a Unix socket, which this norc can\'t use (the single binary on Linux and macOS can): api = socket,tcp'
+				: 'norc doesn\'t run for $name with the socket interface (api = 1 or --api)');
 		function send(request:Dynamic) {
 			socket.output.writeString(Json.stringify(request) + "\n");
 			socket.output.flush();

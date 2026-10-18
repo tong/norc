@@ -113,26 +113,39 @@ class UnixSocket {
 	#end
 }
 
+/** Reads ahead into a buffer: lines are read a byte at a time (`readLine`), one call to the system each otherwise **/
 private class SocketInput extends haxe.io.Input {
 	final fd:Int;
+	final buf = Bytes.alloc(4096);
+	var pos = 0;
+	var len = 0;
 
 	public function new(fd:Int)
 		this.fd = fd;
 
 	override public function readByte():Int {
-		final b = Bytes.alloc(1);
-		if (readBytes(b, 0, 1) == 0)
+		if (pos == len && fill() == 0)
 			throw new haxe.io.Eof();
-		return b.get(0);
+		return buf.get(pos++);
 	}
 
-	override public function readBytes(buf:Bytes, pos:Int, len:Int):Int {
-		if (len == 0)
+	override public function readBytes(b:Bytes, p:Int, l:Int):Int {
+		if (l == 0)
 			return 0;
-		final n = #if (hl && norc_unix) @:privateAccess UnixSocket._read(fd, buf.b, pos, len) #else -1 #end;
-		if (n <= 0)
+		if (pos == len && fill() == 0)
 			throw new haxe.io.Eof();
+		final n = (l < len - pos) ? l : len - pos;
+		b.blit(p, buf, pos, n);
+		pos += n;
 		return n;
+	}
+
+	/** Reads what is there (waits for some): the number of bytes, 0 at the end or on errors **/
+	function fill():Int {
+		final n = #if (hl && norc_unix) @:privateAccess UnixSocket._read(fd, buf.b, 0, buf.length) #else -1 #end;
+		pos = 0;
+		len = (n > 0) ? n : 0;
+		return len;
 	}
 }
 

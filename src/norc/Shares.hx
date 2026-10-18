@@ -32,6 +32,9 @@ class Shares {
 	/** Files hashed by `index` at most (all shares) **/
 	static inline var MAX_INDEXED = 100000;
 
+	/** `index` saves the cache after this many files hashed **/
+	static inline var SAVE_EVERY = 100;
+
 	final dirs:Map<String, String>;
 	final access:Array<String>;
 	final cachePath:String;
@@ -148,17 +151,22 @@ class Shares {
 
 	/** The cached hash of the file at `path`, `null` if it changed or was not hashed **/
 	public function hashed(path:String):Null<Hashed> {
-		final key = try FileSystem.fullPath(path) catch (_) path;
-		final h = cache.get(key);
-		final stat = try FileSystem.stat(path) catch (_) null;
-		return (h != null && stat != null && h.stat == stat.size && h.mtime == stat.mtime.getTime()) ? h : null;
+		final h = cache.get(try FileSystem.fullPath(path) catch (_) path);
+		return isFresh(h, path) ? h : null;
 	}
 
-	/** Keeps the hash of the file at `path` (read with `size`), saves the cache **/
-	public function remember(path:String, size:Float, hash:String) {
+	/** `h` is the hash of the file at `path` as it is (same size and modification time) **/
+	static function isFresh(h:Null<Hashed>, path:String):Bool {
+		final stat = (h != null) ? try FileSystem.stat(path) catch (_) null : null;
+		return stat != null && h.stat == stat.size && h.mtime == stat.mtime.getTime();
+	}
+
+	/** Keeps the hash of the file at `path` (read with `size`), saves the cache (`save`, else later) **/
+	public function remember(path:String, size:Float, hash:String, save = true) {
 		final stat = try FileSystem.stat(path) catch (_) return;
 		cache.set(try FileSystem.fullPath(path) catch (_) path, {stat: stat.size, mtime: stat.mtime.getTime(), size: size, hash: hash});
-		save();
+		if (save)
+			this.save();
 	}
 
 	function save()
@@ -170,28 +178,33 @@ class Shares {
 		} catch (_) {}
 
 	/**
-		Hashes the files of the shares not hashed yet, in a thread (one at a time); `post` runs callbacks on the main
-		thread, `done` with the number hashed.
+		Hashes the files of the shares not hashed yet, in a thread (also walking the shares, one file at a time);
+		`post` runs callbacks on the main thread, `done` with the number hashed. The cache is saved now and then.
 	**/
 	public function index(post:(() -> Void)->Void, ?done:Int->Void) {
 		if (indexing)
 			return;
 		indexing = true;
-		final todo = [for (f in files()) if (hashed(f) == null) f];
+		// the thread reads a copy: the cache is changed on the main thread
+		final known = cache.copy();
 		sys.thread.Thread.create(() -> {
+			final all = files();
+			final current = [for (f in all) (try FileSystem.fullPath(f) catch (_) f) => true];
 			var n = 0;
-			for (f in todo) {
+			for (f in all) {
+				if (isFresh(known.get(try FileSystem.fullPath(f) catch (_) f), f))
+					continue;
 				final r = try Files.hashFile(f) catch (_) null;
 				if (r != null) {
 					n++;
-					post(() -> remember(f, r.size, r.hash));
+					final save = n % SAVE_EVERY == 0;
+					post(() -> remember(f, r.size, r.hash, save));
 				}
 			}
 			final count = n;
 			post(() -> {
 				indexing = false;
 				// drop files no longer shared
-				final current = [for (f in files()) (try FileSystem.fullPath(f) catch (_) f) => true];
 				for (k in [for (k in cache.keys()) k])
 					if (!current.exists(k))
 						cache.remove(k);
@@ -228,13 +241,23 @@ class Shares {
 		return found;
 	}
 
-	/** Counts of a share: its files, and of them hashed **/
-	public function count(name:String):{files:Int, hashed:Int} {
-		final all = [for (f in files()) if (resolveOwner(f) == name) f];
-		return {files: all.length, hashed: [for (f in all) if (hashed(f) != null) f].length};
+	/** Counts of the shares by name: their files, and of them hashed **/
+	public function counts():Map<String, {files:Int, hashed:Int}> {
+		final counts = [for (name in dirs.keys()) name => {files: 0, hashed: 0}];
+		for (f in files()) {
+			final name = owner(f);
+			final c = (name != null) ? counts.get(name) : null;
+			if (c == null)
+				continue;
+			c.files++;
+			if (hashed(f) != null)
+				c.hashed++;
+		}
+		return counts;
 	}
 
-	function resolveOwner(local:String):Null<String> {
+	/** The share of a file of `files` **/
+	function owner(local:String):Null<String> {
 		for (name => dir in dirs)
 			if (local.startsWith(Path.addTrailingSlash(dir)))
 				return name;

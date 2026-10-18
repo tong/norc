@@ -93,7 +93,12 @@ class Api {
 		if (unix != null)
 			lines.push(unix);
 		if (tcp)
-			lines.push(listenTcp(host, port));
+			try
+				lines.push(listenTcp(host, port))
+			catch (e) {
+				stop();
+				throw e;
+			}
 		final path = '$dir/api';
 		// create it empty and private before writing the token
 		File.saveContent(path, "");

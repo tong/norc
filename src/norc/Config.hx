@@ -116,6 +116,8 @@ typedef Account = {
 
 	/** Echo cancellation and noise suppression of the microphone in calls, `true` if not set **/
 	var ?callEchoCancel:Bool;
+
+	/** A window with the own video in video calls, `true` if not set **/
 	var ?callSelfView:Bool;
 
 	/** Program for the media of calls with its options, `norc-rtc` if not set **/
@@ -211,7 +213,6 @@ class Config {
 		{name: "port", get: a -> Std.string(a.port), set: (a, v) -> a.port = parsePort(v)},
 		{name: "resource", get: a -> a.resource, set: (a, v) -> a.resource = v},
 		{name: "password_cmd", get: a -> a.passwordCmd, set: (a, v) -> a.passwordCmd = v},
-		{name: "share_access", get: a -> a.shareAccess, set: (a, v) -> a.shareAccess = v},
 		{name: "download_dir", get: a -> (a.downloadDir != null) ? contractHome(a.downloadDir) : null, set: (a, v) -> a.downloadDir = expandHome(v)},
 		{name: "keepalive", get: a -> (a.keepalive != null) ? Std.string(a.keepalive) : null, set: (a, v) -> a.keepalive = parseSeconds(v)},
 		{name: "api", get: a -> a.apiSpec ?? ((a.api == null) ? null : a.api ? "1" : "0"), set: (a, v) -> setApi(a, v)},
@@ -229,6 +230,7 @@ class Config {
 		flag("stream_management", a -> a.streamManagement, (a, v) -> a.streamManagement = v),
 		{name: "priority", get: a -> (a.priority != null) ? Std.string(a.priority) : null, set: (a, v) -> a.priority = parsePriority(v)},
 		flag("autojoin_bookmarks", a -> a.autojoinBookmarks, (a, v) -> a.autojoinBookmarks = v),
+		{name: "share_access", get: a -> a.shareAccess, set: (a, v) -> a.shareAccess = v},
 		{name: "call_microphone", get: a -> a.callMicrophone, set: (a, v) -> a.callMicrophone = v},
 		{name: "call_speaker", get: a -> a.callSpeaker, set: (a, v) -> a.callSpeaker = v},
 		{name: "call_camera", get: a -> a.callCamera, set: (a, v) -> a.callCamera = v},
