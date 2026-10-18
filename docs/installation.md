@@ -1,3 +1,27 @@
+## Install
+
+The latest release, on Linux (x86-64, arm64) and macOS (Apple silicon), into `~/.local/bin` (as root `/usr/local/bin`):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/tong/norc/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/tong/norc/main/install.sh | sh -s -- --version v0.7.1 --dir ~/bin
+```
+
+On Windows, in PowerShell, into `%LOCALAPPDATA%\Programs\norc` (its `bin` added to your `PATH`):
+
+```powershell
+irm https://raw.githubusercontent.com/tong/norc/main/install.ps1 | iex
+```
+
+Both download the archive of the [release](https://github.com/tong/norc/releases), verify it with its checksums
+(`SHA256SUMS`) and install `norc` and `norc-rtc` (calls); running them again updates norc. `install.sh` also
+installs the completion of zsh and bash (those installed) next to the programs, e.g.
+`~/.local/share/zsh/site-functions/_norc` (it says if that is not in zsh's `$fpath`) and
+`~/.local/share/bash-completion/completions/norc` (loaded by bash-completion); `--no-completion` skips it. `NORC_VERSION` and
+`NORC_INSTALL_DIR` choose the release and the directory. On Linux and macOS, norc-rtc uses the GStreamer of the
+system: the script tells what to install if it is missing (see [Calls](#calls-norc-rtc)); the Windows archive
+brings its own.
+
 ## Build
 
 norc is written in [haxe](https://haxe.org) and runs on [hashlink](https://hashlink.haxe.org).

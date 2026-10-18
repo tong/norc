@@ -126,7 +126,7 @@ jobs:
           & dist/norc/bin/norc.exe --version
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
-      # norc and norc-rtc
+      # norc and norc-rtc, the completion of zsh and bash (install.sh installs them)
       - uses: actions/upload-artifact@v7
         if: runner.os != 'Windows'
         with:
@@ -134,6 +134,8 @@ jobs:
           path: |
             norc
             norc-rtc
+            extras/zsh/_norc
+            extras/bash/norc
           if-no-files-found: error
 
       # the folder norc
@@ -192,6 +194,8 @@ jobs:
           path: |
             norc
             norc-rtc
+            extras/zsh/_norc
+            extras/bash/norc
           if-no-files-found: error
 
       # only needed to build this binary
@@ -205,8 +209,8 @@ jobs:
             gh api -X DELETE "repos/${{ github.repository }}/actions/artifacts/$id"
           done
 
-  # The GitHub release of the tag: one archive per target with norc and norc-rtc (for calls), tar.gz (zip for Windows),
-  # and their checksums
+  # The GitHub release of the tag: one archive per target with norc and norc-rtc (for calls), tar.gz (zip for Windows,
+  # Linux and macOS with the completions in extras/), and their checksums
   release:
     needs: [build, build-linux-arm64]
     if: github.event_name == 'push'
@@ -237,8 +241,8 @@ jobs:
             if [[ $name == *-windows-* ]]; then
               (cd "$dir" && zip -qr "../../dist/$name.zip" $files)
             else
-              # the permissions are lost in artifacts
-              (cd "$dir" && chmod +x $files)
+              # the permissions are lost in artifacts (the programs; extras/: the completions)
+              (cd "$dir" && chmod +x norc norc-rtc)
               tar -czf "dist/$name.tar.gz" -C "$dir" $files
             fi
           done
