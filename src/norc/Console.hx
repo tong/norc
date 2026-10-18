@@ -42,7 +42,9 @@ class Console {
 	final contacts:Contacts;
 	final chatStates:ChatStates;
 	final rooms:Rooms;
-	final prompts:Prompts;
+
+	/** The prompts of the modes: changed with `/config prompt=…`, then `refreshPrompt` **/
+	public var prompts:Prompts;
 
 	/** The fixed placement of the avatar in the prompt (`{avatar}`), moved when the prompt is drawn again **/
 	static inline var PROMPT_PLACEMENT = 1;

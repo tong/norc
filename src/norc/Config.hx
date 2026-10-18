@@ -6,6 +6,14 @@ import xmpp.Jid;
 
 using StringTools;
 
+/** When a changed config value takes effect in a running norc, see `Config.applies` **/
+enum abstract ConfigApplies(String) to String {
+	var Now = "now";
+	var Call = "with the next call";
+	var Reconnect = "after /reconnect";
+	var Restart = "after a restart of norc";
+}
+
 /** Where the socket interface listens: a Unix socket (its path), TCP (host and port, `0`: a free one) **/
 typedef ApiEndpoints = {
 	var ?socket:String;
@@ -502,32 +510,64 @@ class Config {
 					throw '$source: account is only allowed in ${basePath()}';
 				continue;
 			}
-			if (name.startsWith("alias.")) {
-				final alias = name.substr("alias.".length);
-				final command = value.startsWith("/") ? value.substr(1) : value;
-				if (!~/^[^\s\/]+$/.match(alias) || command.trim().length == 0)
-					throw '$source: invalid alias: $name = $value (alias.<name> = <command>)';
-				(account.aliases ??= new Map()).set(alias, command);
-				continue;
-			}
-			if (name.startsWith("share.")) {
-				// the name is the first part of the paths contacts see
-				final share = name.substr("share.".length);
-				if (!~/^[^\s\/.][^\s\/]*$/.match(share) || value.trim().length == 0)
-					throw '$source: invalid share: $name = $value (share.<name> = <directory>)';
-				(account.shares ??= new Map()).set(share, expandHome(value.trim()));
-				continue;
-			}
-			final key = Lambda.find(KEYS, k -> k.name == name);
-			if (key == null)
-				throw '$source: unknown key: $name';
 			// the base config doesn't override a resource given with the jid
 			if (name == "resource" && base && account.jid.resource != null)
 				continue;
 			try
-				key.set(account, value)
+				set(account, name, value)
 			catch (e:String)
 				throw '$source: $e';
+		}
+	}
+
+	/** Sets the value of key `name` (also `alias.<name>`, `share.<name>`); throws a message if it is invalid **/
+	public static function set(account:Account, name:String, value:String) {
+		if (name.startsWith("alias.")) {
+			final alias = name.substr("alias.".length);
+			final command = value.startsWith("/") ? value.substr(1) : value;
+			if (!~/^[^\s\/]+$/.match(alias) || command.trim().length == 0)
+				throw 'invalid alias: $name = $value (alias.<name> = <command>)';
+			(account.aliases ??= new Map()).set(alias, command);
+			return;
+		}
+		if (name.startsWith("share.")) {
+			// the name is the first part of the paths contacts see
+			final share = name.substr("share.".length);
+			if (!~/^[^\s\/.][^\s\/]*$/.match(share) || value.trim().length == 0)
+				throw 'invalid share: $name = $value (share.<name> = <directory>)';
+			(account.shares ??= new Map()).set(share, expandHome(value.trim()));
+			return;
+		}
+		final key = Lambda.find(KEYS, k -> k.name == name);
+		if (key == null)
+			throw 'unknown key: $name';
+		key.set(account, value);
+	}
+
+	/** The value of key `name` (also `alias.<name>`, `share.<name>`), `null` if not set **/
+	public static function get(account:Account, name:String):Null<String> {
+		final v = Lambda.find(values(account), v -> v.key == name);
+		return v?.value;
+	}
+
+	/** The names of the keys (not `alias.<name>` and `share.<name>`) **/
+	public static function keyNames():Array<String>
+		return [for (k in KEYS) k.name];
+
+	/**
+		When a changed value of key `name` takes effect in a running norc: `now`, with the `call` started next, after
+		`reconnect` (the next login), or after a `restart` (read when norc starts).
+	**/
+	public static function applies(name:String):ConfigApplies {
+		if (name.startsWith("alias."))
+			return Now;
+		if (name.startsWith("call_") && name != "call_helper" || name == "stun" || name == "turn")
+			return Call;
+		return switch name {
+			case "keepalive", "priority", "inline_avatars", "chat_history", "prompt", "chat_prompt", "room_prompt": Now;
+			// not resource: /reconnect resumes the session, with its resource
+			case "host", "port", "stream_management": Reconnect;
+			case _: Restart;
 		}
 	}
 

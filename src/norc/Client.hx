@@ -52,6 +52,9 @@ class Client {
 	/** Identifies norc in its capabilities (XEP-0115) **/
 	static inline var NODE = "https://github.com/tong/norc";
 
+	/** The prompts without `prompt`, `chat_prompt`, `room_prompt` **/
+	static final DEFAULT_PROMPTS:norc.Console.Prompts = {normal: "{status}> ", chat: "{name}{state}> ", room: "#{name}> "};
+
 	/** Seconds to wait before reconnect attempts **/
 	static final BACKOFF = [1, 2, 5, 10, 30, 60];
 
@@ -164,8 +167,10 @@ class Client {
 			},
 			{
 				name: "config",
-				description: "show the config of the account (values not saved marked with *)",
-				run: (args, out) -> showConfig(out),
+				args: "[key=value...]",
+				description: "show the config of the account (values not saved marked with *), or change values (--save: also in the file)",
+				run: (args, out) -> (args[0] != null) ? setConfig(args[0], out) : showConfig(out),
+				complete: ["key=value" => arg -> completeConfig(arg)],
 				subcommands: [
 					{
 						name: "save",
@@ -216,9 +221,9 @@ class Client {
 		final chatStates = new ChatStates(context, messages, contacts, account.chatStates != false, enabled("chat-states"));
 		chatStates.isRoom = rooms.joined;
 		console = new Console(context, commands, contacts, chatStates, rooms, {
-			normal: account.prompt ?? "{status}> ",
-			chat: account.chatPrompt ?? "{name}{state}> ",
-			room: account.roomPrompt ?? "#{name}> "
+			normal: account.prompt ?? DEFAULT_PROMPTS.normal,
+			chat: account.chatPrompt ?? DEFAULT_PROMPTS.chat,
+			room: account.roomPrompt ?? DEFAULT_PROMPTS.room
 		},
 			account.persistentCommandHistory != false ? '${Config.stateDir(account.name)}/history' : null);
 		for (name => command in account.aliases ?? [])
@@ -551,6 +556,95 @@ class Client {
 			line("state dir", Config.contractHome(stateDir));
 		});
 	}
+
+	/**
+		`/config key=value… [--save]`: changes values (quoted with spaces, `\"` and `\\`), all or none if one is
+		invalid; applies them where possible (see `Config.applies`), says when the others take effect.
+	**/
+	function setConfig(input:String, out:Output) {
+		final re = ~/^(--save|([a-z_][a-z0-9_]*(?:\.[^\s=]+)?)=("((?:[^"\\]|\\.)*)"|(\S*)))\s*/;
+		final changes = [];
+		var save = false;
+		var rest = input.trim();
+		while (rest.length > 0) {
+			if (!re.match(rest)) {
+				out.error('invalid: ${rest.split(" ")[0]} (key=value, "value with spaces", --save)');
+				return;
+			}
+			if (re.matched(1) == "--save")
+				save = true;
+			else {
+				final quoted = re.matched(4);
+				changes.push({key: re.matched(2), value: (quoted != null) ? ~/\\(.)/g.replace(quoted, "$1") : re.matched(5)});
+			}
+			rest = re.matchedRight();
+		}
+		if (changes.length == 0 && !save) {
+			showConfig(out);
+			return;
+		}
+		// all valid first: on a copy (with copies of its maps)
+		final copy = Reflect.copy(account);
+		copy.aliases = (account.aliases != null) ? account.aliases.copy() : null;
+		copy.shares = (account.shares != null) ? account.shares.copy() : null;
+		for (c in changes)
+			try
+				Config.set(copy, c.key, c.value)
+			catch (e:String) {
+				out.error(e);
+				return;
+			}
+		final applied = [];
+		for (c in changes) {
+			Config.set(account, c.key, c.value);
+			applyConfig(c.key);
+			applied.push({key: c.key, value: Config.get(account, c.key), applies: (Config.applies(c.key) : String)});
+		}
+		final path = save ? try Config.storeAccount(account) catch (e) {
+			out.error('cannot save the config: $e');
+			null;
+		} : null;
+		out.data({changed: applied, saved: path}, () -> {
+			for (a in applied)
+				out.info('${a.key} = ${a.value ?? "-"}' + Term.style(' (${a.applies == (norc.Config.ConfigApplies.Now : String) ? "applied" : 'applies ${a.applies}'})', 2));
+			if (path != null)
+				out.info('saved ${Config.contractHome(path)}');
+			else if (Lambda.exists(applied, a -> a.applies != (norc.Config.ConfigApplies.Now : String)))
+				out.info(Term.style('not saved: lost when norc quits (/config save, or --save)', 2));
+		});
+	}
+
+	/** Applies the changed value of `key` where it takes effect now (see `Config.applies`) **/
+	function applyConfig(key:String) {
+		if (key.startsWith("alias.")) {
+			final name = key.substr("alias.".length);
+			commands.aliases.set(name, account.aliases.get(name));
+			return;
+		}
+		switch key {
+			case "keepalive":
+				if (session != null)
+					session.keepalive = account.keepalive ?? 60;
+			case "priority":
+				priority = account.priority;
+				if (online())
+					sendPresence();
+			case "inline_avatars":
+				Term.inlineAvatars = account.inlineAvatars == true;
+			case "prompt", "chat_prompt", "room_prompt":
+				console.prompts = {
+					normal: account.prompt ?? DEFAULT_PROMPTS.normal,
+					chat: account.chatPrompt ?? DEFAULT_PROMPTS.chat,
+					room: account.roomPrompt ?? DEFAULT_PROMPTS.room
+				};
+				console.refreshPrompt();
+			case _:
+		}
+	}
+
+	/** Completes `key=` of `/config` by the names of the keys **/
+	function completeConfig(arg:String):Array<String>
+		return arg.contains("=") ? [] : [for (k in Config.keyNames()) if (k.startsWith(arg)) '$k='];
 
 	function showConfig(out:Output) {
 		final path = Config.accountPath(account.name);

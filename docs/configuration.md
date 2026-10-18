@@ -24,7 +24,8 @@ with an example account config in [`config/accounts/example`](https://github.com
 ```
 
 Config files contain `key = value` lines, `#` starts a comment (only at the start of a line).
-An account file overrides any value of `conf`:
+An account file overrides any value of `conf`. In a running norc, `/config key=value` changes a value (`--save`: also
+in the account file), see [`/config`](commands):
 
 | Key | Description | Default |
 |---|---|---|
