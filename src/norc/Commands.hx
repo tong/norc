@@ -131,9 +131,9 @@ class Commands {
 		register({
 			name: "help",
 			args: "[command...]",
-			description: "list the commands, or show the usage of one",
+			description: "list the commands (all: with their subcommands), or show the usage of one",
 			run: (args, out) -> help(args[0], out),
-			complete: ["command" => arg -> completeCommand(arg)]
+			complete: ["command" => arg -> (("all".startsWith(arg) && arg.length > 0) ? ["all"] : []).concat(completeCommand(arg))]
 		});
 		completers.set("path", arg -> completePath(arg));
 	}
@@ -501,7 +501,8 @@ class Commands {
 	**/
 	public function help(?name:String, ?out:Output) {
 		out ??= TermOutput.instance;
-		if (name != null) {
+		final all = name == "all" && !entries.exists("all");
+		if (name != null && !all) {
 			final resolved = resolve(name.startsWith("/") ? name.substr(1) : name);
 			if (resolved == null || resolved.args.length > 0) {
 				out.error('unknown command: $name');
@@ -535,7 +536,15 @@ class Commands {
 		final names = [for (name in aliases.keys()) if (!entries.exists(name)) name];
 		names.sort(Reflect.compare);
 		out.data({commands: [for (e in list) describe(e)], aliases: [for (n in names) {alias: n, command: aliases.get(n)}]}, () -> {
-			printTable(list, out);
+			if (all)
+				printTable(list, out);
+			else {
+				// the commands, their subcommands by name: /help <command> shows them
+				final top = [for (n in sorted) entries.get(n)];
+				printTable(top, out, e -> (e.command.subcommands != null)
+					? Term.style(' (${[for (sub in e.command.subcommands) sub.name].join(", ")})', 2) : '');
+				out.print(Term.style('  /help <command>: its usage and subcommands, /help all: all commands', 2));
+			}
 			if (names.length > 0)
 				out.print(Term.style('  aliases: ', 2) + [for (n in names) Term.style('/$n', 36) + Term.style(' → /${aliases.get(n)}', 2)].join(Term.style(", ", 2)));
 		});
@@ -555,14 +564,16 @@ class Commands {
 			available: available(e.command)
 		};
 
-	function printTable(list:Array<Entry>, out:Output) {
+	/** The usage and description of the commands of `list`, aligned; `suffix` adds to each line **/
+	function printTable(list:Array<Entry>, out:Output, ?suffix:Entry->String) {
 		// aligned by the usage without styles
 		var width = 0;
 		for (e in list)
 			if (usage(e).length > width)
 				width = usage(e).length;
 		for (e in list)
-			out.print('  ${styledUsage(e)}${"".rpad(" ", width + 2 - usage(e).length)}${e.command.description}' + unavailable(e.command));
+			out.print('  ${styledUsage(e)}${"".rpad(" ", width + 2 - usage(e).length)}${e.command.description}' + unavailable(e.command)
+				+ (suffix != null ? suffix(e) : ''));
 	}
 
 	/** ` (not on your server)` for a command the server doesn't support **/
