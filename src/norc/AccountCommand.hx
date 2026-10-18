@@ -141,7 +141,7 @@ or the only configured one.';
 						for (field in info.fields)
 							values.set(field, switch field {
 								case "username": account.jid.node;
-								case "password": readNewPassword("Password");
+								case "password": envPassword ?? readNewPassword("Password");
 								case _: Term.readLine('$field: ') ?? "";
 							});
 						Registration.register(session.stream, values, submitted);
@@ -315,9 +315,15 @@ or the only configured one.';
 		}
 	}
 
-	/** The password of `account`: the output of its `password_cmd`, else asked for (with `prompt`) **/
+	/** The password of the environment variable `NORC_PASSWORD` (set by `main`, which removes the variable) **/
+	public static var envPassword:Null<String>;
+
+	/**
+		The password of `account`: of `NORC_PASSWORD`, else the output of its `password_cmd`, else asked for (with
+		`prompt`)
+	**/
 	public static function readPassword(account:Account, prompt:String):String
-		return account.passwordCmd != null ? Term.readCommand(account.passwordCmd) : Term.readPassword('$prompt for ${Jid.parseBare(account.jid)}: ');
+		return envPassword ?? (account.passwordCmd != null ? Term.readCommand(account.passwordCmd) : Term.readPassword('$prompt for ${Jid.parseBare(account.jid)}: '));
 
 	static function readNewPassword(prompt:String):String {
 		for (_ in 0...3) {

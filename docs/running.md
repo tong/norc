@@ -15,10 +15,10 @@ norc -j me@example.org  # without config file (asks for the password)
 | `-i, --interactive` | read commands from stdin, also if it is no terminal (e.g. piped commands); the default on a terminal, when norc runs in its foreground |
 | `--no-input` | don't read commands from the terminal: only show messages and events (e.g. norc in a terminal multiplexer, with hooks or the socket interface) |
 | `--api` | enable the socket interface |
-| `--stdin` | the API over stdin and stdout instead of a socket (JSON lines, no token); other output goes to stderr; needs `password_cmd` |
+| `--stdin` | the API over stdin and stdout instead of a socket (JSON lines, no token); other output goes to stderr; needs `password_cmd` or `NORC_PASSWORD` |
 | `--xmpp-debug` | print the XMPP stream (passwords are hidden) |
 | `--no-color` | disable colored output |
-| `--silent` | print nothing: no messages, notices or errors (only errors that stop norc, e.g. an invalid config); for norc running in the background with hooks or the socket interface; no input line, not with `-i`, needs `password_cmd` |
+| `--silent` | print nothing: no messages, notices or errors (only errors that stop norc, e.g. an invalid config); for norc running in the background with hooks or the socket interface; no input line, not with `-i`, needs `password_cmd` or `NORC_PASSWORD` |
 | `-v, --version` | show the version |
 | `-h, --help` | show the help |
 

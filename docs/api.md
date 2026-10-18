@@ -146,8 +146,8 @@ traffic. For remote access, use an SSH tunnel: `ssh -L 5280:127.0.0.1:5280 host`
 
 `norc --stdin` reads requests from stdin and writes replies and events to stdout, as JSON lines of the same
 protocol, without authentication (the program started norc). Everything norc prints otherwise goes to stderr, so
-stdout carries only JSON. norc quits when stdin is closed. The password must come from `password_cmd`, as stdin
-can't be used to ask for it.
+stdout carries only JSON. norc quits when stdin is closed. The password must come from `password_cmd` or
+`NORC_PASSWORD`, as stdin can't be used to ask for it.
 
 ```sh
 { echo '{"id":1,"cmd":"msg","args":["alice@example.org","hello"]}'; sleep 5; } | norc -a me --stdin 2>/dev/null

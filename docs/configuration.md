@@ -31,7 +31,7 @@ in the account file), see [`/config`](commands):
 |---|---|---|
 | `account` | only in `conf`: the account to use without `-a` (file name, local part or jid) | the only configured account |
 | `jid` | the account, e.g. `me@example.org` or `me@example.org/laptop` (required) | |
-| `password_cmd` | command printing the password, e.g. `pass xmpp/me@example.org`; without it norc asks | |
+| `password_cmd` | command printing the password, e.g. `pass xmpp/me@example.org`; without it norc asks (or uses `NORC_PASSWORD`) | |
 | `host` | server host, if the server isn't reachable at the domain of the jid or its SRV records (`_xmpp-client._tcp`) | from the SRV records, else the jid's domain |
 | `port` | server port | `5222` |
 | `resource` | resource of the connection (a resource in the jid takes precedence) | `norc` |
@@ -79,7 +79,11 @@ password_cmd = pass xmpp/work
 download_dir = ~/work/incoming
 ```
 
-Passwords are never taken from the command line: use `password_cmd`, or type it when asked.
+Passwords are never taken from the command line (any user sees it in `ps`): use `password_cmd`, type it when asked,
+or set the environment variable `NORC_PASSWORD` (it takes precedence over `password_cmd`), e.g. for a container or
+a service: `NORC_PASSWORD=$(secret-tool lookup xmpp me) norc -j me@example.org --silent --api`. Only your user can
+read the environment of a process; norc removes the variable at its start, so hooks, scripts and `norc-rtc` don't
+get it. It is also the password of `norc account register`, `unregister` and `passwd` (the current one).
 
 ## Files and directories
 

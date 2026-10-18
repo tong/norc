@@ -27,10 +27,22 @@ Options:
       --xmpp-debug       print the XMPP stream
       --no-color         disable colored output
       --silent           print nothing (only errors that stop norc), e.g. with hooks or --api; needs password_cmd
+                         or NORC_PASSWORD
   -v, --version          show the version
-  -h, --help             show this help';
+  -h, --help             show this help
+
+Environment:
+  NORC_PASSWORD          the password (instead of password_cmd or asking), e.g. NORC_PASSWORD=$(pass xmpp/me) norc;
+                         also for norc account register, unregister, passwd (the current one); removed at the start';
 
 function main() {
+	// the password, removed from the environment: not inherited by hooks, scripts and norc-rtc
+	final envPassword = Sys.getEnv("NORC_PASSWORD");
+	if (envPassword != null) {
+		Sys.putEnv("NORC_PASSWORD", null);
+		if (envPassword.length > 0)
+			AccountCommand.envPassword = envPassword;
+	}
 	final args = Sys.args();
 	var accountName:Null<String> = null;
 	var jid:Null<String> = null;
@@ -189,16 +201,16 @@ function main() {
 		if (interactive == true)
 			exit('--stdin and -i both read stdin, use one');
 		// stdin carries the api: the password can't be asked
-		if (account.passwordCmd == null)
-			exit('--stdin needs password_cmd in the account config');
+		if (account.passwordCmd == null && AccountCommand.envPassword == null)
+			exit('--stdin needs password_cmd in the account config, or NORC_PASSWORD');
 		Term.stderrOnly = true;
 	}
 	if (silent) {
 		if (interactive == true)
 			exit('--silent and -i: -i shows the input line, use one');
 		// the password can't be asked
-		if (account.passwordCmd == null)
-			exit('--silent needs password_cmd in the account config');
+		if (account.passwordCmd == null && AccountCommand.envPassword == null)
+			exit('--silent needs password_cmd in the account config, or NORC_PASSWORD');
 	}
 	final pidFile = try PidFile.acquire(Config.stateDir(account.name)) catch (e) exit('${account.name}: $e');
 	final password = try AccountCommand.readPassword(account, "Password") catch (e) {
