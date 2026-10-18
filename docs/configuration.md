@@ -60,7 +60,8 @@ in the account file), see [`/config`](commands):
 | `call_helper` | program for the audio and video of calls, with its options (see `norc-rtc --help`) | `norc-rtc` |
 | `call_recording` | `1`: calls can be recorded (`/call record`); the other side is not told | `0` |
 | `call_record_dir` | directory of the recordings of calls, `~/` is the home directory | `$XDG_DATA_HOME/norc/calls` |
-| `chat_history` | messages of the archive of the server shown when the chat mode starts with a contact (`/chat`, MAM), `0`: none | `10` |
+| `chat_history` | messages shown when the chat mode starts with a contact (`/chat`): of the chatlog (`chatlog = 1`), else of the archive of the server (MAM); `0`: none | `10` |
+| `chatlog` | `1`: a local log of the chats with contacts, `~/.local/share/norc/chatlog/<account>/<jid>.jsonl` (readable only by you), see `/chatlog` | `0` |
 | `inline_avatars` | `1`: small avatars of contacts, before their names in messages and notices, and `{avatar}` in `chat_prompt` (in terminals showing images, PNG avatars; with ImageMagick scaled to fit with a pixel of space around them, else filling two cells); with `0` `{avatar}` is empty | `0` |
 | `terminal_images` | `0`: don't show images (avatars) in the terminal; else they are shown in terminals supporting the kitty graphics protocol (kitty, WezTerm, Ghostty, Konsole), detected when the interactive mode starts | `1` |
 | `persistent_command_history` | `0`: don't keep the history of the input line (interactive mode) between runs; else it is kept in `~/.local/state/norc/<account>/history` (readable only by you, the last 1000 lines) | `1` |

@@ -91,6 +91,8 @@ class Retractions extends Module {
 		// a room sends it back to all occupants
 		if (!room) {
 			messages.recent.retract(chat, target.id);
+			for (f in messages.retractions)
+				f(chat, target.id, true);
 			show('→ <${contacts.name(chat)}>', null, 'retracted ${quote(target)}', null);
 			event(chat, stream.jid, "you", null, target, target.id, true, m);
 		}
@@ -144,6 +146,8 @@ class Retractions extends Module {
 			if (target != null && !target.own)
 				return true;
 			messages.recent.retract(chat, r.id);
+			for (f in messages.retractions)
+				f(chat, r.id, true);
 			show('→ <${contacts.name(chat)}>', null, 'retracted ${quote(target)}', date);
 			event(chat, m.from, "you", null, target, r.id, true, m, true);
 		} else {
@@ -153,6 +157,8 @@ class Retractions extends Module {
 			if (target != null && (target.own || target.from == null || Jid.parseBare(target.from).toLowerCase() != chat.toLowerCase()))
 				return true;
 			messages.recent.retract(chat, r.id);
+			for (f in messages.retractions)
+				f(chat, r.id, false);
 			show('<${contacts.name(chat)}>', chat, 'retracted ${quote(target)}', date);
 			event(chat, m.from ?? chat, contacts.name(chat), null, target, r.id, false, m, i.carbon == received);
 		}

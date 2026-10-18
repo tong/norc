@@ -75,6 +75,9 @@ typedef Account = {
 	/** Images shared in messages shown after them: `contacts` (default), `all` or `off` (see `module.InlineImages`) **/
 	var ?inlineImages:String;
 
+	/** A local log of the chats with contacts (`Chatlog`), `false` if not set **/
+	var ?chatlog:Bool;
+
 	/** Modules not loaded (see `Config.MODULES`): their commands, features and handling of stanzas **/
 	var ?disableModules:Array<String>;
 
@@ -204,7 +207,8 @@ private typedef Key = {
 	`share_access` (who may list and download them: `roster` (contacts seeing your presence, the default), `none`,
 	`group:<name>` (a roster group), jids; several separated by `,`),
 	`persistent_command_history` (`0`: the history of the input line is not kept),
-	`chat_history` (messages of the archive shown when the chat mode starts, `0`: none),
+	`chat_history` (messages of the chatlog, else of the archive, shown when the chat mode starts, `0`: none),
+	`chatlog` (`1`: a local log of the chats with contacts, see `/chatlog`),
 	`prompt` (of the input line, in `"` to keep spaces at the start or end),
 	`chat_prompt` (in chat mode, `{name}`, `{jid}` and `{state}` of the contact),
 	`room_prompt` (in a room, `{name}`, `{jid}` and `{nick}`).
@@ -283,6 +287,7 @@ class Config {
 			set: (a, v) -> a.disableModules = [for (s in v.split(",")) if (s.trim().length > 0) module(s.trim().toLowerCase())]
 		},
 		{name: "share_service", get: a -> a.shareService, set: (a, v) -> a.shareService = v},
+		flag("chatlog", a -> a.chatlog, (a, v) -> a.chatlog = v),
 		{name: "chat_history", get: a -> (a.chatHistory != null) ? Std.string(a.chatHistory) : null, set: (a, v) -> a.chatHistory = parseCount(v)},
 		flag("persistent_command_history", a -> a.persistentCommandHistory, (a, v) -> a.persistentCommandHistory = v),
 		// in quotes: spaces at the start or end are kept
@@ -331,6 +336,10 @@ class Config {
 	/** Directory for cached data of all accounts (e.g. avatars): `$XDG_CACHE_HOME/norc` **/
 	public static function cacheDir():String
 		return (windows() ? env("LOCALAPPDATA", "AppData/Local") + "/norc/cache" : env("XDG_CACHE_HOME", ".cache") + "/norc");
+
+	/** Directory of the chatlog of `account` (`Chatlog`): `$XDG_DATA_HOME/norc/chatlog/<account>` **/
+	public static function chatlogDir(account:String):String
+		return (windows() ? env("APPDATA", "AppData/Roaming") : env("XDG_DATA_HOME", ".local/share")) + '/norc/chatlog/$account';
 
 	/** Directory for the recordings of calls: `$XDG_DATA_HOME/norc/calls` **/
 	public static function recordingsDir():String
@@ -564,7 +573,7 @@ class Config {
 		if (name.startsWith("call_") && name != "call_helper" || name == "stun" || name == "turn")
 			return Call;
 		return switch name {
-			case "keepalive", "priority", "inline_avatars", "chat_history", "prompt", "chat_prompt", "room_prompt": Now;
+			case "keepalive", "priority", "inline_avatars", "chat_history", "chatlog", "prompt", "chat_prompt", "room_prompt": Now;
 			// not resource: /reconnect resumes the session, with its resource
 			case "host", "port", "stream_management": Reconnect;
 			case _: Restart;

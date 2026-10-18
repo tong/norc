@@ -9,6 +9,7 @@ import norc.module.Avatars;
 import norc.module.Blocking;
 import norc.module.Calls;
 import norc.module.Carbons;
+import norc.module.Chatlog;
 import norc.module.ChatStates;
 import norc.module.Corrections;
 import norc.module.Contacts;
@@ -230,8 +231,16 @@ class Client {
 			commands.aliases.set(name, command);
 		commands.completers.set("jid", arg -> contacts.completions(arg));
 		final history = enabled("history") ? new History(context, contacts, rooms, messages, server) : null;
-		if (history != null)
-			console.entered = (jid, out) -> history.recent(jid, account.chatHistory ?? 10, out);
+		// the local log of the chats (chatlog = 1)
+		final chatlog = new Chatlog(context, messages, contacts, account);
+		// entering a chat: its last messages, of the chatlog (contacts), else of the archive
+		console.entered = (jid, out) -> {
+			final count = account.chatHistory ?? 10;
+			if (!rooms.joined(xmpp.Jid.parseBare(jid)) && chatlog.recent(jid, count, out))
+				return;
+			if (history != null)
+				history.recent(jid, count, out);
+		}
 		// Jingle sessions for file transfers and calls
 		final sessions = (enabled("file-transfers") || enabled("calls")) ? new JingleSessions(context) : null;
 		// shared directories (share.<name>): their listing, the hashes of their files kept in the state dir
@@ -269,6 +278,7 @@ class Client {
 			modules.push(rooms);
 		if (history != null)
 			modules.push(history);
+		modules.push(chatlog);
 		for (m in optional)
 			if (enabled(m.name))
 				modules.push(m.create());

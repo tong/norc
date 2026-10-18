@@ -75,8 +75,13 @@
 # The recordings, default: $XDG_DATA_HOME/norc/calls (~/.local/share/norc/calls).
 # call_record_dir = ~/Videos/calls
 
-# Messages of the archive of the server (MAM) shown when the chat mode starts with a contact (/chat), 0: none.
+# Messages shown when the chat mode starts with a contact (/chat): of the chatlog, else of the archive of the
+# server (MAM); 0: none.
 # chat_history = 10
+
+# A local log of the chats with contacts (/chatlog), readable only by you: in $XDG_DATA_HOME/norc/chatlog/<account>/
+# (~/.local/share/norc/chatlog). Off unless 1.
+# chatlog = 0
 
 # Keep the history of the input line (interactive mode) between runs, in ~/.local/state/norc/<account>/history (readable only
 # by you, with the messages typed in chat mode). 0 disables it.

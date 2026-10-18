@@ -59,6 +59,9 @@ class Messages extends Module {
 	**/
 	public final displayed = new Array<(chat:String, m:Message, own:Bool, room:Bool) -> Void>();
 
+	/** Called after a message with a contact was retracted (by the module of retractions): its chat, id, by the user **/
+	public final retractions = new Array<(chat:String, id:String, own:Bool) -> Void>();
+
 	/** Where sent messages were shown (see `shownAt`), the last `MAX_SHOWN` **/
 	final shown = new Map<String, LineEditor.Position>();
 
