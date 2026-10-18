@@ -22,7 +22,7 @@ class Receipts extends Module {
 	final messages:Messages;
 
 	/** Sent messages waiting for a receipt, in the order sent **/
-	final pending = new Array<{id:String, to:String, body:String}>();
+	final pending = new Array<{id:String, to:String}>();
 
 	public function new(context:Context, messages:Messages, contacts:Contacts) {
 		super(context);
@@ -40,7 +40,7 @@ class Receipts extends Module {
 		if (m.body == null || m.type == groupchat)
 			return;
 		DeliveryReceipts.requestReceipt(m);
-		pending.push({id: m.id, to: Jid.parseBare(m.to), body: m.body});
+		pending.push({id: m.id, to: Jid.parseBare(m.to)});
 		if (pending.length > MAX_PENDING)
 			pending.shift();
 	}
@@ -56,9 +56,9 @@ class Receipts extends Module {
 			final p = (i.carbon == null) ? Lambda.find(pending, p -> p.id == id && p.to == from) : null;
 			if (p != null) {
 				pending.remove(p);
-				// at the end of the message if it is still on the screen, else a line of its own
+				// at the end of the message if it is still on the screen, else a short line (not the message again)
 				if (!Term.mark(messages.shownAt(id), " " + Term.style("✓", 32)))
-					Term.notice('✓ ${contacts.name(from)}: ${excerpt(p.body)}');
+					Term.notice('✓ delivered to ${contacts.name(from)}');
 				emit("receipt", [from, id], {from: m.from, name: contacts.name(from), id: id});
 			}
 			return m.body == null;
@@ -70,11 +70,5 @@ class Receipts extends Module {
 				stream.send(receipt);
 		}
 		return false;
-	}
-
-	/** The start of a message, on one line **/
-	static function excerpt(body:String):String {
-		final line = body.split("\n")[0];
-		return (line.length > 40 || body.contains("\n")) ? line.substr(0, 40) + "…" : line;
 	}
 }

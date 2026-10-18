@@ -228,6 +228,7 @@ class LineEditor {
 			mutex.release();
 			return null;
 		}
+		refreshSize();
 		if (active)
 			write("\r\x1B[K");
 		if (error) {
@@ -280,6 +281,11 @@ class LineEditor {
 
 	/** The size of the terminal, `null` if unknown **/
 	static function terminalSize():Null<{rows:Int, columns:Int}> {
+		#if (hl && norc_unix)
+		final size = termSize();
+		if (size > 0)
+			return {rows: size >> 16, columns: size & 0xFFFF};
+		#end
 		final words = (stty("size") ?? "").split(" ");
 		final r = Std.parseInt(words[0] ?? ""), c = Std.parseInt(words[1] ?? "");
 		return (r != null && c != null && r > 0 && c > 0) ? {rows: r, columns: c} : null;
@@ -613,6 +619,7 @@ class LineEditor {
 	}
 
 	function redraw() {
+		refreshSize();
 		var s = "\r" + prompt + shown() + "\x1B[K";
 		final back = line.length - cursor;
 		if (back > 0)
@@ -643,6 +650,26 @@ class LineEditor {
 	}
 
 	/** Runs `stty` on the terminal, returns its output or `null` on failure **/
+	#if (hl && norc_unix)
+	/** The size of the terminal: rows << 16 | columns, -1 if unknown (a system call, unlike stty) **/
+	@:hlNative("norc", "term_size") static function termSize():Int
+		return -1;
+	#end
+
+	/**
+		Follows a resize of the terminal (there is no signal for it here), where that is cheap: before printing, so the
+		rows and columns of printed text are counted right, and marks (`mark`) find their line
+	**/
+	function refreshSize() {
+		#if (hl && norc_unix)
+		final size = termSize();
+		if (size > 0) {
+			screenRows = size >> 16;
+			columns = size & 0xFFFF;
+		}
+		#end
+	}
+
 	static function stty(args:String):Null<String>
 		return Term.output("sh", ["-c", 'stty $args < /dev/tty'])?.trim();
 }

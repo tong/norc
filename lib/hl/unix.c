@@ -1,6 +1,7 @@
 /*
         Unix domain sockets for the socket interface of norc (norc.UnixSocket):
-   HashLink's sockets are TCP and UDP only.
+   HashLink's sockets are TCP and UDP only. And the size of the terminal
+   (norc.LineEditor), without starting stty.
 
         Compiled into the single binary (the HashLink/C build, -D norc_unix).
    Blocking calls let the garbage collector run meanwhile (hl_blocking), as
@@ -17,6 +18,7 @@
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/types.h>
+#include <sys/ioctl.h>
 #include <sys/un.h>
 #include <unistd.h>
 
@@ -138,6 +140,17 @@ HL_PRIM int HL_NAME(unix_peer_uid)(int fd) {
 
 HL_PRIM int HL_NAME(unix_uid)() { return (int)getuid(); }
 
+/* The size of the terminal of stdout (else stdin): rows << 16 | columns, -1 if
+ * unknown */
+HL_PRIM int HL_NAME(term_size)() {
+  struct winsize ws;
+  if ((ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0 ||
+       ioctl(STDIN_FILENO, TIOCGWINSZ, &ws) == 0) &&
+      ws.ws_row > 0 && ws.ws_col > 0)
+    return ((int)ws.ws_row << 16) | (int)ws.ws_col;
+  return -1;
+}
+
 #else
 HL_PRIM int HL_NAME(unix_listen)(vbyte *path) { return -1; }
 HL_PRIM int HL_NAME(unix_accept)(int fd) { return -1; }
@@ -153,4 +166,5 @@ HL_PRIM void HL_NAME(unix_shutdown)(int fd) {}
 HL_PRIM void HL_NAME(unix_close)(int fd) {}
 HL_PRIM int HL_NAME(unix_peer_uid)(int fd) { return -1; }
 HL_PRIM int HL_NAME(unix_uid)() { return -1; }
+HL_PRIM int HL_NAME(term_size)() { return -1; }
 #endif
