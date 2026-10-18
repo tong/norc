@@ -15,7 +15,7 @@
 command -v notify-send >/dev/null || exit 0
 case "$NORC_TYPE" in
 	subscribed) text="allowed you to see their presence" ;;
-	unsubscribed) text="removed your presence subscription" ;;
+	unsubscribed) text="stopped sharing their presence with you" ;;
 	*) text="unsubscribed from your presence" ;;
 esac
 exec notify-send --app-name=norc "$NORC_NAME" "$text"

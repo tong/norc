@@ -1,0 +1,22 @@
+#!/bin/sh
+#
+# norc hook: notification when your server lacks features norc uses (only when this changes, not at every login)
+#
+# Run on the server event, after the login, with what your server offers (see /server).
+# Enable it with `chmod +x on-server`. Several hooks per event: on-server.<anything> (e.g. on-server.log).
+#
+# Arguments: server features
+# NORC_SERVER    the domain of your server
+# NORC_FEATURES  of mam (archive), pep (personal events), blocking, upload, carbons: those it has, separated by spaces
+# NORC_MISSING   those it lacks
+# NORC_UPLOAD    the upload service, if any
+# Always set: NORC_EVENT NORC_ACCOUNT (the account name) NORC_JID (your jid)
+
+# the features missing at the last login
+state="${XDG_STATE_HOME:-$HOME/.local/state}/norc/$NORC_ACCOUNT/server-missing"
+[ "$(cat "$state" 2>/dev/null)" = "$NORC_MISSING" ] && exit 0
+mkdir -p "$(dirname "$state")"
+echo "$NORC_MISSING" > "$state"
+[ -n "$NORC_MISSING" ] || exit 0
+command -v notify-send >/dev/null || exit 0
+exec notify-send --app-name=norc "$NORC_SERVER lacks: $NORC_MISSING" "norc works without them, see /server"

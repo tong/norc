@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# norc hook: log the messages you sent, one file per contact (an on-message.log could do the same for received ones)
+# norc hook: log the messages you sent, with their ids (on-receipt marks them delivered)
 #
 # Run on the sent event, when you sent a message (also from another of your clients).
 # Enable it with `chmod +x on-sent`. Several hooks per event: on-sent.<anything> (e.g. on-sent.log).
@@ -17,7 +17,9 @@
 # NORC_REPLY_TO  for a reply: the author of the message replied to
 # Always set: NORC_EVENT NORC_ACCOUNT (the account name) NORC_JID (your jid)
 
+# ~/.local/share/norc/logs/<account>/sent.log, readable only by you (all messages, in and out, per contact: the
+# script log-messages)
 log="${XDG_DATA_HOME:-$HOME/.local/share}/norc/logs/$NORC_ACCOUNT"
+umask 077
 mkdir -p "$log"
-# one file per contact: ~/.local/share/norc/logs/<account>/<jid>.log
-printf '%s > %s\n' "$(date '+%Y-%m-%d %H:%M')" "$2" >> "$log/$1.log"
+printf '%s %s → %s: %s\n' "$(date '+%F %T')" "$NORC_ID" "$1" "$2" >> "$log/sent.log"

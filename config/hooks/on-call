@@ -11,6 +11,7 @@
 # NORC_STATE     ringing (a contact calls you), calling (you call), connecting (accepted), connected, ended
 # NORC_ID        the number of the call (/call accept 1), the same for all its events (NORC_FROM can change)
 # NORC_MEDIA     audio or video
+# NORC_AUDIO     your direction of the audio: both, send, receive, none (NORC_VIDEO: of the video)
 # NORC_INCOMING  1: the contact called you
 # NORC_RECORDING the file of the recording, if the call is recorded (see on-recording)
 # NORC_REASON    why the call ended (e.g. hung up, missed), when ended

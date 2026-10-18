@@ -8,9 +8,11 @@
 # norc waits for it: each stanza starts a process, keep it fast.
 # Enable it with `chmod +x on-stanza-recv`. Several filters: on-stanza-recv.<anything>, chained in the order of their names.
 #
-# Always set: NORC_EVENT NORC_ACCOUNT NORC_JID
+# Always set: NORC_EVENT NORC_ACCOUNT (the account name) NORC_JID (your jid)
 
+# everything you receive, readable only by you
 log="${XDG_DATA_HOME:-$HOME/.local/share}/norc/logs/$NORC_ACCOUNT"
+umask 077
 mkdir -p "$log"
 # pass the stanza on and append it to the log
 tee -a "$log/stanzas.log"

@@ -8,7 +8,8 @@
 # norc waits for it: each stanza starts a process, keep it fast.
 # Enable it with `chmod +x on-stanza-send`. Several filters: on-stanza-send.<anything>, chained in the order of their names.
 #
-# Always set: NORC_EVENT NORC_ACCOUNT NORC_JID
+# Always set: NORC_EVENT NORC_ACCOUNT (the account name) NORC_JID (your jid)
 
-# replace "teh" with "the" in the text of messages
-sed 's/\bteh\b/the/g'
+# replace the word "teh" with "the" in the text of messages (<body>), not in other stanzas or attributes;
+# the stanza is one line
+sed -E -e ':a' -e 's/(<body>([^<]*[^[:alnum:]<])?)teh([^[:alnum:]<]|<)/\1the\3/' -e 'ta'

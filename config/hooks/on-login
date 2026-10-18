@@ -9,6 +9,7 @@
 # NORC_RESUMED  1 if the previous session was resumed after a disconnection (no messages were lost)
 # Always set: NORC_EVENT NORC_ACCOUNT (the account name) NORC_JID (your jid)
 
+# $XDG_RUNTIME_DIR/norc/<account>.status: online, reconnecting; removed when norc exits
 dir="${XDG_RUNTIME_DIR:-/tmp}/norc"
 mkdir -p "$dir"
-echo online > "$dir/$NORC_ACCOUNT"
+echo online > "$dir/$NORC_ACCOUNT.status"

@@ -14,5 +14,6 @@
 # Always set: NORC_EVENT NORC_ACCOUNT (the account name) NORC_JID (your jid)
 
 log="${XDG_DATA_HOME:-$HOME/.local/share}/norc/logs/$NORC_ACCOUNT"
+umask 077
 mkdir -p "$log"
-printf '%s %s %s (%s) %s\n' "$(date '+%Y-%m-%d %H:%M')" "$NORC_ACTION" "$1" "$NORC_SUBSCRIPTION" "$NORC_NAME" >> "$log/roster.log"
+printf '%s %s %s (%s) %s\n' "$(date '+%F %T')" "$NORC_ACTION" "$1" "$NORC_SUBSCRIPTION" "$NORC_NAME" >> "$log/roster.log"

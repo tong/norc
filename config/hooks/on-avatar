@@ -1,0 +1,26 @@
+#!/bin/sh
+#
+# norc hook: the avatars of contacts as files named by jid, e.g. for a status bar or notifications
+#
+# Run on the avatar event, when the avatar of a contact (or your own) changed and is in the cache (also after the login).
+# Enable it with `chmod +x on-avatar`. Several hooks per event: on-avatar.<anything> (e.g. on-avatar.log).
+#
+# Arguments: jid path (empty: removed)
+# NORC_JID_CONTACT  bare jid of the contact (or yours, with NORC_OWN=1)
+# NORC_NAME    name of the contact
+# NORC_PATH    the image in the cache, empty if the avatar was removed
+# NORC_ID      its SHA-1 hash
+# NORC_TYPE    e.g. image/png
+# NORC_BYTES   NORC_WIDTH  NORC_HEIGHT
+# NORC_SOURCE  pep or vcard
+# NORC_OWN     1: your own avatar
+# Always set: NORC_EVENT NORC_ACCOUNT (the account name) NORC_JID (your jid)
+
+# ~/.cache/norc/avatars/<account>/<jid>: a link to the image
+dir="${XDG_CACHE_HOME:-$HOME/.cache}/norc/avatars/$NORC_ACCOUNT"
+mkdir -p "$dir"
+if [ -n "$2" ]; then
+	ln -sf "$2" "$dir/$1"
+else
+	rm -f "$dir/$1"
+fi

@@ -11,9 +11,9 @@
 # NORC_STATE  composing (typing), paused, active, inactive, gone
 # Always set: NORC_EVENT NORC_ACCOUNT (the account name) NORC_JID (your jid)
 
-dir="${XDG_RUNTIME_DIR:-/tmp}/norc-typing"
+# $XDG_RUNTIME_DIR/norc/<account>.typing/<jid>: exists while the contact is typing, has its name
+dir="${XDG_RUNTIME_DIR:-/tmp}/norc/$NORC_ACCOUNT.typing"
 mkdir -p "$dir"
-# the file exists while the contact is typing
 if [ "$2" = composing ]; then
 	echo "$NORC_NAME" > "$dir/$1"
 else

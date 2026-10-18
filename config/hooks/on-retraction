@@ -1,0 +1,29 @@
+#!/bin/sh
+#
+# norc hook: desktop notification when a contact retracts a message, with its text
+#
+# Run on the retraction event, when a message was retracted (/retract) or removed by a moderator of a room.
+# Enable it with `chmod +x on-retraction`. Several hooks per event: on-retraction.<anything> (e.g. on-retraction.log).
+#
+# Arguments: chat (bare jid of the contact or room) id
+# NORC_CHAT       the contact or room
+# NORC_FROM       full jid of the sender (in rooms the occupant jid)
+# NORC_NAME       name of the contact, in rooms the nick; for a moderation the moderator
+# NORC_ROOM       jid of the room, empty for contacts
+# NORC_ID         id of the retracted message
+# NORC_TEXT       its text, empty if unknown
+# NORC_AUTHOR     its author, if known
+# NORC_OWN        1: your own retraction (also of another of your clients); for a moderation: your message
+# NORC_MODERATED  1: removed by a moderator
+# NORC_REASON     why (moderations)
+# NORC_CARBON     1: sent by another of your clients
+# NORC_DELAYED    1: delivered on login
+# Always set: NORC_EVENT NORC_ACCOUNT (the account name) NORC_JID (your jid)
+
+[ "$NORC_OWN" = 1 ] && exit 0
+[ "$NORC_DELAYED" = 1 ] && exit 0
+command -v notify-send >/dev/null || exit 0
+if [ "$NORC_MODERATED" = 1 ]; then
+	exec notify-send --app-name=norc "$NORC_NAME removed a message in ${NORC_ROOM%%@*}" "${NORC_TEXT:-}${NORC_REASON:+ ($NORC_REASON)}"
+fi
+exec notify-send --app-name=norc "$NORC_NAME retracted a message" "${NORC_TEXT:-}"
