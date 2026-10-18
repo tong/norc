@@ -206,6 +206,15 @@ class Term {
 		return '${i == 0 ? Std.int(bytes) : Math.round(bytes * 10) / 10} ${units[i]}';
 	}
 
+	/** A duration, e.g. `2d 3h`, `5h 12m`, `3m 20s`, `45s` **/
+	public static function duration(seconds:Int):String {
+		final d = Std.int(seconds / 86400);
+		final h = Std.int(seconds % 86400 / 3600);
+		final m = Std.int(seconds % 3600 / 60);
+		final s = seconds % 60;
+		return if (d > 0) '${d}d ${h}h' else if (h > 0) '${h}h ${m}m' else if (m > 0) '${m}m ${s}s' else '${s}s';
+	}
+
 	/** Time of an event: `12:03:41` today, else `2026-10-13 12:03:41` **/
 	public static function timestamp(date:Date):String {
 		final now = Date.now();

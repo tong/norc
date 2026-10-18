@@ -30,6 +30,7 @@ The commands of [file transfer](file-transfer) and [scripts](scripts) are on the
 | `/retract <jid> [^n]` | retract (delete) your last message to a contact or in a room for everyone (`^2`: the one before it, …): their clients delete it or show it as retracted, but may have kept it |
 | `/chatstate <jid> <state>` | send your chat state: `active`, `composing` (typing), `paused`, `inactive`, `gone`; for editors and other programs using the API |
 | `/xmpp-debug [on\|off]` | print the XMPP stream (passwords hidden), without argument: on; same as `--xmpp-debug` |
+| `/account` | your account and its session: your jid, connected since when, the server (address, login mechanism), whether the session can be resumed, your presence, your other clients online, where the api listens, the config file and the state directory |
 | `/config` | show the config of the account (base config, account config and command line options); values not saved are marked with `*` |
 | `/config save` | save the config to `accounts/<name>` (created if needed): changed values are updated, comments and other lines kept, values of the base config not repeated |
 | `/vcard [jid]` | show the vCard (profile) of a contact, or your own |

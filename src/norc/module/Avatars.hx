@@ -184,6 +184,8 @@ class Avatars extends Module {
 			contacts.avatars.set(key, avatar.path);
 		emit("avatar", [jid, avatar?.path ?? ""], {
 			jid: jid,
+			// hooks: NORC_JID is the own jid
+			jid_contact: jid,
 			name: contacts.name(jid),
 			path: avatar?.path,
 			id: avatar?.id,

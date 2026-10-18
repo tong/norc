@@ -218,7 +218,7 @@ class Discovery extends Module {
 				seconds: last.seconds,
 				status: last.status
 			}, () -> {
-				final time = formatDuration(last.seconds);
+				final time = Term.duration(last.seconds);
 				final text = switch kind {
 					case "uptime": 'up for $time';
 					case "offline": (last.seconds == 0) ? 'online' : 'last seen $time ago';
@@ -227,15 +227,6 @@ class Discovery extends Module {
 				out.print('$jid: $text' + (last.status != null ? ' (${last.status})' : ''));
 			});
 		});
-
-	/** e.g. `2d 3h`, `5h 12m`, `3m 20s`, `45s` **/
-	static function formatDuration(seconds:Int):String {
-		final d = Std.int(seconds / 86400);
-		final h = Std.int(seconds % 86400 / 3600);
-		final m = Std.int(seconds % 3600 / 60);
-		final s = seconds % 60;
-		return if (d > 0) '${d}d ${h}h' else if (h > 0) '${h}h ${m}m' else if (m > 0) '${m}m ${s}s' else '${s}s';
-	}
 
 	static function describe(jid:String, node:Null<String>):String
 		return jid + (node != null ? ' (node $node)' : '');

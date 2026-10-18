@@ -18,7 +18,7 @@ are skipped, enable a script with `chmod +x`.
 | `/scripts restart <name>` | start a script again |
 | `/scripts stop <name>` | stop a script (until `/scripts restart` or the next start of norc) |
 
-Examples (the new ones need `jq`) are in [`config/scripts/`](https://github.com/tong/norc/tree/main/config/scripts), installed disabled into `~/.config/norc/scripts/` on the first
+Examples (all but `tune-mpris` need `jq`) are in [`config/scripts/`](https://github.com/tong/norc/tree/main/config/scripts), installed disabled into `~/.config/norc/scripts/` on the first
 start:
 
 | Script | Does |

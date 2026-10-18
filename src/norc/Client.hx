@@ -104,6 +104,12 @@ class Client {
 	/** The session was online (for the logout event) **/
 	var wasOnline = false;
 
+	/** When the current session went online (kept when it is resumed), `null` before **/
+	var onlineSince:Null<Float>;
+
+	/** Your other clients online (full jids), by the presences of the contacts module **/
+	var otherClients:() -> Array<String> = () -> [];
+
 	var exitCode:Null<Int>;
 
 	public function new(account:Account, password:String) {
@@ -169,6 +175,11 @@ class Client {
 				]
 			},
 			{
+				name: "account",
+				description: "your account: jid, connection, login, presence, your other clients online, the api, config and state",
+				run: (args, out) -> showAccount(out)
+			},
+			{
 				name: "reconnect",
 				description: "close the connection and reconnect (resuming the session if possible), e.g. after a network change",
 				online: true,
@@ -188,6 +199,10 @@ class Client {
 		function enabled(name:String):Bool
 			return !disabled.contains(name);
 		final contacts = new Contacts(context);
+		otherClients = () -> {
+			final own = session?.stream.jid;
+			(own == null) ? [] : [for (r in contacts.resources(xmpp.Jid.parseBare(own))) if (r != own) r];
+		}
 		// avatars in the terminal: of the avatars module, in the prompt (`{avatar}`) and before names (`inline_avatars`)
 		Term.avatarPath = jid -> contacts.avatars.get(xmpp.Jid.parseBare(jid).toLowerCase());
 		Term.inlineAvatars = account.inlineAvatars == true;
@@ -357,6 +372,8 @@ class Client {
 			attempt = 0;
 			resumable = null;
 			wasOnline = true;
+			if (!session.resumed || onlineSince == null)
+				onlineSince = Sys.time();
 			if (session.resumed) {
 				// the server kept the roster, presences and subscriptions
 				Term.info('online as ${stream.jid} (resumed)');
@@ -483,6 +500,56 @@ class Client {
 		if (caps != null)
 			presence.properties.push(caps());
 		session.stream.send(presence);
+	}
+
+	/** `/account`: the account and its session **/
+	function showAccount(out:Output) {
+		final online = online();
+		final s = session;
+		final state = online ? "online" : (s != null) ? "connecting" : quitting ? "offline" : "reconnecting";
+		final since = (online && onlineSince != null) ? onlineSince : null;
+		final address = s?.address;
+		final sm = (s?.sm?.id != null) ? "resumable" : (online && s?.sm != null) ? "not offered" : null;
+		final clients = online ? otherClients() : [];
+		clients.sort(Reflect.compare);
+		final api = this.api.endpoints();
+		final path = Config.accountPath(account.name);
+		final stateDir = Config.stateDir(account.name);
+		final presence = {state: (show : Null<String>) ?? "available", status: status};
+		out.data({
+			account: account.name,
+			jid: s?.stream.jid ?? '${account.jid.node}@${account.jid.domain}/${account.resource}',
+			state: state,
+			since: (since != null) ? Std.int(since) : null,
+			server: (address != null) ? '${address.host}:${address.port}' : null,
+			mechanism: online ? s.mechanism : null,
+			streamManagement: sm,
+			presence: presence.state,
+			status: status,
+			priority: priority,
+			clients: clients,
+			api: api,
+			config: path,
+			stateDir: stateDir
+		}, () -> {
+			function line(key:String, value:String)
+				out.print('  ${key.rpad(" ", 12)}$value');
+			out.print('account ${account.name}');
+			line("jid", s?.stream.jid ?? '${account.jid.node}@${account.jid.domain}/${account.resource}');
+			line("connection", state + ((since != null)
+				? ' since ${Term.timestamp(Date.fromTime(since * 1000))} (${Term.duration(Std.int(Sys.time() - since))})' : ''));
+			if (address != null)
+				line("server", '${address.host}:${address.port}' + (account.host == null ? Term.style(' (SRV of ${account.jid.domain})', 2) : '')
+					+ (online && s.mechanism != null ? ', TLS, ${s.mechanism}' : ''));
+			if (sm != null)
+				line("session", (sm == "resumable") ? "resumable after disconnections (stream management)" : "not resumable (no stream management)");
+			line("presence", Contacts.describe(presence) + (priority != null ? ', priority $priority' : ''));
+			if (online)
+				line("clients", (clients.length > 0) ? 'also online: ${clients.join(", ")}' : Term.style("no other client online", 2));
+			line("api", (api.length > 0) ? api.join(", ") : Term.style("off (api = socket or --api)", 2));
+			line("config", Config.contractHome(path) + (FileSystem.exists(path) ? "" : Term.style(" (not saved: /config save)", 2)));
+			line("state dir", Config.contractHome(stateDir));
+		});
 	}
 
 	function showConfig(out:Output) {

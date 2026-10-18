@@ -177,6 +177,19 @@ class Api {
 		return client.close;
 	}
 
+	/** Where it listens: `socket <path>`, `tcp <host>:<port>` (none if not started) **/
+	public function endpoints():Array<String> {
+		final list = [];
+		if (socketPath != null)
+			list.push('socket $socketPath');
+		if (server != null)
+			try {
+				final h = server.host();
+				list.push('tcp ${h.host}:${h.port}');
+			} catch (_) {}
+		return list;
+	}
+
 	public function stop() {
 		if (file != null)
 			try

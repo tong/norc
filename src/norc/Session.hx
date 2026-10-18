@@ -44,6 +44,9 @@ class Session {
 	/** The host and port connected to, once connected **/
 	public var address(default, null):Null<{host:String, port:Int}>;
 
+	/** The SASL mechanism of the login (e.g. `SCRAM-SHA-256`), once logging in **/
+	public var mechanism(default, null):Null<String>;
+
 	var failed = false;
 
 	/** Seconds without received data before pinging the server, `0` to disable (call `tick` regularly) **/
@@ -182,6 +185,7 @@ class Session {
 			fail('no supported authentication mechanism: ${Authentication.getMechanisms(features).join(", ")}');
 			return;
 		}
+		this.mechanism = mechanism.name;
 		if (resumable()) {
 			resume(password, mechanism);
 			return;
