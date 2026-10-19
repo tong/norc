@@ -3,3 +3,6 @@ norc.hxml
 --dce full
 -D analyzer-optimize
 -D norc_unix
+# OMEMO (hxomemo, its natives compiled in: native/omemo.c)
+-D norc_omemo
+--library hxomemo

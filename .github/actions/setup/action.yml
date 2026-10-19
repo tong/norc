@@ -13,3 +13,4 @@ runs:
       run: |
         haxelib git sasl https://github.com/tong/hxsasl --always
         haxelib git hxmpp https://github.com/tong/hxmpp --always
+        haxelib git hxomemo https://github.com/tong/hxomemo --always

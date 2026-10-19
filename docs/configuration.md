@@ -39,6 +39,7 @@ in the account file), see [`/config`](commands):
 | `keepalive` | seconds without data from the server before pinging it; norc reconnects without answer within 30 seconds; `0` disables it | `60` |
 | `last_activity` | `1`: answer last activity requests (`/lastactivity`) with the time since your last input in norc | `0` |
 | `carbons` | `0`: don't receive copies of the messages sent and received by your other clients (Message Carbons) | `1` |
+| `omemo` | `1`: OMEMO end-to-end encryption of messages with contacts, see [commands](commands#encryption-omemo) | `0` |
 | `chat_states` | `0`: don't send chat states (typing, …) | `1` |
 | `entity_time` | `1`: answer time requests (`/time`) with your local time, revealing your time zone | `0` |
 | `inline_images` | images shared in messages shown after them (in terminals showing images, see [file transfer](file-transfer)): `contacts`: of contacts and your own, `all`: of everybody, also in rooms, `off`: only with `/file show` | `contacts` |

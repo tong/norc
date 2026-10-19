@@ -22,6 +22,9 @@ import norc.module.InlineImages;
 import norc.module.JingleSessions;
 import norc.module.Messages;
 import norc.module.Moods;
+#if norc_omemo
+import norc.module.Omemo;
+#end
 import norc.module.Nodes;
 import norc.module.Pings;
 import norc.module.Profile;
@@ -327,6 +330,10 @@ class Client {
 		// in this order: modules handle received messages in the order they were created
 		final optional:Array<{name:String, create:() -> Module}> = [
 			{name: "carbons", create: () -> new Carbons(context, messages, account.carbons != false)},
+			// after carbons: decrypts the copies too; before the others: they get the decrypted body
+			#if norc_omemo
+			{name: "omemo", create: () -> account.omemo == true ? new Omemo(context, messages, contacts, Config.stateDir(account.name)) : null},
+			#end
 			{name: "receipts", create: () -> new Receipts(context, messages, contacts)},
 			// created above, for the console
 			{name: "chat-states", create: () -> chatStates},
@@ -352,8 +359,11 @@ class Client {
 			modules.push(history);
 		modules.push(chatlog);
 		for (m in optional)
-			if (enabled(m.name))
-				modules.push(m.create());
+			if (enabled(m.name)) {
+				final module = m.create();
+				if (module != null)
+					modules.push(module);
+			}
 		modules.push(new Discovery(context, contacts, account.lastActivity == true ? () -> Std.int(Sys.time() - lastInput) : null));
 		for (m in ([sessions, fileTransfers, calls] : Array<Null<Module>>))
 			if (m != null)

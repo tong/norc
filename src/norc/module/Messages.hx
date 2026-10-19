@@ -62,6 +62,15 @@ class Messages extends Module {
 	/** Called after a message with a contact was retracted (by the module of retractions): its chat, id, by the user **/
 	public final retractions = new Array<(chat:String, id:String, own:Bool) -> Void>();
 
+	/**
+		Sends a chat message of `send` to the server, then calls `done` (`false`: not sent, e.g. it couldn't be
+		encrypted); replaced by the module of OMEMO, which sends an encrypted copy
+	**/
+	public var transmit:(m:Message, done:(sent:Bool) -> Void) -> Void;
+
+	/** Whether a message was end-to-end encrypted (received, or sent by `transmit`): marked `🔒` **/
+	public var isEncrypted:(m:Message) -> Bool = m -> false;
+
 	/** Where sent messages were shown (see `shownAt`), the last `MAX_SHOWN` **/
 	final shown = new Map<String, LineEditor.Position>();
 
@@ -74,6 +83,10 @@ class Messages extends Module {
 	public function new(context:Context, contacts:Contacts) {
 		super(context);
 		this.contacts = contacts;
+		transmit = (m, done) -> {
+			stream.send(m);
+			done(true);
+		}
 	}
 
 	override public function commands():Array<Commands.Command>
@@ -94,7 +107,7 @@ class Messages extends Module {
 
 	/**
 		Sends a chat message with `body` to `to` (a jid), with additional `elements`, changed by `prepare` before it is
-		sent (e.g. a reply); returns it.
+		sent (e.g. a reply); returns it. It is shown once sent (`transmit`), not if it couldn't be (e.g. encrypted).
 	**/
 	public function send(to:String, body:String, ?elements:Array<XML>, ?prepare:Message->Void):Message {
 		final m = new Message(to, body);
@@ -105,15 +118,18 @@ class Messages extends Module {
 			prepare(m);
 		for (f in outgoing)
 			f(m);
-		stream.send(m);
-		// a room sends messages back to all occupants
-		if (m.type != groupchat) {
-			showSent(m);
-			remember(Jid.parseBare(to), m, null, true);
-			for (f in displayed)
-				f(Jid.parseBare(to), m, true, false);
-		}
-		sentEvent(m, false);
+		transmit(m, sent -> {
+			if (!sent)
+				return;
+			// a room sends messages back to all occupants
+			if (m.type != groupchat) {
+				showSent(m);
+				remember(Jid.parseBare(to), m, null, true);
+				for (f in displayed)
+					f(Jid.parseBare(to), m, true, false);
+			}
+			sentEvent(m, false);
+		});
 		return m;
 	}
 
@@ -193,7 +209,7 @@ class Messages extends Module {
 		// a correction of the last message (XEP-0308), checked by the module of corrections
 		final replaces = LastMessageCorrection.correction(m);
 		final from = (m.from != null) ? Jid.parseBare(m.from) : stream.domain;
-		show('<${contacts.name(from)}>' + corrected(m), from, text(from, m), delay?.date);
+		show('<${contacts.name(from)}>' + marks(m), from, text(from, m), delay?.date);
 		remember(from, m, null, false);
 		for (f in displayed)
 			f(from, m, false, false);
@@ -207,6 +223,7 @@ class Messages extends Module {
 			type: m.type ?? "normal",
 			delayed: delay != null,
 			carbon: carbon == received,
+			encrypted: isEncrypted(m),
 			replaces: replaces,
 			reply_id: reply?.id,
 			reply_to: reply?.to,
@@ -252,6 +269,7 @@ class Messages extends Module {
 			id: m.id,
 			type: m.type ?? "normal",
 			carbon: carbon,
+			encrypted: isEncrypted(m),
 			replaces: LastMessageCorrection.correction(m),
 			reply_id: reply?.id,
 			reply_to: reply?.to
@@ -261,7 +279,7 @@ class Messages extends Module {
 	/** Prints a message sent by this client or another of the account: `12:03:41 → <alice> text`, in the own color **/
 	function showSent(m:Message, ?date:Date) {
 		final to = Jid.parseBare(m.to);
-		final end = show('→ <${contacts.name(to)}>' + corrected(m), null, text(to, m), date, "", 0, to);
+		final end = show('→ <${contacts.name(to)}>' + marks(m), null, text(to, m), date, "", 0, to);
 		if (end != null && m.id != null && date == null) {
 			shown.set(m.id, end);
 			shownIds.push(m.id);
@@ -269,6 +287,10 @@ class Messages extends Module {
 				shown.remove(shownIds.shift());
 		}
 	}
+
+	/** After the name of a message: ` ✎` for a correction, ` 🔒` if it was encrypted **/
+	function marks(m:Message):String
+		return corrected(m) + (isEncrypted(m) ? " 🔒" : "");
 
 	/** ` ✎` for a correction of the last message (XEP-0308) **/
 	public static function corrected(m:Message):String

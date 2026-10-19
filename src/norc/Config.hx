@@ -63,6 +63,9 @@ typedef Account = {
 	/** Send chat states (typing, …), `true` if not set **/
 	var ?chatStates:Bool;
 
+	/** OMEMO end-to-end encryption (`module.Omemo`), `false` if not set **/
+	var ?omemo:Bool;
+
 	/** Answer entity time requests (reveals the time zone) **/
 	var ?entityTime:Bool;
 
@@ -189,6 +192,7 @@ private typedef Key = {
 	`api_socket` and `api_tcp` (`0`: not at the Unix socket, not over TCP) for `api = 1`,
 	`last_activity` (`1`: answer last activity requests with the idle time),
 	`carbons` (`0`: no copies of the messages of your other clients),
+	`omemo` (`1`: OMEMO end-to-end encryption),
 	`chat_states` (`0`: don't send chat states),
 	`entity_time` (`1`: answer time requests, revealing your time zone),
 	`attention` (`0`: ignore attention requests),
@@ -234,6 +238,7 @@ class Config {
 		{name: "api_port", get: a -> (a.apiPort != null) ? Std.string(a.apiPort) : null, set: (a, v) -> a.apiPort = parsePort(v)},
 		flag("last_activity", a -> a.lastActivity, (a, v) -> a.lastActivity = v),
 		flag("carbons", a -> a.carbons, (a, v) -> a.carbons = v),
+		flag("omemo", a -> a.omemo, (a, v) -> a.omemo = v),
 		flag("terminal_images", a -> a.terminalImages, (a, v) -> a.terminalImages = v),
 		flag("inline_avatars", a -> a.inlineAvatars, (a, v) -> a.inlineAvatars = v),
 		flag("chat_states", a -> a.chatStates, (a, v) -> a.chatStates = v),

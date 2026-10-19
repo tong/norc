@@ -14,7 +14,7 @@ all: build
 # Rebuild when sources or build settings change
 SRC := $(shell find src -name '*.hx') norc.hxml
 # and when the haxelibs change (e.g. git/dev libraries)
-LIB_SRC := $(foreach lib,hxmpp sasl,$(shell haxelib libpath $(lib) 2>/dev/null))
+LIB_SRC := $(foreach lib,hxmpp sasl hxomemo,$(shell haxelib libpath $(lib) 2>/dev/null))
 SRC += $(shell find $(addsuffix src,$(LIB_SRC)) -name '*.hx' 2>/dev/null)
 # and when the git version changes (norc.Version): build/version is rewritten only if it differs
 GIT_VERSION := $(shell git describe --tags --always --dirty 2>/dev/null)
@@ -34,6 +34,7 @@ norc.hl: build.hl.hxml $(SRC)
 #   ssl.hdll  with the mbedtls sources bundled with HashLink (its SSL_STATIC build)
 #   fmt.hdll  only `digest` is used: lib/hl/fmt.c (with mbedtls and HashLink's zlib)
 #   unix.c    norc's natives: Unix sockets (lib/hl/unix.c)
+#   omemo.c   the natives of hxomemo (OMEMO): Monocypher, and the mbedtls above
 #
 # Linux:   fully static with musl (glibc can't resolve hostnames in static binaries)
 # macOS:   links only system libraries and frameworks (macOS has no static libc)
@@ -81,6 +82,10 @@ FMT_OBJ := $(STATIC)/lib/hl/fmt.o $(ZLIB_OBJ)
 # norc's own natives: Unix sockets of the socket interface (norc.UnixSocket, -D norc_unix in build.hlc.hxml)
 NORC_OBJ := $(STATIC)/lib/hl/unix.o
 
+# the natives of hxomemo (omemo.Crypto, -D norc_omemo in build.hlc.hxml): its C sources
+HXOMEMO := $(shell haxelib libpath hxomemo 2>/dev/null)
+OMEMO_OBJ := $(addprefix $(STATIC)/omemo/,omemo.o monocypher.o monocypher-ed25519.o)
+
 # Generated code: the files listed in out/hlc.json (out/ may contain stale files of removed classes).
 # Only known once out/ exists, so the link runs in a sub-make
 OUT_OBJ := $(addprefix $(STATIC)/out/,$(patsubst %.c,%.o,$(shell grep -o '"[^"]*\.c"' out/hlc.json 2>/dev/null | tr -d '"')))
@@ -101,6 +106,14 @@ $(STATIC)/lib/hl/unix.o: lib/hl/unix.c
 	@mkdir -p $(dir $@)
 	$(STATIC_CC) $(STATIC_CFLAGS) -c $< -o $@
 
+$(STATIC)/omemo/omemo.o: $(HXOMEMO)native/omemo.c
+	@mkdir -p $(dir $@)
+	$(STATIC_CC) $(STATIC_CFLAGS) $(MBEDTLS_INC) -c $< -o $@
+
+$(STATIC)/omemo/%.o: $(HXOMEMO)native/monocypher/%.c
+	@mkdir -p $(dir $@)
+	$(STATIC_CC) $(STATIC_CFLAGS) -c $< -o $@
+
 $(STATIC)/lib/hl/fmt.o: lib/hl/fmt.c
 	@mkdir -p $(dir $@)
 	$(STATIC_CC) $(STATIC_CFLAGS) $(MBEDTLS_INC) -I$(HASHLINK_SRC)/include/zlib -c $< -o $@
@@ -113,7 +126,7 @@ $(STATIC)/out/%.o: out/%.c
 
 -include $(OUT_OBJ:.o=.d)
 
-$(STATIC)/$(BIN): $(OUT_OBJ) $(SSL_OBJ) $(FMT_OBJ) $(NORC_OBJ) $(LIBHL_OBJ)
+$(STATIC)/$(BIN): $(OUT_OBJ) $(SSL_OBJ) $(FMT_OBJ) $(NORC_OBJ) $(OMEMO_OBJ) $(LIBHL_OBJ)
 	$(STATIC_CC) $(STATIC_LDFLAGS) -o $@ $^ $(STATIC_LIBS)
 
 # haxe only rewrites generated files whose content changed: track the last run with a stamp

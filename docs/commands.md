@@ -189,6 +189,32 @@ persistent: `/room config myroom persistentroom=yes`). Finding rooms:
 `12:03:41 norc <alice> hi`. After a reconnect, norc joins the rooms again. Invitations are shown with the command to
 join the room.
 
+## Encryption (OMEMO)
+
+OMEMO end-to-end encryption (version 0.3, as Conversations, Dino, Gajim, Monal and Profanity), with `omemo = 1`
+(off by default). norc is then a device of your account: its id is added to your device list, its public keys
+(bundle) are published. Messages to a contact are encrypted for all its devices and your other ones if the contact
+has OMEMO, and marked `🔒`; received encrypted messages are decrypted.
+
+| Command | Description |
+|---|---|
+| `/omemo` | your device id and fingerprint, the chats with OMEMO turned on or off |
+| `/omemo on [jid]` | encrypt the messages to a contact, required: a message that can't be encrypted is not sent |
+| `/omemo off [jid]` | don't encrypt the messages to a contact |
+| `/omemo default [jid]` | encrypt the messages to a contact if it has OMEMO (without `on` or `off`) |
+| `/omemo devices [jid]` | the devices of a contact (without jid: yours) with their fingerprints, trust and whether there is a session |
+| `/omemo trust <jid> <device>` | mark a device as verified, after comparing its fingerprint with the contact (e.g. in Conversations: the contact's details) |
+| `/omemo distrust <jid> <device>` | don't encrypt for a device anymore |
+
+New devices are trusted when first seen (blind trust before verification), until you verify one of the contact's
+devices: then new devices of the contact are only used once verified too. A device showing another key than before
+is not used (it may be reinstalled: check its fingerprint).
+
+Only the text of messages is encrypted (not reactions, chat states or receipts). Not yet: rooms, encrypted file
+uploads (`aesgcm://` links of Conversations are shown as they are), messages of the server archive (`/history` shows
+their placeholder text). The keys and sessions are in `~/.local/state/norc/<account>/omemo/` (readable only by you):
+deleting it makes norc a new device.
+
 ## Blocking
 
 | Command | Description |
