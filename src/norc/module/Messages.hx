@@ -3,6 +3,7 @@ package norc.module;
 import norc.Commands;
 import norc.Module;
 import norc.Output;
+import norc.Styling;
 import norc.Term;
 import xmpp.Jid;
 import xmpp.LastMessageCorrection;
@@ -71,6 +72,9 @@ class Messages extends Module {
 	/** Whether a message was end-to-end encrypted (received, or sent by `transmit`): marked `🔒` **/
 	public var isEncrypted:(m:Message) -> Bool = m -> false;
 
+	/** Show the styles of messages (`*bold*`, quotes, see `Styling`), unless a message has the hint not to **/
+	public var styling = true;
+
 	/** Where sent messages were shown (see `shownAt`), the last `MAX_SHOWN` **/
 	final shown = new Map<String, LineEditor.Position>();
 
@@ -88,6 +92,9 @@ class Messages extends Module {
 			done(true);
 		}
 	}
+
+	override public function features():Array<String>
+		return styling ? [Styling.XMLNS] : [];
 
 	override public function commands():Array<Commands.Command>
 		return [
@@ -134,11 +141,12 @@ class Messages extends Module {
 	}
 
 	/**
-		The text of `m` as shown in `chat` (bare jid): a reply starts with a line quoting the message replied to
-		(`↪ <name> text`).
+		The text of `m` as shown in `chat` (bare jid), with its styles: a reply starts with a line quoting the message
+		replied to (`↪ <name> text`).
 	**/
 	public function text(chat:String, m:Message):String {
-		final body = MessageReply.getBody(m) ?? "";
+		final text = MessageReply.getBody(m) ?? "";
+		final body = (styling && !Styling.unstyled(m)) ? Styling.format(text) : text;
 		final reply = MessageReply.getReply(m);
 		if (reply == null)
 			return body;

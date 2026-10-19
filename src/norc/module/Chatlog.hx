@@ -4,6 +4,7 @@ import haxe.Json;
 import norc.Config.Account;
 import norc.Module;
 import norc.Output;
+import norc.Styling;
 import norc.Term;
 import sys.FileSystem;
 import sys.io.File;
@@ -148,7 +149,7 @@ class Chatlog extends Module {
 				final date = xmpp.DelayedDelivery.parseStamp(e.date);
 				final quote = (e.reply_id != null) ? Lambda.find(entries, r -> r.id == e.reply_id) : null;
 				final text = ((quote != null) ? Term.style("↪ " + Recent.excerpt('<${quote.own ? "you" : name}> ${quote.body}', 60), 2) + "\n" : "")
-					+ e.body + ((e.replaces != null) ? " ✎" : "");
+					+ (messages.styling ? Styling.format(e.body) : e.body) + ((e.replaces != null) ? " ✎" : "");
 				if (e.own)
 					Messages.show('→ <$name>', null, text, date);
 				else
