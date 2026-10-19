@@ -55,7 +55,7 @@ Release binaries for Linux (x86-64, arm64), macOS and Windows are built by the G
 archive per platform with `norc` and `norc-rtc` (calls, see below).
 
 `norc.hl` only runs on x86/x86-64 (HashLink's JIT); on ARM, e.g. a Raspberry Pi, use the single binary.
-To build it on a system without Haxe, generate the C code elsewhere (`haxe build.hlc.hxml`), copy `out/`
+To build it on a system without Haxe, generate the C code elsewhere (`make out`: also the C sources of hxomemo, in `out/hxomemo`), copy `out/`
 and run `make from-c`.
 
 ## Calls: norc-rtc

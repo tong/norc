@@ -88,7 +88,8 @@ FMT_OBJ := $(STATIC)/lib/hl/fmt.o $(ZLIB_OBJ)
 # norc's own natives: Unix sockets of the socket interface (norc.UnixSocket, -D norc_unix in build.hlc.hxml)
 NORC_OBJ := $(STATIC)/lib/hl/unix.o
 
-# the natives of hxomemo (omemo.Crypto, -D norc_omemo in build.hlc.hxml): its C sources
+# the natives of hxomemo (omemo.Crypto, -D norc_omemo): its C sources, copied to out/hxomemo with the generated code,
+# so `make from-c` builds without haxelib
 HXOMEMO := $(shell haxelib libpath hxomemo 2>/dev/null)
 OMEMO_OBJ := $(addprefix $(STATIC)/omemo/,omemo.o monocypher.o monocypher-ed25519.o)
 
@@ -112,11 +113,11 @@ $(STATIC)/lib/hl/unix.o: lib/hl/unix.c
 	@mkdir -p $(dir $@)
 	$(STATIC_CC) $(STATIC_CFLAGS) -c $< -o $@
 
-$(STATIC)/omemo/omemo.o: $(HXOMEMO)native/omemo.c
+$(STATIC)/omemo/omemo.o: out/hxomemo/omemo.c
 	@mkdir -p $(dir $@)
 	$(STATIC_CC) $(STATIC_CFLAGS) $(MBEDTLS_INC) -c $< -o $@
 
-$(STATIC)/omemo/%.o: $(HXOMEMO)native/monocypher/%.c
+$(STATIC)/omemo/%.o: out/hxomemo/monocypher/%.c
 	@mkdir -p $(dir $@)
 	$(STATIC_CC) $(STATIC_CFLAGS) -c $< -o $@
 
@@ -136,10 +137,17 @@ $(STATIC)/$(BIN): $(OUT_OBJ) $(SSL_OBJ) $(FMT_OBJ) $(NORC_OBJ) $(OMEMO_OBJ) $(LI
 	$(STATIC_CC) $(STATIC_LDFLAGS) -o $@ $^ $(STATIC_LIBS)
 
 # haxe only rewrites generated files whose content changed: track the last run with a stamp
-$(STATIC)/hlc.stamp: build.hlc.hxml $(SRC)
+$(STATIC)/hlc.stamp: build.hlc.hxml $(SRC) $(wildcard $(HXOMEMO)native/*.c $(HXOMEMO)native/monocypher/*)
 	haxe build.hlc.hxml
+	@test -n "$(HXOMEMO)" || { echo "the haxelib hxomemo is missing" >&2; exit 1; }
+	rm -rf out/hxomemo
+	cp -R $(HXOMEMO)native out/hxomemo
 	@mkdir -p $(dir $@)
 	@touch $@
+
+# The generated C code only (out/), e.g. for `make from-c` on another system
+.PHONY: out
+out: $(STATIC)/hlc.stamp
 
 $(BIN): $(STATIC)/hlc.stamp | $(HASHLINK_SRC)/src/hl.h
 	$(MAKE) $(PARALLEL) $(STATIC)/$(BIN)
@@ -161,7 +169,7 @@ build: $(BIN)
 # The single binary from C code generated before (out/, e.g. on another machine), without haxe:
 # for building on systems without haxe (e.g. arm64)
 from-c: | $(HASHLINK_SRC)/src/hl.h
-	@test -f out/hlc.json || { echo "no generated C code in out/: run 'haxe build.hlc.hxml' first" >&2; exit 1; }
+	@test -f out/hlc.json -a -f out/hxomemo/omemo.c || { echo "no generated C code in out/: run 'make out' first" >&2; exit 1; }
 	$(MAKE) $(PARALLEL) $(STATIC)/$(BIN)
 	cp $(STATIC)/$(BIN) $(BIN)
 	strip $(BIN)

@@ -225,7 +225,6 @@ deleting it makes norc a new device.
 
 Needs server support (XEP-0191, Prosody: `mod_blocklist`).
 
-<!-- disabled for now
 ## Shared documents
 
 Shared documents are the transport of shared editing in [norc.nvim](https://github.com/tong/norc.nvim). Each document
@@ -248,7 +247,6 @@ are text (JSON) of the editor.
 
 The service is `share_service`, or the PubSub service of your server (Prosody: `Component "pubsub.example.org" "pubsub"`).
 Nodes are subscribed with the full jid, so your other clients get nothing.
--->
 
 ## Service discovery
 

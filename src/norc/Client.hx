@@ -379,8 +379,9 @@ class Client {
 			modules.push(new Upload(context, messages, contacts));
 		if (enabled("images"))
 			modules.push(new InlineImages(context, messages, contacts, cast(account.inlineImages ?? "contacts")));
-		// disabled for now (shared documents, /share)
-		// modules.push(new Share(context, messages, contacts, account.shareService));
+		// shared documents (/share), e.g. the shared editing of norc.nvim
+		if (enabled("share"))
+			modules.push(new Share(context, messages, contacts, account.shareService));
 		for (m in modules)
 			commands.registerAll(m.commands());
 	}

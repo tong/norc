@@ -696,7 +696,8 @@ class Config {
 	**/
 	public static final MODULES = [
 		"rooms", "history", "carbons", "receipts", "chat-states", "profile", "moods", "tunes", "corrections", "reactions", "replies",
-		"retractions", "avatars", "attention", "time", "ping", "adhoc", "blocking", "file-transfers", "calls", "upload", "images"
+		"retractions", "avatars", "attention", "time", "ping", "adhoc", "blocking", "file-transfers", "calls", "upload", "images",
+		"share"
 	];
 
 	static function module(name:String):String {
