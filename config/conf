@@ -128,6 +128,9 @@
 # Receive copies of the messages sent and received by your other clients (Message Carbons).
 # carbons = 1
 
+# OMEMO end-to-end encryption of messages with contacts (/omemo): norc becomes a device of your account. Off unless 1.
+# omemo = 0
+
 # Images shared in messages shown after them, in terminals showing images (kitty): contacts (of contacts and your
 # own), all (also in rooms), off (only with /file show). Downloading them reveals your address to their server.
 # inline_images = contacts

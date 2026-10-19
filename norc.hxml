@@ -1,3 +1,5 @@
 -p src
 --main Main
 --library hxmpp
+--library hxomemo
+-D norc_omemo

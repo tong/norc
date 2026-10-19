@@ -25,7 +25,8 @@ brings its own.
 ## Build
 
 norc is written in [haxe](https://haxe.org) and runs on [hashlink](https://hashlink.haxe.org).
-It needs the haxelibs [hxmpp](https://github.com/tong/hxmpp) and [sasl](https://github.com/tong/hxsasl).
+It needs the haxelibs [hxmpp](https://github.com/tong/hxmpp), [sasl](https://github.com/tong/hxsasl) and
+[hxomemo](https://github.com/tong/hxomemo) (OMEMO).
 
 ```sh
 git clone --recursive https://github.com/tong/norc
@@ -33,7 +34,11 @@ cd norc
 make            # norc.hl: HashLink bytecode, run with `hl norc.hl`
 make norc       # norc: single binary (Linux: static with musl, needs musl-gcc)
 make install    # /usr/local/bin/norc (PREFIX=~/.local for your user)
+make omemo.hdll # OMEMO for norc.hl (the binary has it built in): found by hl in the current directory
 ```
+
+`norc.hl` starts without `omemo.hdll`, OMEMO (`omemo = 1`) is off then. To use it from anywhere, install it next to
+HashLink's libraries: `make -C $(haxelib libpath hxomemo) install HASHLINK_SRC=$PWD/lib/hashlink` (`/usr/local/lib`).
 
 `make norc` needs the `hashlink` haxelib (for hashlink/C code), from the submodule:
 `haxelib dev hashlink lib/hashlink/other/haxelib`.

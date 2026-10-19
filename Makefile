@@ -8,7 +8,7 @@ PCRE := $(addprefix include/pcre/pcre2_,auto_possess chartables compile config c
 LIBHL_SRC := $(PCRE) src/gc $(addprefix src/std/,array buffer bytes cast date error debug file fun \
 	maps math obj random regexp socket string sys types ucs2 thread process track)
 
-.PHONY: all build from-c clean install install-completion uninstall
+.PHONY: all build from-c clean install install-completion uninstall omemo.hdll
 all: build
 
 # Rebuild when sources or build settings change
@@ -26,6 +26,12 @@ SRC += $(shell find config -type f 2>/dev/null)
 # HashLink bytecode
 norc.hl: build.hl.hxml $(SRC)
 	haxe build.hl.hxml
+
+# OMEMO for the bytecode (hl norc.hl): hxomemo's natives, found by hl in the current directory (or install it
+# with hxomemo's `make install`)
+omemo.hdll:
+	$(MAKE) -C $(HXOMEMO) omemo.hdll HASHLINK_SRC=$(abspath $(HASHLINK_SRC))
+	cp $(HXOMEMO)omemo.hdll $@
 
 # --- HashLink/C, single binary: ./norc ---------------------------------------------------------------
 #

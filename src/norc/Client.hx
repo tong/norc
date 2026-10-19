@@ -332,7 +332,14 @@ class Client {
 			{name: "carbons", create: () -> new Carbons(context, messages, account.carbons != false)},
 			// after carbons: decrypts the copies too; before the others: they get the decrypted body
 			#if norc_omemo
-			{name: "omemo", create: () -> account.omemo == true ? new Omemo(context, messages, contacts, Config.stateDir(account.name)) : null},
+			{
+				name: "omemo",
+				create: () -> if (account.omemo != true) null else if (!omemo.Crypto.available()) {
+					// HashLink without omemo.hdll
+					Term.error("omemo: the library omemo.hdll is missing (make omemo.hdll): OMEMO is off");
+					null;
+				} else new Omemo(context, messages, contacts, Config.stateDir(account.name))
+			},
 			#end
 			{name: "receipts", create: () -> new Receipts(context, messages, contacts)},
 			// created above, for the console
