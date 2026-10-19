@@ -96,8 +96,11 @@ or the only configured one.';
 				continue;
 			}
 			final jid = Jid.parseBare(account.jid);
-			final pid = PidFile.running(Config.stateDir(name));
-			Sys.println(name + (jid != name ? '  $jid' : '') + (pid != null ? Term.style('  (running, pid $pid)', 2) : ''));
+			final running = [
+				for (i in PidFile.instances(Config.stateDir(name)))
+					(i.resource == null ? '' : '${i.resource}, ') + 'pid ${i.pid}'
+			];
+			Sys.println(name + (jid != name ? '  $jid' : '') + (running.length > 0 ? Term.style('  (running: ${running.join("; ")})', 2) : ''));
 		}
 		return 0;
 	}
@@ -221,6 +224,10 @@ or the only configured one.';
 
 	/** Runs `f` holding the pid file of `account`: it must not be in use by a running norc **/
 	static function locked(account:Account, f:() -> Int):Int {
+		// also no norc with another resource
+		final others = PidFile.instances(Config.stateDir(account.name)).filter(i -> i.resource != null);
+		if (others.length > 0)
+			throw '${account.name}: already running with the resource ${others[0].resource} (pid ${others[0].pid}), stop it first';
 		final lock = try PidFile.acquire(Config.stateDir(account.name)) catch (e) throw '${account.name}: $e, stop it first';
 		return try {
 			final code = f();
@@ -308,11 +315,19 @@ or the only configured one.';
 		}
 		final dir = Config.stateDir(account.name);
 		if (FileSystem.exists(dir)) {
-			for (f in FileSystem.readDirectory(dir))
-				FileSystem.deleteFile('$dir/$f');
-			FileSystem.deleteDirectory(dir);
+			deleteTree(dir);
 			Term.info('removed $dir');
 		}
+	}
+
+	/** Deletes the directory `dir` with its files and directories (e.g. the state of other resources, OMEMO) **/
+	static function deleteTree(dir:String) {
+		for (f in FileSystem.readDirectory(dir))
+			if (FileSystem.isDirectory('$dir/$f'))
+				deleteTree('$dir/$f');
+			else
+				FileSystem.deleteFile('$dir/$f');
+		FileSystem.deleteDirectory(dir);
 	}
 
 	/** The password of the environment variable `NORC_PASSWORD` (set by `main`, which removes the variable) **/

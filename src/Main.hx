@@ -186,8 +186,12 @@ function main() {
 		exit(Std.string(e));
 	if (host != null)
 		account.host = host;
-	if (resource != null)
+	if (resource != null) {
+		// another resource: a norc of its own, besides the one of the configured resource
+		if (resource != account.resource)
+			account.instance = resource;
 		account.resource = resource;
+	}
 	if (api)
 		account.api = true;
 	if (apiSpec != null)
@@ -212,7 +216,10 @@ function main() {
 		if (account.passwordCmd == null && AccountCommand.envPassword == null)
 			exit('--silent needs password_cmd in the account config, or NORC_PASSWORD');
 	}
-	final pidFile = try PidFile.acquire(Config.stateDir(account.name)) catch (e) exit('${account.name}: $e');
+	final pidFile = try PidFile.acquire(Config.instanceDir(account)) catch (e) {
+		final running = PidFile.running(Config.instanceDir(account)) != null;
+		exit('${account.name}/${account.resource}: $e' + (running && account.instance == null ? ' (another one: --resource)' : ''));
+	}
 	final password = try AccountCommand.readPassword(account, "Password") catch (e) {
 		pidFile.release();
 		exit('cannot read password: $e');

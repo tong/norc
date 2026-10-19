@@ -11,7 +11,7 @@ norc -j me@example.org  # without config file (asks for the password)
 | `-j, --jid <jid>` | use this jid instead of a configured account |
 | `-c, --config <dir>` | config directory |
 | `--host <host>`, `--port <port>` | server host and port |
-| `--resource <res>` | resource of the jid, overrides `resource` of the config and a resource given with the jid |
+| `--resource <res>` | resource of the jid, overrides `resource` of the config and a resource given with the jid; another one than the configured resource runs a second norc for the account, see below |
 | `-i, --interactive` | read commands from stdin, also if it is no terminal (e.g. piped commands); the default on a terminal, when norc runs in its foreground |
 | `--no-input` | don't read commands from the terminal: only show messages and events (e.g. norc in a terminal multiplexer, with hooks or the socket interface) |
 | `--api` | enable the socket interface |
@@ -26,8 +26,11 @@ On a terminal norc reads commands (interactive mode). Started in the background 
 `--silent`, or with stdin no terminal (e.g. a systemd service), it doesn't, and only prints incoming messages and presence changes; use [hooks](hooks) or the [socket interface](api) to act
 on them. norc reconnects automatically after the connection was lost.
 
-Each account can only be used by one norc process at a time; a second one stops with `already running (pid …)`.
-For several accounts, run several norc processes.
+Each account can be used by one norc process per resource: a second one with the same resource stops with
+`already running (pid …)`. Another one runs with another resource, e.g. on the same machine as a service and in a
+terminal: `norc --resource laptop`. It keeps its own state in `<state dir>/resources/<resource>/` (its api, its OMEMO
+device, which your contacts see as a new device), `norc ctl -r <resource>` talks to it. For several accounts, run
+several norc processes.
 
 ## As a service (systemd)
 

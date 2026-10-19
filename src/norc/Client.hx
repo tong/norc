@@ -338,7 +338,7 @@ class Client {
 					// HashLink without omemo.hdll
 					Term.error("omemo: the library omemo.hdll is missing (make omemo.hdll): OMEMO is off");
 					null;
-				} else new Omemo(context, messages, contacts, Config.stateDir(account.name))
+				} else new Omemo(context, messages, contacts, Config.instanceDir(account))
 			},
 			#end
 			{name: "receipts", create: () -> new Receipts(context, messages, contacts)},
@@ -408,8 +408,8 @@ class Client {
 					tcp = {host: "127.0.0.1", port: 0};
 				}
 				final host = tcp?.host ?? "127.0.0.1";
-				api.start(Config.stateDir(account.name), host, tcp?.port ?? 0, tcp != null, endpoints.socket);
-				Term.info('api: ${Config.stateDir(account.name)}/api');
+				api.start(Config.instanceDir(account), host, tcp?.port ?? 0, tcp != null, endpoints.socket);
+				Term.info('api: ${Config.instanceDir(account)}/api');
 				if (tcp != null && !host.startsWith("127.") && host != "localhost" && host != "::1")
 					Term.error('warning: the api is reachable over the network ($host), unencrypted: '
 						+ 'the token can be read from the traffic, giving control over the account');

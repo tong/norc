@@ -27,6 +27,8 @@ class Ctl {
        norc ctl [options] wait <event>            wait for an event, print it
 
   -a, --account <name>   account of the running norc (default: the default account)
+  -r, --resource <res>   the norc with this resource (started with --resource; default: the one with the
+                         configured resource, else the only one running)
   -c, --config <dir>     config directory
       --json             the replies as JSON lines (data instead of text)
   -t, --timeout <s>      wait and events: stop after s seconds (exit code 1 for wait)
@@ -57,6 +59,7 @@ Needs a norc with the socket interface (api = 1 or --api). Examples:
 		var stdin = false;
 		var lines = false;
 		var file:Null<String> = null;
+		var resource:Null<String> = null;
 		var i = 0;
 		// options before the command
 		while (i < args.length && args[i].startsWith("-")) {
@@ -68,6 +71,8 @@ Needs a norc with the socket interface (api = 1 or --api). Examples:
 			switch args[i] {
 				case "-a", "--account" if (i + 1 < args.length):
 					account = args[++i];
+				case "-r", "--resource" if (i + 1 < args.length):
+					resource = args[++i];
 				case "-c", "--config" if (i + 1 < args.length):
 					Config.dir = haxe.io.Path.removeTrailingSlashes(args[++i]);
 				case "--json":
@@ -93,13 +98,14 @@ Needs a norc with the socket interface (api = 1 or --api). Examples:
 		final words = args.slice(i);
 		if (words.length == 0 && !completing)
 			return fail(USAGE, 2);
-		final name = try (account != null) ? Config.findAccount(account).name : Config.defaultAccount().name catch (e) {
+		final configured = try (account != null) ? Config.findAccount(account) : Config.defaultAccount() catch (e) {
 			// e.g. an account run with --jid: its state directory is named by the jid
 			if (account == null || !FileSystem.exists('${Config.stateDir(account)}/api'))
 				return fail(Std.string(e));
-			account;
+			null;
 		}
-		final path = '${Config.stateDir(name)}/api';
+		final name = configured?.name ?? account;
+		final path = '${apiDir(name, (resource == configured?.resource) ? null : resource)}/api';
 		final info = try [
 			for (line in File.getContent(path).split("\n"))
 				if (line.contains(" = ")) line.substr(0, line.indexOf(" = ")) => line.substr(line.indexOf(" = ") + 3).trim()
@@ -145,6 +151,22 @@ Needs a norc with the socket interface (api = 1 or --api). Examples:
 		}
 		socket.close();
 		return code;
+	}
+
+	/**
+		The state of the norc of `account` with the resource `resource` (`null`: the configured one), with its api file.
+		Without `resource`, if that norc doesn't run: the only other one running with the api.
+	**/
+	static function apiDir(account:String, resource:Null<String>):String {
+		final dir = Config.instanceDirOf(account, resource);
+		// an api file stays after norc was killed: by the running norc
+		if (resource != null || PidFile.running(dir) != null)
+			return dir;
+		final others = [
+			for (i in PidFile.instances(Config.stateDir(account)))
+				if (i.resource != null && FileSystem.exists('$dir/resources/${i.resource}/api')) '$dir/resources/${i.resource}'
+		];
+		return (others.length == 1) ? others[0] : dir;
 	}
 
 	/**

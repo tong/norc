@@ -28,6 +28,13 @@ typedef Account = {
 	var ?host:String;
 	var port:Int;
 	var resource:String;
+
+	/**
+		Another resource than the configured one (`--resource`): this norc keeps its own state (`instanceDir`), so
+		several can run for the account, `null` if not
+	**/
+	var ?instance:String;
+
 	var ?passwordCmd:String;
 
 	/** Directory for received files **/
@@ -318,12 +325,31 @@ class Config {
 		return (windows() ? env("LOCALAPPDATA", "AppData/Local") : env("XDG_STATE_HOME", ".local/state")) + '/norc/$account';
 
 	/**
-		The Unix socket of the socket interface of `account`: `$XDG_RUNTIME_DIR/norc/<account>.sock` (the place of
-		sockets, only the user may access it; paths of sockets are limited to 107 bytes), else `<state dir>/api.sock`.
+		The state of one norc of the account `a`: the pid, the api file, the OMEMO device. The state dir, for another
+		resource than the configured one (`a.instance`, `--resource`) `<state dir>/resources/<resource>`.
 	**/
-	public static function socketPath(account:String):String {
+	public static function instanceDir(a:Account):String
+		return instanceDirOf(a.name, a.instance);
+
+	public static function instanceDirOf(account:String, instance:Null<String>):String
+		return (instance == null) ? stateDir(account) : '${stateDir(account)}/resources/${fileName(instance)}';
+
+	/** `resource` as a file name: other characters than letters, digits, `.`, `_`, `-` replaced with `_` **/
+	static function fileName(resource:String):String {
+		final s = ~/[^A-Za-z0-9._-]/g.replace(resource, "_");
+		return s.startsWith(".") ? '_$s' : s;
+	}
+
+	/**
+		The Unix socket of the socket interface of `account`: `$XDG_RUNTIME_DIR/norc/<account>.sock` (the place of
+		sockets, only the user may access it; paths of sockets are limited to 107 bytes), else `<state dir>/api.sock`;
+		for another resource (`instance`) `$XDG_RUNTIME_DIR/norc/<account>/<resource>.sock`, else in its state.
+	**/
+	public static function socketPath(account:String, ?instance:String):String {
 		final runtime = Sys.getEnv("XDG_RUNTIME_DIR");
-		return (runtime != null && runtime.length > 0 && FileSystem.exists(runtime)) ? '$runtime/norc/$account.sock' : '${stateDir(account)}/api.sock';
+		if (runtime == null || runtime.length == 0 || !FileSystem.exists(runtime))
+			return '${instanceDirOf(account, instance)}/api.sock';
+		return (instance == null) ? '$runtime/norc/$account.sock' : '$runtime/norc/$account/${fileName(instance)}.sock';
 	}
 
 	/** Names of the configured accounts **/
@@ -630,13 +656,13 @@ class Config {
 		port), a port (`9990`, on `127.0.0.1`), `host:port` (`0.0.0.0:9990`, `[::1]:9990`, port `0`: a free one). At most
 		one Unix socket and one TCP address. Throws a message if invalid.
 	**/
-	public static function parseApi(spec:String, account:String):ApiEndpoints {
+	public static function parseApi(spec:String, account:String, ?instance:String):ApiEndpoints {
 		final e:ApiEndpoints = {};
 		for (part in spec.split(",")) {
 			final w = part.trim();
 			if (w.length == 0)
 				continue;
-			final unix = (w == "socket" || w == "unix") ? socketPath(account) : (w.contains("/") || w.startsWith("~")) ? expandHome(w) : null;
+			final unix = (w == "socket" || w == "unix") ? socketPath(account, instance) : (w.contains("/") || w.startsWith("~")) ? expandHome(w) : null;
 			if (unix != null) {
 				if (e.socket != null)
 					throw 'invalid api: several Unix sockets: $spec';
@@ -668,9 +694,9 @@ class Config {
 	**/
 	public static function apiEndpoints(a:Account):ApiEndpoints {
 		if (a.apiSpec != null)
-			return parseApi(a.apiSpec, a.name);
+			return parseApi(a.apiSpec, a.name, a.instance);
 		return {
-			socket: (a.apiSocket != false) ? socketPath(a.name) : null,
+			socket: (a.apiSocket != false) ? socketPath(a.name, a.instance) : null,
 			tcp: (a.apiTcp != false) ? {host: a.apiHost ?? "127.0.0.1", port: a.apiPort ?? 0} : null
 		};
 	}
