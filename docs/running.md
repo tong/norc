@@ -29,6 +29,22 @@ on them. norc reconnects automatically after the connection was lost.
 Each account can only be used by one norc process at a time; a second one stops with `already running (pid …)`.
 For several accounts, run several norc processes.
 
+## As a service (systemd)
+
+[`extras/systemd/norc@.service`](https://github.com/tong/norc/blob/main/extras/systemd/norc@.service) runs norc as
+a user service, one per account (the account needs `password_cmd`, or `NORC_PASSWORD` in an override):
+
+```sh
+cp extras/systemd/norc@.service ~/.config/systemd/user/
+systemctl --user enable --now norc@work  # started with your session, restarted if it dies
+journalctl --user -u norc@work -f        # its output
+norc ctl -a work presence away           # use it through the api
+loginctl enable-linger $USER             # also at boot, without logging in
+```
+
+norc reconnects itself after a lost connection; systemd restarts it when it stopped with an error, but gives up
+after 5 times in 5 minutes (a wrong password, another client with the same resource).
+
 ## The interactive prompt
 
 On a terminal, norc shows a prompt (`> `) and prints incoming messages above it. The prompt shows calls, rooms and

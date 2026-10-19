@@ -1,0 +1,26 @@
+# norc as a user service, one per account: norc@<account>.service
+#
+#   cp norc@.service ~/.config/systemd/user/
+#   systemctl --user enable --now norc@work   # starts with your session, restarted if it dies
+#   journalctl --user -u norc@work -f         # its output (messages, events, errors)
+#   norc ctl -a work …                        # talk to it (the api)
+#
+# The account needs password_cmd (or NORC_PASSWORD, e.g. in an override: systemctl --user edit norc@work).
+# Start at boot without logging in: loginctl enable-linger $USER
+[Unit]
+Description=Network Organism Responsible for Communication (%i)
+Documentation=https://github.com/tong/norc
+# no network yet at the start: norc keeps trying to connect itself, as after a lost connection
+# a login that keeps failing (wrong password, another client with the same resource): give up after 5 tries
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+# %h/.local/bin: where install.sh puts it, change for another place
+ExecStart=%h/.local/bin/norc -a %i --no-input --no-color --api
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target
