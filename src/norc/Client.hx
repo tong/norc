@@ -116,6 +116,9 @@ class Client {
 	/** When the current session went online (kept when it is resumed), `null` before **/
 	var onlineSince:Null<Float>;
 
+	/** `/read [jid]`: marks the messages of the chat (or of all) read, set up with the unread messages **/
+	var markRead:(input:Null<String>, out:Output) -> Void = (_, _) -> {};
+
 	/** Your other clients online (full jids), by the presences of the contacts module **/
 	var otherClients:() -> Array<String> = () -> [];
 
@@ -186,6 +189,13 @@ class Client {
 				]
 			},
 			{
+				name: "read",
+				args: "[jid]",
+				description: "mark the messages of a chat as read (without jid: of all chats), e.g. read in another program",
+				run: (args, out) -> markRead(args[0], out),
+				complete: ["jid" => arg -> [for (c in overview.get().chats) if (c.jid.startsWith(arg)) c.jid]]
+			},
+			{
 				name: "overview",
 				description: "what is going on: calls, unread messages, file transfers, subscription requests, rooms, who is typing, a command waiting for input",
 				run: (args, out) -> showOverview(out)
@@ -242,6 +252,17 @@ class Client {
 		commands.completers.set("jid", arg -> contacts.completions(arg));
 		// unread messages: of chats other than the current chat mode
 		final unread = new Unread();
+		markRead = (input, out) -> {
+			final chats = [for (c in unread.list((jid, _) -> jid)) c.jid];
+			final jid = (input == null) ? null : chats.contains(input.toLowerCase()) ? input.toLowerCase() : (rooms.resolve(input)
+				?? contacts.resolve(input, out));
+			if (input != null && jid == null)
+				return;
+			final read = (jid == null) ? chats : [xmpp.Jid.parseBare(jid).toLowerCase()];
+			for (c in read)
+				unread.clear(c);
+			out.data({read: read}, () -> out.info((read.length == 0) ? "nothing unread" : 'read: ${read.join(", ")}'));
+		}
 		final history = enabled("history") ? new History(context, contacts, rooms, messages, server) : null;
 		// the local log of the chats (chatlog = 1)
 		final chatlog = new Chatlog(context, messages, contacts, account);
