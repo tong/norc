@@ -88,6 +88,9 @@ typedef Account = {
 	/** A local log of the chats with contacts (`Chatlog`), `false` if not set **/
 	var ?chatlog:Bool;
 
+	/** Show the styles of messages (XEP-0393: `*bold*`, `_italic_`, quotes, code), `true` if not set **/
+	var ?messageStyling:Bool;
+
 	/** Modules not loaded (see `Config.MODULES`): their commands, features and handling of stanzas **/
 	var ?disableModules:Array<String>;
 
@@ -220,6 +223,7 @@ private typedef Key = {
 	`persistent_command_history` (`0`: the history of the input line is not kept),
 	`chat_history` (messages of the chatlog, else of the archive, shown when the chat mode starts, `0`: none),
 	`chatlog` (`1`: a local log of the chats with contacts, see `/chatlog`),
+	`message_styling` (`0`: messages without their styles, `*bold*`, `_italic_`, `~strike~`, code, quotes),
 	`prompt` (of the input line, in `"` to keep spaces at the start or end),
 	`chat_prompt` (in chat mode, `{name}`, `{jid}` and `{state}` of the contact),
 	`room_prompt` (in a room, `{name}`, `{jid}` and `{nick}`).
@@ -300,6 +304,7 @@ class Config {
 		},
 		{name: "share_service", get: a -> a.shareService, set: (a, v) -> a.shareService = v},
 		flag("chatlog", a -> a.chatlog, (a, v) -> a.chatlog = v),
+		flag("message_styling", a -> a.messageStyling, (a, v) -> a.messageStyling = v),
 		{name: "chat_history", get: a -> (a.chatHistory != null) ? Std.string(a.chatHistory) : null, set: (a, v) -> a.chatHistory = parseCount(v)},
 		flag("persistent_command_history", a -> a.persistentCommandHistory, (a, v) -> a.persistentCommandHistory = v),
 		// in quotes: spaces at the start or end are kept

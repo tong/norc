@@ -79,6 +79,10 @@
 # server (MAM); 0: none.
 # chat_history = 10
 
+# Messages with their styles: *bold*, _italic_, ~struck through~, `code`, quotes (> …), code blocks (```).
+# Plain with 0.
+# message_styling = 1
+
 # A local log of the chats with contacts (/chatlog), readable only by you: in $XDG_DATA_HOME/norc/chatlog/<account>/
 # (~/.local/share/norc/chatlog). Off unless 1.
 # chatlog = 0

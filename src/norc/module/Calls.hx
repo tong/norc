@@ -136,6 +136,9 @@ class Calls extends Module {
 	/** The command of the media program, `null` if it is not found **/
 	final helper:Null<Array<String>>;
 
+	/** The program of `call_helper` (default `norc-rtc`), also when not found **/
+	final helperName:String;
+
 	/** Seconds a call rings before it is given up **/
 	static inline var ANSWER_TIMEOUT = 60;
 
@@ -160,6 +163,7 @@ class Calls extends Module {
 		this.sessions = sessions;
 		this.account = account;
 		final command = words(account.callHelper ?? "norc-rtc");
+		helperName = command[0] ?? "";
 		final path = Files.which(command[0] ?? "");
 		this.helper = (path != null) ? [path].concat(command.slice(1)) : null;
 		sessions.handle(JingleRtp.XMLNS, incoming);
@@ -296,9 +300,13 @@ class Calls extends Module {
 		super.detach();
 	}
 
+	/** Why calls are not available: the program of `call_helper` was not found **/
+	function missingHelper():String
+		return (helperName == "norc-rtc") ? "calls need norc-rtc (not found in PATH, see call_helper)" : 'calls need norc-rtc: $helperName not found (call_helper = ${account.callHelper})';
+
 	function call(input:String, words:Null<String>, out:Output) {
 		if (helper == null) {
-			out.error("calls need norc-rtc (not found, see call_helper)");
+			out.error(missingHelper());
 			return;
 		}
 		final options = parseOptions(words, out);
@@ -722,7 +730,7 @@ class Calls extends Module {
 	/** Lists the devices for calls (of norc-rtc), their names for the settings **/
 	function devices(out:Output) {
 		if (helper == null) {
-			out.error("calls need norc-rtc (not found, see call_helper)");
+			out.error(missingHelper());
 			return;
 		}
 		final lines = try {

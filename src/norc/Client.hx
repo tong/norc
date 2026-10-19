@@ -236,6 +236,7 @@ class Client {
 		Term.avatarPath = jid -> contacts.avatars.get(xmpp.Jid.parseBare(jid).toLowerCase());
 		Term.inlineAvatars = account.inlineAvatars == true;
 		final messages = new Messages(context, contacts);
+		messages.styling = account.messageStyling != false;
 		// what the server offers: commands requiring a feature (`requires`) are refused without it
 		final server = new Server(context);
 		commands.supports = server.supports;
