@@ -75,6 +75,9 @@ class Messages extends Module {
 	/** Show the styles of messages (`*bold*`, quotes, see `Styling`), unless a message has the hint not to **/
 	public var styling = true;
 
+	/** The chat of the chat mode (bare jid), `null` outside of it: its sent messages are shown without the name **/
+	public var current:() -> Null<String> = () -> null;
+
 	/** Where sent messages were shown (see `shownAt`), the last `MAX_SHOWN` **/
 	final shown = new Map<String, LineEditor.Position>();
 
@@ -284,10 +287,14 @@ class Messages extends Module {
 		});
 	}
 
-	/** Prints a message sent by this client or another of the account: `12:03:41 → <alice> text`, in the own color **/
+	/**
+		Prints a message sent by this client or another of the account: `12:03:41 → <alice> text`, in the own color;
+		in the chat mode with the contact `12:03:41 → text` (the prompt shows it)
+	**/
 	function showSent(m:Message, ?date:Date) {
 		final to = Jid.parseBare(m.to);
-		final end = show('→ <${contacts.name(to)}>' + marks(m), null, text(to, m), date, "", 0, to);
+		final here = current()?.toLowerCase() == to.toLowerCase();
+		final end = show((here ? '→' : '→ <${contacts.name(to)}>') + marks(m), null, text(to, m), date, "", 0, here ? null : to);
 		if (end != null && m.id != null && date == null) {
 			shown.set(m.id, end);
 			shownIds.push(m.id);

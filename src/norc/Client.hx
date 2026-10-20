@@ -254,6 +254,7 @@ class Client {
 			room: account.roomPrompt ?? DEFAULT_PROMPTS.room
 		},
 			account.persistentCommandHistory != false ? '${Config.stateDir(account.name)}/history' : null);
+		messages.current = console.current;
 		console.own = {account: account.name, jid: '${account.jid.node}@${account.jid.domain}', resource: account.resource};
 		for (name => command in account.aliases ?? [])
 			commands.aliases.set(name, command);
