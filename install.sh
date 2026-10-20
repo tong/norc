@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# Installs norc (and norc-rtc, for calls) from the GitHub releases, on Linux (x86_64, arm64) and macOS (arm64):
+# Installs norc (and norc-rtc, for calls) from the GitHub releases, on Linux (x86_64, arm64) and macOS (universal):
 #
 #   curl -fsSL https://raw.githubusercontent.com/tong/norc/main/install.sh | sh
 #
@@ -86,7 +86,6 @@ x86_64 | amd64) arch=x86_64 ;;
 aarch64 | arm64) arch=arm64 ;;
 *) fail "no release for $os on $arch: build it from the sources (https://github.com/$repo)" ;;
 esac
-[ "$os-$arch" = macos-x86_64 ] && fail "no release for Intel Macs (only Apple silicon): build it from the sources (https://github.com/$repo)"
 
 # the latest release: where github.com/<repo>/releases/latest redirects to (no API, no rate limit)
 if [ -z "$version" ]; then
@@ -105,18 +104,24 @@ if [ -z "$dir" ]; then
   if [ "$(id -u)" = 0 ]; then dir=/usr/local/bin; else dir=$HOME/.local/bin; fi
 fi
 
-name=norc-$version-$os-$arch.tar.gz
 base=https://github.com/$repo/releases/download/$version
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT INT TERM
 
+fetch "$base/SHA256SUMS" "$tmp/SHA256SUMS" || fail "cannot download the checksums of $version (no such release?)"
+
+# the archive: in the checksums of the release; macOS: universal, releases before it only for Apple silicon (arm64)
+name=
+for target in $([ $os = macos ] && echo universal) $arch; do
+  grep -q " norc-$version-$os-$target.tar.gz\$" "$tmp/SHA256SUMS" && { name=norc-$version-$os-$target.tar.gz; break; }
+done
+[ -n "$name" ] || fail "no release $version for $os on $arch: build it from the sources (https://github.com/$repo)"
+
 say "norc $version ($os-$arch) → $dir"
-fetch "$base/$name" "$tmp/$name" || fail "cannot download $base/$name (no such release or target?)"
-fetch "$base/SHA256SUMS" "$tmp/SHA256SUMS" || fail "cannot download the checksums of $version"
+fetch "$base/$name" "$tmp/$name" || fail "cannot download $base/$name"
 
 # verified with the checksums of the release
 expected=$(grep " $name\$" "$tmp/SHA256SUMS" | cut -d ' ' -f 1)
-[ -n "$expected" ] || fail "$name is not in the checksums of $version"
 if command -v sha256sum >/dev/null 2>&1; then
   actual=$(sha256sum "$tmp/$name" | cut -d ' ' -f 1)
 elif command -v shasum >/dev/null 2>&1; then

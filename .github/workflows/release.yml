@@ -17,7 +17,8 @@ jobs:
         include:
           - name: linux-x86_64
             os: ubuntu-24.04
-          - name: macos-arm64
+          # norc universal (arm64, x86_64), norc-rtc arm64: made universal by build-macos-x86_64
+          - name: macos-universal
             os: macos-latest
           - name: windows-x86_64
             os: windows-latest
@@ -46,10 +47,17 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y musl-tools
 
-      - name: Build (Linux, macOS)
-        if: runner.os != 'Windows'
+      - name: Build (Linux)
+        if: runner.os == 'Linux'
         run: |
           make norc
+          ./norc --help
+
+      - name: Build (macOS, universal)
+        if: runner.os == 'macOS'
+        run: |
+          make norc ARCHS="arm64 x86_64"
+          lipo -info norc
           ./norc --help
 
       # The generated C code, compiled by the arm64 job (without haxe)
@@ -209,10 +217,54 @@ jobs:
             gh api -X DELETE "repos/${{ github.repository }}/actions/artifacts/$id"
           done
 
+  # macOS x86_64 (Intel): norc-rtc built with Homebrew's GStreamer of an Intel Mac, merged with the arm64 one of the
+  # build job into a universal norc-rtc (each half links the libraries of its Homebrew: /usr/local, /opt/homebrew);
+  # tests the x86_64 half of the universal norc
+  build-macos-x86_64:
+    needs: build
+    if: ${{ !cancelled() }}
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: norc-${{ github.ref_name }}-macos-universal
+          path: dist
+
+      - name: Test norc (x86_64)
+        run: |
+          chmod +x dist/norc dist/norc-rtc
+          dist/norc --help
+
+      - name: Install GStreamer
+        run: brew install pkgconf gstreamer libnice-gstreamer json-glib
+
+      - name: Build and test norc-rtc
+        run: |
+          make norc-rtc
+          python3 rtc/loopback.py --seconds 0 ./norc-rtc
+          python3 rtc/loopback.py --video --seconds 0 ./norc-rtc
+
+      - name: Merge norc-rtc (universal)
+        run: |
+          lipo -create dist/norc-rtc norc-rtc -output dist/norc-rtc.universal
+          mv dist/norc-rtc.universal dist/norc-rtc
+          lipo -info dist/norc-rtc
+          python3 rtc/loopback.py --seconds 0 dist/norc-rtc
+
+      # replaces the artifact of the build job
+      - uses: actions/upload-artifact@v7
+        with:
+          name: norc-${{ github.ref_name }}-macos-universal
+          path: dist/
+          overwrite: true
+          if-no-files-found: error
+
   # The GitHub release of the tag: one archive per target with norc and norc-rtc (for calls), tar.gz (zip for Windows,
   # Linux and macOS with the completions in extras/), and their checksums
   release:
-    needs: [build, build-linux-arm64]
+    needs: [build, build-linux-arm64, build-macos-x86_64]
     if: github.event_name == 'push'
     runs-on: ubuntu-24.04
     permissions:

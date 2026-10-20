@@ -1,6 +1,6 @@
 ## Install
 
-The latest release, on Linux (x86-64, arm64) and macOS (Apple silicon), into `~/.local/bin` (as root `/usr/local/bin`):
+The latest release, on Linux (x86-64, arm64) and macOS (Apple silicon and Intel), into `~/.local/bin` (as root `/usr/local/bin`):
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/tong/norc/main/install.sh | sh
@@ -51,7 +51,7 @@ the last tag with the commits since it, the commit and uncommitted changes as se
 (`0.1.0+5.g885f830.dirty`).
 Without git, set it with `-D norc_version=0.1.0` (and `norc_tag`, `norc_commit`, `norc_date`, `norc_dirty`).
 
-Release binaries for Linux (x86-64, arm64), macOS and Windows are built by the GitHub workflow `release`: one
+Release binaries for Linux (x86-64, arm64), macOS (universal: Apple silicon and Intel) and Windows are built by the GitHub workflow `release`: one
 archive per platform with `norc` and `norc-rtc` (calls, see below).
 
 `norc.hl` only runs on x86/x86-64 (HashLink's JIT); on ARM, e.g. a Raspberry Pi, use the single binary.

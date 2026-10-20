@@ -43,7 +43,8 @@ omemo.hdll:
 #   omemo.c   the natives of hxomemo (OMEMO): Monocypher, and the mbedtls above
 #
 # Linux:   fully static with musl (glibc can't resolve hostnames in static binaries)
-# macOS:   links only system libraries and frameworks (macOS has no static libc)
+# macOS:   links only system libraries and frameworks (macOS has no static libc); ARCHS="arm64 x86_64": a universal
+#          binary (`make clean` before changing it)
 # Windows: MSYS2 (UCRT64), links only system DLLs
 
 UNAME := $(shell uname -s)
@@ -52,6 +53,9 @@ ifeq ($(UNAME),Darwin)
 STATIC_CC ?= clang
 STATIC_LDFLAGS := -Wl,-dead_strip
 STATIC_LIBS := -lm -lpthread -framework Security -framework CoreFoundation
+ARCHS ?=
+STATIC_CFLAGS += $(addprefix -arch ,$(ARCHS))
+STATIC_LDFLAGS += $(addprefix -arch ,$(ARCHS))
 else ifeq ($(OS),Windows_NT)
 EXE := .exe
 STATIC_CC ?= gcc
