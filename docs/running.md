@@ -55,16 +55,21 @@ account of the link, `xmpp://me@example.org/…`, else `-a` or the default one),
 [api](api) (e.g. `api = socket`): on its terminal, as [`/open`](commands#xmpp-links) typed there. If none runs,
 norc starts with it and opens it after the login; without a terminal it doesn't, and exits with code 3.
 
-[`extras/desktop/`](https://github.com/tong/norc/tree/main/extras/desktop) makes norc open the links clicked in
-a browser or opened with `xdg-open`: `norc-open` hands the link to the running norc, or starts norc with it in a
-terminal (`xdg-terminal-exec`, else `$TERMINAL -e`), in the tmux session of `norc.desktop`; errors are notifications.
+[`extras/desktop/`](https://github.com/tong/norc/tree/main/extras/desktop) has `norc.desktop`, the launcher of norc
+in a terminal (in the tmux session `norc`, attached to if it runs) and the handler of the links clicked in a browser
+or opened with `xdg-open`: its program `norc-open` hands a link to the running norc, or starts norc with it. The
+terminal is `xdg-terminal-exec`, else `$TERMINAL`; errors are notifications.
 
 ```sh
 cp extras/desktop/norc-open ~/.local/bin/
-cp extras/desktop/norc.desktop extras/desktop/norc-open.desktop ~/.local/share/applications/
-xdg-mime default norc-open.desktop x-scheme-handler/xmpp
+cp extras/desktop/norc.desktop ~/.local/share/applications/
+update-desktop-database ~/.local/share/applications   # else a cache there hides its MimeType
+xdg-mime default norc.desktop x-scheme-handler/xmpp
 xdg-open 'xmpp:alice@example.org?message'   # try it
 ```
+
+Browsers asking with which application to open a link list norc too; Firefox keeps its own choice (Settings,
+Applications, `xmpp`).
 
 ## The interactive prompt
 

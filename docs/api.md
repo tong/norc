@@ -104,6 +104,10 @@ Requests:
   `groups` by kind (subcommands, options, contacts, rooms, files):
   `{"id":1,"complete":"msg al"}` → `{"type":"complete","id":1,"word":"al","candidates":["alice@example.org"],"groups":[["alice@example.org"]]}`.
 
+Commands only for programs (not typed in norc, not in `/help`): `chatstate <jid> <state>` sends your chat state to a
+contact, `active`, `composing` (typing), `paused`, `inactive` or `gone`, e.g. from an editor (norc.nvim); on the
+terminal norc sends them itself while you type in the chat mode.
+
 Replies:
 
 - `data`: the result of commands which return data (`contacts`, `contacts requests`, `presence`, `presence status`, `file transfers`, `config`,

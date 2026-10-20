@@ -47,6 +47,9 @@ typedef Command = {
 
 	/** `false`: a left out first `jid` argument is not the contact of the chat mode (see `Target`) **/
 	var ?target:Bool;
+
+	/** Only for programs using the api (e.g. an editor): refused on the terminal, left out of `/help` and completions **/
+	var ?api:Bool;
 }
 
 /**
@@ -286,6 +289,10 @@ class Commands {
 			out.error('${entry.path}: unknown subcommand: $first (/help ${entry.path.substr(1)})');
 			return false;
 		}
+		if (command.api == true && out == TermOutput.instance) {
+			out.error('${entry.path}: only for programs using the api');
+			return false;
+		}
 		if (command.online == true && !isOnline()) {
 			out.error('${entry.path}: not connected');
 			return false;
@@ -340,7 +347,7 @@ class Commands {
 		final text = before.substr(1);
 		var i = text.indexOf(" ");
 		if (i == -1)
-			return result(before, [for (name in entries.keys()) '/$name'].concat([for (name in aliases.keys()) '/$name']));
+			return result(before, [for (name => e in entries) if (e.command.api != true) '/$name'].concat([for (name in aliases.keys()) '/$name']));
 		// the arguments of an alias: those of its command
 		if (expand(text) != text) {
 			final c = complete('/' + expand(text), target);
@@ -527,6 +534,8 @@ class Commands {
 		final list = [];
 		for (n in sorted) {
 			final e = entries.get(n);
+			if (e.command.api == true)
+				continue;
 			if (e.command.run != null)
 				list.push(e);
 			if (e.command.subcommands != null)
@@ -540,7 +549,7 @@ class Commands {
 				printTable(list, out);
 			else {
 				// the commands, their subcommands by name: /help <command> shows them
-				final top = [for (n in sorted) entries.get(n)];
+				final top = [for (n in sorted) if (entries.get(n).command.api != true) entries.get(n)];
 				printTable(top, out, e -> (e.command.subcommands != null)
 					? Term.style(' (${[for (sub in e.command.subcommands) sub.name].join(", ")})', 2) : '');
 				out.print(Term.style('  /help <command>: its usage and subcommands, /help all: all commands', 2));

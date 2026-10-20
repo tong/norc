@@ -10,7 +10,7 @@ import xmpp.Jid;
 /**
 	Chat State Notifications (XEP-0085): whether a contact is typing, paused, or left the conversation.
 	Received states are events (`chatstate`), not printed; sent messages carry the `active` state, other programs
-	(e.g. an editor) send states with `/chatstate`. Disabled with `chat_states = 0`.
+	(e.g. an editor) send states with the api command `chatstate`. Disabled with `chat_states = 0`.
 **/
 class ChatStates extends Module {
 	static final STATES:Array<String> = ["active", "composing", "paused", "inactive", "gone"];
@@ -51,8 +51,9 @@ class ChatStates extends Module {
 			{
 				name: "chatstate",
 				args: "<jid> <state>",
-				description: "send your chat state to a contact: active, composing, paused, inactive, gone (for editors and other programs)",
+				description: "send your chat state to a contact: active, composing, paused, inactive, gone (for editors and other programs; on the terminal norc sends them while you type)",
 				online: true,
+				api: true,
 				run: (args, out) -> send(args[0], args[1], out),
 				complete: ["state" => _ -> STATES]
 			}

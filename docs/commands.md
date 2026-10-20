@@ -29,7 +29,6 @@ The commands of [file transfer](file-transfer) and [scripts](scripts) are on the
 | `/react <jid> [^n] <emoji...>` | react to the last message of a contact or in a room (`^2`: the one before it, …) with emojis: each one is added to your reactions to it, or removed if you reacted with it already; `-` removes all |
 | `/reply <jid> [^n] <text...>` | reply to the last message of a contact or in a room (`^2`: the one before it, …): shown with the message replied to, quoted for clients without replies (`\n` for a newline) |
 | `/retract <jid> [^n]` | retract (delete) your last message to a contact or in a room for everyone (`^2`: the one before it, …): their clients delete it or show it as retracted, but may have kept it |
-| `/chatstate <jid> <state>` | send your chat state: `active`, `composing` (typing), `paused`, `inactive`, `gone`; for editors and other programs using the API |
 | `/xmpp-debug [on\|off]` | print the XMPP stream (passwords hidden), without argument: on; same as `--xmpp-debug` |
 | `/overview` | what is going on: calls, unread messages (of chats you are not in, with mentions in rooms), file offers and transfers, subscription requests, rooms, who is typing, an ad-hoc command waiting for input; the same as the `status` event of the API |
 | `/read [jid]` | mark the messages of a chat as read (without jid: of all chats), e.g. read in another program (norc.nvim does it when it shows the chat): the unread counts of `/overview`, the prompt and the `status` event |
