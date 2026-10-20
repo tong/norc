@@ -56,6 +56,9 @@ STATIC_LIBS := -lm -lpthread -framework Security -framework CoreFoundation
 ARCHS ?=
 STATIC_CFLAGS += $(addprefix -arch ,$(ARCHS))
 STATIC_LDFLAGS += $(addprefix -arch ,$(ARCHS))
+# the native debugger of std/debug.c on x86_64 (empty on arm64)
+LIBHL_SRC += include/mdbg/mdbg include/mdbg/mach_excServer include/mdbg/mach_excUser
+LIBHL_INC := -I$(HASHLINK_SRC)/include
 else ifeq ($(OS),Windows_NT)
 EXE := .exe
 STATIC_CC ?= gcc
@@ -79,7 +82,7 @@ JOBS ?= $(shell echo $$(( ($(CPUS) + 1) / 2 )))
 PARALLEL := $(if $(filter -j%,$(MAKEFLAGS)),,-j$(JOBS))
 
 LIBHL_OBJ := $(addprefix $(STATIC)/libhl/,$(addsuffix .o,$(LIBHL_SRC)))
-LIBHL_CFLAGS := -std=c11 -DPCRE2_CODE_UNIT_WIDTH=16 -DPCRE2_STATIC -DHAVE_CONFIG_H -I$(HASHLINK_SRC)/include/pcre
+LIBHL_CFLAGS := -std=c11 -DPCRE2_CODE_UNIT_WIDTH=16 -DPCRE2_STATIC -DHAVE_CONFIG_H -I$(HASHLINK_SRC)/include/pcre $(LIBHL_INC)
 
 MBEDTLS_INC := -I$(HASHLINK_SRC)/libs/ssl -I$(HASHLINK_SRC)/include/mbedtls/include \
 	-DMBEDTLS_USER_CONFIG_FILE=\"mbedtls_user_config.h\"
