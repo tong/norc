@@ -3,3 +3,4 @@ norc.hxml
 --dce full
 -D analyzer-optimize
 -D norc_unix
+--macro norc.Macros.sortHashes()
