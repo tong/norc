@@ -162,7 +162,7 @@ typedef Account = {
 	/** Messages of the archive shown when the chat mode starts with a contact, `10` if not set, `0`: none **/
 	var ?chatHistory:Int;
 
-	/** Prompt of the input line (`-i`), `> ` if not set **/
+	/** Prompt of the input line (`-i`), `{status}> ` if not set; `{me}`, `{resource}`, `{account}` in all three prompts **/
 	var ?prompt:String;
 
 	/**

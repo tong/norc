@@ -7,6 +7,8 @@ import norc.Term;
 using StringTools;
 
 private final USAGE = 'Usage: norc [options]
+       norc [options] <xmpp-uri>          open an XMPP link (xmpp:…) in the running norc of the account (with the
+                                          api), else start norc with it (on a terminal, else exit code 3)
        norc account <command> [options]   (norc account help)
        norc check <domain...> [--json] [--timeout <s>]   what servers offer, e.g. registration (norc check)
        norc ctl <command> [args...]                      run a command in the running norc (norc ctl --help)
@@ -61,6 +63,7 @@ function main() {
 	var purge = false;
 	var json = false;
 	var timeout:Null<String> = null;
+	var uri:Null<String> = null;
 	final positional = new Array<String>();
 	var i = 0;
 	function value():String {
@@ -158,6 +161,19 @@ function main() {
 				yes: yes,
 				purge: purge
 			}));
+		case [link] if (link.startsWith("xmpp:")):
+			final parsed = xmpp.URI.parse(link);
+			if (parsed == null)
+				exit('invalid XMPP URI: $link');
+			// what norc can't open: before starting one for it
+			try
+				norc.Uris.open(parsed)
+			catch (e:String)
+				exit('$link: $e');
+			// the account of the link (xmpp://me@example.org/…), unless given
+			if (accountName == null && jid == null && parsed.account != null)
+				accountName = xmpp.Jid.parseBare(parsed.account);
+			uri = link;
 		case ["check"]:
 			Sys.println(norc.Check.USAGE);
 			Sys.exit(0);
@@ -216,6 +232,18 @@ function main() {
 		if (account.passwordCmd == null && AccountCommand.envPassword == null)
 			exit('--silent needs password_cmd in the account config, or NORC_PASSWORD');
 	}
+	// a link: to the norc of the account if it runs (as norc ctl open)
+	if (uri != null && PidFile.running(Config.instanceDir(account)) != null) {
+		final code = norc.Ctl.run(["-a", account.name].concat(account.instance != null ? ["-r", account.instance] : []).concat(["open", uri]));
+		if (code != 0)
+			Term.info('or open it in the running norc: /open $uri');
+		Sys.exit(code);
+	}
+	// without a terminal (e.g. a link clicked) no norc is started to show it: 3, the handler starts one in a terminal
+	if (uri != null && interactive == null && !Term.isForegroundTerminal()) {
+		Term.error('norc doesn\'t run for ${account.name}: start it to open $uri');
+		Sys.exit(3);
+	}
 	final pidFile = try PidFile.acquire(Config.instanceDir(account)) catch (e) {
 		final running = PidFile.running(Config.instanceDir(account)) != null;
 		exit('${account.name}/${account.resource}: $e' + (running && account.instance == null ? ' (another one: --resource)' : ''));
@@ -226,6 +254,7 @@ function main() {
 	}
 	final client = new Client(account, password);
 	client.debug = debug;
+	client.openUri = uri;
 	final code = client.run(interactive ?? (!stdin && !silent && Term.isForegroundTerminal()), stdin);
 	pidFile.release();
 	Sys.exit(code);

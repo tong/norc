@@ -48,6 +48,24 @@ loginctl enable-linger $USER             # also at boot, without logging in
 norc reconnects itself after a lost connection; systemd restarts it when it stopped with an error, but gives up
 after 5 times in 5 minutes (a wrong password, another client with the same resource).
 
+## XMPP links
+
+`norc <uri>` opens an XMPP link (`xmpp:alice@example.org?message`) in the running norc of the account (the
+account of the link, `xmpp://me@example.org/…`, else `-a` or the default one), if it runs with the
+[api](api) (e.g. `api = socket`): on its terminal, as [`/open`](commands#xmpp-links) typed there. If none runs,
+norc starts with it and opens it after the login; without a terminal it doesn't, and exits with code 3.
+
+[`extras/desktop/`](https://github.com/tong/norc/tree/main/extras/desktop) makes norc open the links clicked in
+a browser or opened with `xdg-open`: `norc-open` hands the link to the running norc, or starts norc with it in a
+terminal (`xdg-terminal-exec`, else `$TERMINAL -e`), in the tmux session of `norc.desktop`; errors are notifications.
+
+```sh
+cp extras/desktop/norc-open ~/.local/bin/
+cp extras/desktop/norc.desktop extras/desktop/norc-open.desktop ~/.local/share/applications/
+xdg-mime default norc-open.desktop x-scheme-handler/xmpp
+xdg-open 'xmpp:alice@example.org?message'   # try it
+```
+
 ## The interactive prompt
 
 On a terminal, norc shows a prompt (`> `) and prints incoming messages above it. The prompt shows calls, rooms and

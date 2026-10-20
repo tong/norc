@@ -291,3 +291,24 @@ keys of a device you no longer use, `/pubsub delete eu.siacs.conversations.axolo
 /pubsub access mynode alice@example.org member pubsub.example.org   alice may read the whitelist node
 echo '<entry xmlns="urn:example">hi</entry>' | norc ctl -s pubsub publish urn:example
 ```
+
+## XMPP links
+
+`/open <uri>` opens an XMPP link (`xmpp:`, RFC 5122), e.g. of a web page or a QR code; `norc <uri>` and
+`norc ctl open <uri>` hand one to the running norc, see [Running norc](running#xmpp-links). What only shows something
+runs at once; what changes something (joining, adding or removing a contact, running a command) and messages are put
+into the input line: Enter runs or sends them, so a link doesn't act on its own.
+
+| Link | Opens |
+|---|---|
+| `xmpp:alice@example.org`, `?message` | the chat with alice (`/chat`) |
+| `?message;body=Hi` | the chat, with `Hi` in the input line (not sent) |
+| `?join` | `/room join <room>` in the input line (a `password` of the link is left out) |
+| `?roster`, `?subscribe` (`;name=…`) | `/contacts add <jid> [name]` in the input line (a `group` is left out) |
+| `?remove` | `/contacts remove <jid>` in the input line |
+| `?vcard` | the vCard (`/vcard`) |
+| `?disco` (`;request=items;node=…`) | service discovery (`/disco info`, `/disco items`) |
+| `?command` | the ad-hoc commands of the entity (`/command`); with `;node=…` `/command run <jid> <node>` in the input line |
+
+A link for another account (`xmpp://me@example.org/alice@example.org`) is refused; parameters norc doesn't use are
+named (`left out of the link: …`).

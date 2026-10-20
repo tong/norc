@@ -218,6 +218,28 @@ class LineEditor {
 		mutex.release();
 	}
 
+	/** The line set (`setLine`) while no line was read: the next line read starts with it **/
+	var pending:Null<String>;
+
+	/**
+		Replaces the line being read with `text` (else the next line read starts with it); a line typed before is kept
+		in the history of this run (Up shows it again).
+	**/
+	public function setLine(text:String) {
+		mutex.acquire();
+		if (active && !suspended) {
+			final typed = line.join("");
+			if (typed.trim().length > 0 && history[history.length - 1] != typed)
+				history.push(typed);
+			line = splitChars(text);
+			cursor = line.length;
+			historyPos = history.length;
+			redraw();
+		} else
+			pending = text;
+		mutex.release();
+	}
+
 	/**
 		Prints `text` (a complete line, without newline) above the input line.
 	**/
@@ -296,7 +318,8 @@ class LineEditor {
 	**/
 	public function readLine(?initial:String):Null<String> {
 		mutex.acquire();
-		line = (initial != null) ? splitChars(initial) : [];
+		line = splitChars(initial ?? pending ?? "");
+		pending = null;
 		cursor = line.length;
 		historyPos = history.length;
 		active = true;

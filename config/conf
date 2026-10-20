@@ -104,6 +104,8 @@
 # and subscription requests there are, e.g. "☎1/0 ✉4 @1 #3 ⇅0/1 +1 ", nothing without; the numbers alone:
 # {calls_active} {calls_pending} {unread} {mentions} {rooms} {transfers_active} {transfers_pending} {requests}
 # (in all prompts), e.g. "{calls_active}/{calls_pending}|{rooms}|{transfers_active}/{transfers_pending}> ".
+# Your account (in all prompts): {me} your jid (without resource), {resource}, {account} the name of its config,
+# e.g. "{me}/{resource} {status}> ".
 # prompt = "{status}> "
 
 # Prompt in chat mode (/chat): {name} is the name of the contact (in its color), {jid} its jid,

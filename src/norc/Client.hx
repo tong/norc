@@ -127,6 +127,9 @@ class Client {
 
 	var exitCode:Null<Int>;
 
+	/** An XMPP URI opened after the first login (`norc <uri>`), `null` if none or done **/
+	public var openUri:Null<String>;
+
 	public function new(account:Account, password:String) {
 		this.account = account;
 		this.password = password;
@@ -251,6 +254,7 @@ class Client {
 			room: account.roomPrompt ?? DEFAULT_PROMPTS.room
 		},
 			account.persistentCommandHistory != false ? '${Config.stateDir(account.name)}/history' : null);
+		console.own = {account: account.name, jid: '${account.jid.node}@${account.jid.domain}', resource: account.resource};
 		for (name => command in account.aliases ?? [])
 			commands.aliases.set(name, command);
 		commands.completers.set("jid", arg -> contacts.completions(arg));
@@ -492,6 +496,10 @@ class Client {
 			for (m in modules)
 				m.online();
 			sendPresence();
+			if (openUri != null) {
+				console.open(openUri, TermOutput.instance);
+				openUri = null;
+			}
 		}
 		session.onError = (msg, retryable) -> {
 			if (retryable) {

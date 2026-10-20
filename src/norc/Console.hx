@@ -49,6 +49,9 @@ class Console {
 	/** The prompts of the modes: changed with `/config prompt=…`, then `refreshPrompt` **/
 	public var prompts:Prompts;
 
+	/** The own account in all prompts: `{account}` (the name of its config), `{me}` (the bare jid), `{resource}` **/
+	public var own = {account: "", jid: "", resource: ""};
+
 	/** The fixed placement of the avatar in the prompt (`{avatar}`), moved when the prompt is drawn again **/
 	static inline var PROMPT_PLACEMENT = 1;
 
@@ -83,6 +86,9 @@ class Console {
 	/** A check for `paused` is pending **/
 	var pausing = false;
 
+	/** Reading the input (`start`): the chat mode and the input line are there **/
+	var started = false;
+
 	public function new(context:Context, commands:Commands, contacts:Contacts, chatStates:ChatStates, rooms:Rooms, prompts:Prompts, ?historyPath:String) {
 		this.context = context;
 		this.commands = commands;
@@ -91,6 +97,16 @@ class Console {
 		this.rooms = rooms;
 		this.prompts = prompts;
 		this.historyPath = historyPath;
+		commands.register({
+			name: "open",
+			args: "<uri>",
+			target: false,
+			description: "open an XMPP link (xmpp:…): a chat (with ?message;body=… the message in the input line, not sent), a "
+				+ "vCard (?vcard), service discovery (?disco), ad-hoc commands (?command); joining a room (?join), adding "
+				+ "(?roster, ?subscribe) or removing a contact (?remove) and running a command (?command;node=…) are put into "
+				+ "the input line, Enter runs them",
+			run: (args, out) -> open(args[0], out)
+		});
 		chatStates.received = (from, state) -> if (chat != null && Jid.parseBare(chat) == from) {
 			theirState = (state == "active") ? null : state;
 			updatePrompt();
@@ -109,6 +125,7 @@ class Console {
 		Call `stop` to restore the terminal.
 	**/
 	public function start(read:Null<String>->Void) {
+		started = true;
 		commands.register({
 			name: "chat",
 			args: "[jid]",
@@ -203,6 +220,56 @@ class Console {
 		updatePrompt();
 	}
 
+	/**
+		Opens an XMPP URI (`/open`), on the terminal if reading it: also when asked over the api (e.g. by `norc <uri>`
+		of a link clicked), which gets what was done.
+	**/
+	public function open(input:String, out:Output) {
+		final uri = xmpp.URI.parse(input.trim());
+		if (uri == null) {
+			out.error('/open: no XMPP URI (xmpp:…): $input');
+			return;
+		}
+		if (uri.account != null && Jid.parseBare(uri.account).toLowerCase() != own.jid.toLowerCase() && uri.account != own.account) {
+			out.error('/open: the link is for the account ${uri.account}, this is ${own.jid}');
+			return;
+		}
+		final opened = try Uris.open(uri) catch (e:String) {
+			out.error('/open: $e');
+			return;
+		}
+		final term = started ? TermOutput.instance : out;
+		final done = [];
+		if (opened.chat != null) {
+			if (!started) {
+				out.error('/open: the chat with ${opened.chat} needs norc on a terminal');
+				return;
+			}
+			enter(opened.chat, term);
+			done.push('/chat ${opened.chat}');
+		}
+		if (opened.run != null) {
+			if (!commands.run(opened.run, term)) {
+				if (term != out)
+					out.error('/open: ${opened.run} failed');
+				return;
+			}
+			done.push(opened.run);
+		}
+		if (opened.input != null) {
+			if (editor == null) {
+				out.error('/open: no input line for: ${opened.input}');
+				return;
+			}
+			editor.setLine(opened.input);
+			done.push('input line: ${opened.input}');
+		}
+		if (opened.ignored != null)
+			term.info('/open: left out of the link: ${opened.ignored.join(", ")}');
+		if (term != out)
+			out.data({uri: input.trim(), done: done}, () -> out.info('opened in norc: ${done.join(", ")}'));
+	}
+
 	/** In group chat mode, a subcommand of `/room` without `/room` (e.g. `/subject`, `/who`) is the subcommand **/
 	function roomCommand(line:String):String {
 		if (chat == null || !rooms.joined(chat) || !line.startsWith("/"))
@@ -262,7 +329,10 @@ class Console {
 				.replace("{rooms}", Std.string(rooms.count()))
 				.replace("{transfers_active}", Std.string(c.transfers.active))
 				.replace("{transfers_pending}", Std.string(c.transfers.pending))
-				.replace("{status}", status(c));
+				.replace("{status}", status(c))
+				.replace("{me}", own.jid)
+				.replace("{account}", own.account)
+				.replace("{resource}", own.resource);
 		}
 		// the avatar of the previous chat, not drawn anymore
 		if (!prompt.contains("\x1B_Ga=p"))
