@@ -231,6 +231,7 @@ class Client {
 		function enabled(name:String):Bool
 			return !disabled.contains(name);
 		final contacts = new Contacts(context);
+		contacts.visitors = account.visitors ?? [];
 		otherClients = () -> {
 			final own = session?.stream.jid;
 			(own == null) ? [] : [for (r in contacts.resources(xmpp.Jid.parseBare(own))) if (r != own) r];

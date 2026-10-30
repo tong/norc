@@ -50,6 +50,7 @@ in the account file), see [`/config`](commands):
 | `share_access` | who may list and download the shared directories: `roster` (contacts seeing your presence), `none`, `group:<name>` (a roster group), jids; several separated by `,` | `roster` |
 | `alias.<name>` | an alias of a command: `/<name>` runs it, with its first arguments if given, e.g. `alias.m = msg`, `alias.away = presence away` (`/away lunch` runs `/presence away lunch`); a command of the same name is run instead | `alias.h = help` (in the default `conf`) |
 | `priority` | priority of your presence (-128 to 127), see `/presence priority` | `0` (not sent) |
+| `visitors` | domains or jids of visitors, separated by commas, e.g. `anon.example.org` (the anonymous host of a [summ](https://github.com/tong/summ) page): temporary contacts. Their requests show their nickname and message (`Alice (visitor) asks: "…"`), accepting sets the nickname as roster name and asks to see their presence, and they are removed from the roster when they leave or don't answer within 15 seconds | none |
 | `autojoin_bookmarks` | `0`: don't join the rooms bookmarked with autojoin after the login (e.g. for a norc used by scripts) | `1` |
 | `call_microphone`, `call_speaker`, `call_camera` | devices of calls: their names, or parts of them (`/calls devices` lists them) | the default devices |
 | `call_echo_cancel` | `0`: no echo cancellation and noise suppression of the microphone in calls | `1` |

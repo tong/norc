@@ -27,7 +27,7 @@ since the start (with the last error), and files with an unknown event (e.g. a t
 | `on-room-invite` | room, from | an invitation to a room: `NORC_ROOM`, `NORC_FROM`, `NORC_REASON` |
 | `on-attention` | from, text | a contact wants your attention (`/attention`): `NORC_FROM`, `NORC_NAME`, `NORC_TEXT` |
 | `on-presence` | from, state, status | `NORC_FROM`, `NORC_NAME`, `NORC_STATE` (`available`, `chat`, `away`, `xa`, `dnd`, `offline`), `NORC_STATUS`, `NORC_PREVIOUS` (previous state of the resource), `NORC_RESOURCES` (online devices of the contact), `NORC_INITIAL` (`1` for the presences sent after the login) |
-| `on-subscribe` | from | `NORC_FROM`, `NORC_NAME` |
+| `on-subscribe` | from | `NORC_FROM`, `NORC_NAME`, `NORC_NICKNAME` (of the request, XEP-0172, if any), `NORC_TEXT` (its message, if any), `NORC_VISITOR` (`1` for a visitor, see `visitors` in the [configuration](configuration)) |
 | `on-subscription` | from, type | `NORC_FROM`, `NORC_NAME`, `NORC_TYPE` (`subscribed`: you can see their presence, `unsubscribed`: not anymore, `unsubscribe`: they stopped seeing yours) |
 | `on-roster` | jid, action | the roster changed (also by another of your clients): `NORC_JID_CONTACT`, `NORC_NAME`, `NORC_ACTION` (`added`, `updated`, `removed`), `NORC_SUBSCRIPTION`, `NORC_GROUPS` |
 | `on-file-offer` | from, name, size | `NORC_FROM`, `NORC_FILE`, `NORC_SIZE`, `NORC_ID` |

@@ -115,6 +115,12 @@ typedef Account = {
 	/** Join the rooms bookmarked with autojoin after the login, `true` if not set **/
 	var ?autojoinBookmarks:Bool;
 
+	/**
+		Domains (or bare jids) of visitors: temporary contacts, e.g. anonymous users of a web page (summ). Their
+		requests show their nickname and message, they are removed from the roster when they leave (`module.Contacts`)
+	**/
+	var ?visitors:Array<String>;
+
 	/** STUN server for calls (`stun://host:port`), in addition to those of the server **/
 	var ?stun:String;
 
@@ -215,6 +221,7 @@ private typedef Key = {
 	`call_recording` (`1`: calls can be recorded, `/call record`), `call_record_dir` (the recordings),
 	`stun`, `turn` (servers for calls, `stun://host:port`, `turn://user:password@host:port`, several separated by `,`),
 	`autojoin_bookmarks` (`0`: don't join bookmarked rooms after the login),
+	`visitors` (domains or jids of visitors, e.g. `anon.example.org`: temporary contacts, removed when they leave),
 	`priority` (of the presence, -128 to 127),
 	`alias.<name>` (an alias of a command, e.g. `alias.h = help`, `alias.away = presence away`),
 	`share.<name>` (a directory shared with contacts, e.g. `share.music = ~/Music`, see `/file shared`),
@@ -258,6 +265,11 @@ class Config {
 		flag("stream_management", a -> a.streamManagement, (a, v) -> a.streamManagement = v),
 		{name: "priority", get: a -> (a.priority != null) ? Std.string(a.priority) : null, set: (a, v) -> a.priority = parsePriority(v)},
 		flag("autojoin_bookmarks", a -> a.autojoinBookmarks, (a, v) -> a.autojoinBookmarks = v),
+		{
+			name: "visitors",
+			get: a -> (a.visitors != null) ? a.visitors.join(", ") : null,
+			set: (a, v) -> a.visitors = [for (s in v.split(",")) if (s.trim().length > 0) visitor(s.trim())]
+		},
 		{name: "share_access", get: a -> a.shareAccess, set: (a, v) -> a.shareAccess = v},
 		{name: "call_microphone", get: a -> a.callMicrophone, set: (a, v) -> a.callMicrophone = v},
 		{name: "call_speaker", get: a -> a.callSpeaker, set: (a, v) -> a.callSpeaker = v},
@@ -614,6 +626,14 @@ class Config {
 			case "host", "port", "stream_management": Reconnect;
 			case _: Restart;
 		}
+	}
+
+	/** A domain or bare jid of `visitors`, lowercase; throws a message if invalid **/
+	static function visitor(value:String):String {
+		final v = value.toLowerCase();
+		if (!Jid.isValid(v) || Jid.parseResource(v) != null)
+			throw 'invalid visitors entry: $value (a domain or a bare jid)';
+		return v;
 	}
 
 	/** A key of a boolean: `1` or `0` (`true`/`false`, `yes`/`no`, `on`/`off` are read too) **/

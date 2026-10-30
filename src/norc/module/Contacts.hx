@@ -4,9 +4,11 @@ import norc.Commands;
 import norc.Module;
 import norc.Output;
 import norc.Term;
+import sys.thread.Thread;
 import xmpp.Jid;
 import xmpp.Presence;
 import xmpp.Response;
+import xmpp.client.Nickname;
 import xmpp.client.Roster;
 import xmpp.client.Stream;
 
@@ -24,8 +26,22 @@ typedef PresenceState = {
 /**
 	The roster (contact list), presence subscriptions (`/contacts` and its subcommands) and the presences of
 	the contacts (the `presence` event).
+
+	Visitors (`visitors`: domains or jids, e.g. the anonymous host of a web page) are temporary contacts: their
+	requests show their nickname (XEP-0172) and message, they are named `<nickname> (visitor)`, accepting sets the
+	nickname as the roster name and subscribes back, and they are removed from the roster when they leave (their last
+	client goes offline), or when they don't answer the subscription back within `VISITOR_TIMEOUT` seconds (gone).
 **/
 class Contacts extends Module {
+	/** Domains or bare jids (lowercase) of visitors: temporary contacts, see the class **/
+	public var visitors:Array<String> = [];
+
+	/** Seconds an accepted visitor has to answer the subscription back, else they are gone and removed **/
+	static inline var VISITOR_TIMEOUT = 15;
+
+	/** Seconds after the login until visitors without presence (left while norc was offline) are removed **/
+	static inline var VISITOR_CLEANUP = 10;
+
 	/** The roster, as last received from the server (kept while disconnected) **/
 	public var items(default, null) = new Array<RosterItem>();
 
@@ -43,6 +59,9 @@ class Contacts extends Module {
 
 	/** Contacts asking to see the own presence **/
 	final requests = new Array<String>();
+
+	/** The messages (status texts) of the pending subscription requests (bare jid), e.g. of a visitor **/
+	final requestTexts = new Map<String, String>();
 
 	/** The presence of each available full jid (kept while a resumable session is disconnected) **/
 	final presences = new Map<String, PresenceState>();
@@ -126,17 +145,47 @@ class Contacts extends Module {
 			case Result(payload): items = Roster.parseRoster(payload).items;
 			case Error(e): Term.error('cannot load the roster: ${Term.errorText(e)}');
 		});
+		if (visitors.length > 0)
+			cleanupVisitors();
+	}
+
+	/**
+		Removes visitors who are not online once the server sent the presences of the contacts after the login:
+		they left while norc was offline (their accounts are temporary, they don't come back).
+	**/
+	function cleanupVisitors() {
+		final s = stream;
+		Thread.create(() -> {
+			Sys.sleep(VISITOR_CLEANUP);
+			context.post(() -> {
+				if (stream != s || stream == null)
+					return;
+				for (item in items.copy())
+					if (isVisitor(item.jid) && resources(item.jid).length == 0)
+						removeVisitor(item.jid, "is gone");
+			});
+		});
 	}
 
 	override public function detach() {
 		super.detach();
 		requests.resize(0);
+		requestTexts.clear();
 	}
 
-	/** The name of a contact: the name in the roster, else its nickname, else the jid **/
+	/** The name of a contact: the name in the roster, else its nickname, else the jid; a visitor is marked **/
 	public function name(bare:String):String {
 		final item = find(bare);
-		return (item != null && item.name != null && item.name.length > 0) ? item.name : nicknames.get(bare) ?? bare;
+		final name = (item != null && item.name != null && item.name.length > 0) ? item.name : nicknames.get(bare) ?? bare;
+		return isVisitor(bare) ? '$name (visitor)' : name;
+	}
+
+	/** The bare jid is a visitor: its domain or the jid is in `visitors` **/
+	public function isVisitor(bare:String):Bool {
+		if (visitors.length == 0)
+			return false;
+		final b = bare.toLowerCase();
+		return visitors.contains(b) || visitors.contains(Jid.parseDomain(b));
 	}
 
 	/**
@@ -256,11 +305,28 @@ class Contacts extends Module {
 				presences.remove(p.from);
 				presenceEvent(p.from, presence, previous);
 				Term.notice(Term.avatarBefore(bare) + '$full is ${describe(presence)}');
+				// a visitor's last client left: the temporary contact is over
+				if (isVisitor(bare) && resources(bare).length == 0 && contains(bare))
+					removeVisitor(bare, "left");
 			case subscribe:
 				if (!requests.contains(bare))
 					requests.push(bare);
-				emit("subscribe", [bare], {from: p.from, name: who});
-				Term.notice('$who wants to see your presence: /contacts accept $bare or /contacts deny $bare');
+				// the nickname of the request (XEP-0172), the message (status text)
+				final nick = Nickname.getNickname((p : xmpp.Stanza));
+				if (nick != null)
+					change(nicknames, bare, nick);
+				final status:Null<String> = p.status;
+				final text = (status != null && status.length > 0) ? status : null;
+				if (text != null)
+					requestTexts.set(bare, text);
+				else
+					requestTexts.remove(bare);
+				final visitor = isVisitor(bare);
+				final who = name(bare);
+				emit("subscribe", [bare], {from: p.from, name: who, nickname: nick, text: text, visitor: visitor});
+				Term.notice((visitor ? '$who asks' : '$who wants to see your presence')
+					+ (text != null ? ': "$text"' : '')
+					+ ': /contacts accept $bare or /contacts deny $bare');
 			case subscribed:
 				subscription(p.from, "subscribed", '$who allowed you to see their presence');
 			case unsubscribed:
@@ -367,13 +433,15 @@ class Contacts extends Module {
 			_ -> out.info('updated ${item.jid}'));
 	}
 
-	function listRequests(out:Output)
-		out.data({requests: requests.copy()}, () -> {
-			if (requests.length == 0)
+	function listRequests(out:Output) {
+		final list = [for (jid in requests) {jid: jid, name: name(jid), text: requestTexts.get(jid), visitor: isVisitor(jid)}];
+		out.data({requests: list}, () -> {
+			if (list.length == 0)
 				out.info("no subscription requests");
-			for (jid in requests)
-				out.print('  $jid');
+			for (r in list)
+				out.print('  ${r.jid}' + (r.name != r.jid ? ' (${r.name})' : '') + (r.text != null ? ': "${r.text}"' : ''));
 		});
+	}
 
 	function accept(input:String, out:Output) {
 		final jid = resolve(input, out);
@@ -382,12 +450,46 @@ class Contacts extends Module {
 		final bare = Jid.parseBare(jid);
 		stream.approveSubscription(bare);
 		requests.remove(bare);
+		requestTexts.remove(bare);
 		// ask back, unless already subscribed to their presence
 		final item = find(bare);
 		final subscribed = item != null && (item.subscription == to || item.subscription == both || item.ask == "subscribe");
 		if (!subscribed)
 			stream.subscribePresence(bare);
+		if (isVisitor(bare)) {
+			// the nickname as roster name (other clients show it too); gone if they don't answer the subscription
+			final nick = nicknames.get(bare);
+			if (nick != null && (item == null || item.name == null || item.name.length == 0))
+				stream.addRosterItem(bare, nick, item?.groups ?? [], _ -> {});
+			if (!subscribed)
+				expectVisitor(bare);
+		}
 		out.info('$bare can see your presence' + (subscribed ? '' : ', asked to see theirs'));
+	}
+
+	/** Removes the visitor if they don't answer the subscription back within `VISITOR_TIMEOUT` seconds **/
+	function expectVisitor(bare:String) {
+		final s = stream;
+		Thread.create(() -> {
+			Sys.sleep(VISITOR_TIMEOUT);
+			context.post(() -> {
+				if (stream != s || stream == null)
+					return;
+				final item = find(bare);
+				if (item == null || item.subscription == to || item.subscription == both)
+					return;
+				removeVisitor(bare, "did not answer, gone");
+			});
+		});
+	}
+
+	/** Removes a visitor from the roster (ending the subscriptions), e.g. when they left **/
+	function removeVisitor(bare:String, why:String) {
+		Term.notice('${name(bare)} $why: removed');
+		stream.removeRosterItem(bare, res -> switch res {
+			case Error(e): Term.error('cannot remove $bare: ${Term.errorText(e)}');
+			case _:
+		});
 	}
 
 	function deny(input:String, out:Output) {
@@ -397,6 +499,7 @@ class Contacts extends Module {
 		final bare = Jid.parseBare(jid);
 		stream.cancelSubscription(bare);
 		requests.remove(bare);
+		requestTexts.remove(bare);
 		out.info('$bare can not see your presence');
 	}
 
