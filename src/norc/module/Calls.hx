@@ -380,6 +380,8 @@ class Calls extends Module {
 	function incoming(session:JingleSession) {
 		final media = [for (c in session.contents) JingleRtp.media(c)];
 		if (helper == null || media.contains(null)) {
+			if (helper == null)
+				Term.error('${contacts.name(Jid.parseBare(session.peer))} is calling: ${missingHelper()}');
 			session.terminate(unsupported_applications);
 			return;
 		}
@@ -450,9 +452,17 @@ class Calls extends Module {
 		final jmi = JingleMessage.parse(m);
 		if (jmi == null)
 			return false;
-		if (helper == null || m.from == null)
+		if (m.from == null)
 			return true;
 		final from = Jid.parseBare(m.from);
+		if (helper == null) {
+			// without the media program a proposal is refused, and said so (else the caller waits for nothing)
+			if (jmi.action == propose && !isOwn(from) && i.carbon == null) {
+				Term.error('${contacts.name(from)} is calling: ${missingHelper()}');
+				stream.send(JingleMessage.create(m.from, reject, jmi.id, {reason: {condition: unsupported_applications}}));
+			}
+			return true;
+		}
 		final c = calls.find(c -> c.jmi == jmi.id);
 		// another own client took or declined the call (its message to the caller, or to the own bare jid)
 		if (isOwn(from)) {
