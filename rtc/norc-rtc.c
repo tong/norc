@@ -79,6 +79,9 @@ static gboolean video_option(const char *name, const char *value,
   return parse_direction(value ? value : "both", &video, error);
 }
 
+/* --relay-only: only relayed (TURN) candidates, the peer never learns the own address */
+static gboolean relay_only = FALSE;
+
 static GOptionEntry options[] = {
     {"audio", 0, 0, G_OPTION_ARG_CALLBACK, audio_option,
      "Audio: both directions (default), send, receive or none", "DIRECTION"},
@@ -124,6 +127,8 @@ static GOptionEntry options[] = {
      "A window with the own video as sent (small, mirrored)", NULL},
     {"no-bundle", 0, G_OPTION_FLAG_REVERSE, G_OPTION_ARG_NONE, &bundle,
      "A connection for each media (the peer doesn't support BUNDLE)", NULL},
+    {"relay-only", 0, 0, G_OPTION_ARG_NONE, &relay_only,
+     "Only relayed candidates (TURN): the peer never learns the own address", NULL},
     {"test", 0, 0, G_OPTION_ARG_NONE, &test,
      "Test signals as sources, discard received media", NULL},
     {"record", 0, 0, G_OPTION_ARG_FILENAME, &record_option,
@@ -903,6 +908,11 @@ static gboolean start(void) {
   webrtc = gst_bin_get_by_name(GST_BIN(pipeline), "webrtc");
   if (stun != NULL)
     g_object_set(webrtc, "stun-server", stun, NULL);
+  if (relay_only) {
+    if (turn == NULL || *turn == NULL)
+      g_printerr("norc-rtc: --relay-only without a TURN server: the call can't connect\n");
+    g_object_set(webrtc, "ice-transport-policy", GST_WEBRTC_ICE_TRANSPORT_POLICY_RELAY, NULL);
+  }
   for (gchar **t = turn; t != NULL && *t != NULL; t++) {
     gboolean added = FALSE;
     g_signal_emit_by_name(webrtc, "add-turn-server", *t, &added);

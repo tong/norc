@@ -693,14 +693,26 @@ class Calls extends Module {
 		});
 	}
 
+	/** The call goes through the TURN relay only (`call_relay_only`): the peer never learns the own address **/
+	function relayOnly(c:Call):Bool
+		return switch account.callRelayOnly {
+			case "1": true;
+			case "visitors": contacts.isVisitor(Jid.parseBare(c.peer));
+			case _: false;
+		}
+
 	/** Starts the media of `c`: the caller creates an offer, the callee answers the offer of the peer **/
 	function start(c:Call)
 		servers(servers -> {
 			if (!calls.contains(c))
 				return;
+			final relay = relayOnly(c);
+			if (relay && !servers.contains("--turn"))
+				c.out.error('#${c.id} no TURN server for the relay-only call (call_relay_only): it can\'t connect');
 			try {
 				final options = servers.concat(settings())
 					.concat(c.bundle ? [] : ["--no-bundle"])
+					.concat(relay ? ["--relay-only"] : [])
 					.concat(['--audio=${c.audio}'])
 					.concat(c.video != none ? ['--video=${c.video}'] : [])
 					.concat(c.file != null ? ["--file", c.file] : [])
@@ -863,6 +875,10 @@ class Calls extends Module {
 		flushCandidates(c);
 	}
 
+	/** The content of `transport-info` carries a relayed (TURN) candidate only **/
+	static function isRelayed(info:JingleContent):Bool
+		return info.transport.elements.named("candidate").foreach(c -> c.get("type") == "relay");
+
 	/** Passes the description of the peer to the media, then the candidates of the peer received meanwhile **/
 	function describe(c:Call, type:String, sdp:String) {
 		c.rtc.send({type: "sdp", sdp_type: type, sdp: sdp});
@@ -876,10 +892,12 @@ class Calls extends Module {
 	function flushCandidates(c:Call) {
 		if (c.session == null || c.local.length == 0 || c.session.state == ended || (c.incoming && c.session.state == pending))
 			return;
+		// relay-only: norc-rtc gathers relayed candidates only, but nothing else leaves either way
+		final relay = relayOnly(c);
 		for (l in c.localCandidates) {
 			final content = c.local[l.mline];
 			final info = (content != null) ? JingleRtp.candidateContent(content, l.candidate) : null;
-			if (info != null)
+			if (info != null && (!relay || isRelayed(info)))
 				c.session.send(transport_info, [info]);
 		}
 		c.localCandidates.resize(0);

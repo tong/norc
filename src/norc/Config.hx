@@ -159,6 +159,12 @@ typedef Account = {
 	/** Calls can be recorded (`/call record`), `false` if not set **/
 	var ?callRecording:Bool;
 
+	/**
+		Calls through the TURN relay only, so the other side never learns the own address: `0` (default), `visitors`
+		(calls with visitors, see `visitors`), `1` (all calls); without a TURN server such calls can't connect
+	**/
+	var ?callRelayOnly:String;
+
 	/** PubSub service of shared documents (`/share`), discovered on the server if not set **/
 	var ?shareService:String;
 
@@ -219,6 +225,7 @@ private typedef Key = {
 	`call_self_view` (`0`: no window with the own video in video calls),
 	`call_video_size` (`1280x720`), `call_video_fps`, `call_video_bitrate`, `call_audio_bitrate` (kbit/s) of the sent media,
 	`call_recording` (`1`: calls can be recorded, `/call record`), `call_record_dir` (the recordings),
+	`call_relay_only` (`visitors`: calls with visitors only through the TURN relay, hiding your address; `1`: all calls),
 	`stun`, `turn` (servers for calls, `stun://host:port`, `turn://user:password@host:port`, several separated by `,`),
 	`autojoin_bookmarks` (`0`: don't join bookmarked rooms after the login),
 	`visitors` (domains or jids of visitors, e.g. `anon.example.org`: temporary contacts, removed when they leave),
@@ -296,6 +303,16 @@ class Config {
 		},
 		{name: "call_helper", get: a -> a.callHelper, set: (a, v) -> a.callHelper = v},
 		flag("call_recording", a -> a.callRecording, (a, v) -> a.callRecording = v),
+		{
+			name: "call_relay_only",
+			get: a -> a.callRelayOnly,
+			set: (a, v) -> a.callRelayOnly = switch v.trim().toLowerCase() {
+				case "0" | "false" | "no" | "off": "0";
+				case "1" | "true" | "yes" | "on": "1";
+				case "visitors": "visitors";
+				case _: throw 'invalid call_relay_only: $v (0, visitors, 1)';
+			}
+		},
 		{
 			name: "call_record_dir",
 			get: a -> (a.callRecordDir != null) ? contractHome(a.callRecordDir) : null,

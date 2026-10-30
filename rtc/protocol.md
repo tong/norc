@@ -6,7 +6,7 @@ between it and the peer.
 
 ```
 norc-rtc [--audio=DIRECTION] [--video[=DIRECTION]] [--stun URI] [--turn URI ...] [--audio-source PIPELINE] [--audio-file PATH] [--audio-sink PIPELINE]
-         [--video-source PIPELINE] [--video-sink PIPELINE] [--no-bundle] [--record PATH] [--test]
+         [--video-source PIPELINE] [--video-sink PIPELINE] [--no-bundle] [--relay-only] [--record PATH] [--test]
 ```
 
 | Option | |
@@ -25,6 +25,7 @@ norc-rtc [--audio=DIRECTION] [--video[=DIRECTION]] [--stun URI] [--turn URI ...]
 | `--video-source`, `--video-sink` | default `autovideosrc`, `autovideosink` |
 | `--self-view` | a small window with the own video as sent (mirrored, at 320 pixels wide), in the video sink; it stands still while the video is muted |
 | `--no-bundle` | a connection for each media, for peers without BUNDLE (e.g. Dino); by default all media share one |
+| `--relay-only` | only relayed candidates (through a `--turn` server): the peer never learns the own address, at the price of the relay's latency; without a TURN server the call can't connect |
 | `--record PATH` | record the call into a file (WebM), see [Recording](#recording) |
 | `--test` | test signals as sources (a tone, a test picture), received media is discarded |
 

@@ -60,6 +60,7 @@ in the account file), see [`/config`](commands):
 | `stun` | STUN server for calls (`stun://host:port`), in addition to those of your server (XEP-0215) | |
 | `turn` | TURN servers for calls (`turn://user:password@host:port`, `turns://…`, several separated by `,`), in addition to those of your server; needed when both sides are behind NAT | |
 | `call_helper` | program for the audio and video of calls, with its options (see `norc-rtc --help`) | `norc-rtc` |
+| `call_relay_only` | calls only through the TURN relay (your server's, XEP-0215, or `turn`), so the other side never learns your IP address: `visitors` (calls with visitors, see `visitors` above, e.g. from a summ page), `1` (all calls); the relay adds latency, and without a TURN server such calls can't connect | `0` |
 | `call_recording` | `1`: calls can be recorded (`/call record`); the other side is not told | `0` |
 | `call_record_dir` | directory of the recordings of calls, `~/` is the home directory | `$XDG_DATA_HOME/norc/calls` |
 | `chat_history` | messages shown when the chat mode starts with a contact (`/chat`): of the chatlog (`chatlog = 1`), else of the archive of the server (MAM); `0`: none | `10` |
