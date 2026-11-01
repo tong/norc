@@ -108,6 +108,7 @@ _norc() {
 				'check:what servers offer before the login, e.g. registration'
 				'ctl:run a command in the running norc (norc ctl --help)'
 				'complete:complete a norc ctl command (for shells)'
+				'update:update norc to the latest release'
 			)
 			_describe -t commands 'command' commands && ret=0
 			;;
@@ -124,6 +125,11 @@ _norc() {
 						'--xmpp-debug[print the XMPP stream]' \
 						'--no-color[disable colored output]' \
 						'*:domain:_hosts' && ret=0
+					;;
+				update)
+					_arguments \
+						'--check[only show whether there is a newer release]' \
+						'1::version (e.g. v0.9.1): ' && ret=0
 					;;
 				account)
 					if (( CURRENT == 2 )); then

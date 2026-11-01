@@ -22,6 +22,21 @@ installs the completion of zsh and bash (those installed) next to the programs, 
 system: the script tells what to install if it is missing (see [Calls](#calls-norc-rtc)); the Windows archive
 brings its own.
 
+### Update
+
+```sh
+norc update --check   # is there a newer release?
+norc update           # update to the latest release
+norc update v0.9.1    # a given release (also an older one)
+```
+
+`norc update` replaces norc, and norc-rtc next to it, with the archive of the release for your platform (Linux,
+macOS), verified with the checksums of the release, as `install.sh` does: it is tried (`norc --version`) before it
+replaces the old files. A running norc keeps the old version until it is restarted. It needs to write to norc's
+directory (`sudo norc update` if installed as root), and only updates release builds: not builds from the sources
+(development builds), nor packages of a distribution or Homebrew (built with `-D norc_no_update`: update them with the
+package manager). On Windows, download the zip of the release.
+
 ## Build
 
 norc is written in [haxe](https://haxe.org) and runs on [hashlink](https://hashlink.haxe.org).

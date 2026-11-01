@@ -13,6 +13,7 @@ private final USAGE = 'Usage: norc [options]
        norc check <domain...> [--json] [--timeout <s>]   what servers offer, e.g. registration (norc check)
        norc ctl <command> [args...]                      run a command in the running norc (norc ctl --help)
        norc complete [-a <account>] -- <words...>        complete the last word of a norc ctl command (for shells)
+       norc update [<version>] [--check]                 update norc to the latest release (norc update --help)
 
 Options:
   -a, --account <name>   account to use (config: <config dir>/accounts/<name>)
@@ -62,6 +63,7 @@ function main() {
 	var yes = false;
 	var purge = false;
 	var json = false;
+	var check = false;
 	var timeout:Null<String> = null;
 	var uri:Null<String> = null;
 	final positional = new Array<String>();
@@ -125,8 +127,13 @@ function main() {
 				timeout = value();
 			case "--purge":
 				purge = true;
+			case "--check":
+				check = true;
 			case "-v", "--version":
 				Sys.println('norc ${norc.Version.VERSION}');
+				Sys.exit(0);
+			case "-h", "--help" if (positional[0] == "update"):
+				Sys.println(norc.Update.USAGE);
 				Sys.exit(0);
 			case "-h", "--help":
 				Sys.println(USAGE);
@@ -139,7 +146,7 @@ function main() {
 		i++;
 	}
 	// the first start: write the default config (conf, example hooks)
-	if (positional[0] != "check") {
+	if (positional[0] != "check" && positional[0] != "update") {
 		final dir = Config.configDir();
 		final installed = try norc.Defaults.install(dir) catch (e) {
 			Term.error('cannot create $dir: $e');
@@ -187,9 +194,13 @@ function main() {
 				debug: debug,
 				port: port
 			}));
+		case ["update"] | ["update", _]:
+			Sys.exit(norc.Update.run(positional[1], check));
 		case _:
 			exit('unknown command: ${positional.join(" ")}\n\n$USAGE');
 	}
+	if (check)
+		exit('--check is an option of: norc update (norc update --help)');
 	if (save || yes || purge)
 		exit('--save, --yes and --purge are options of: norc account (norc account help)');
 	final account = try {

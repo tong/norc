@@ -115,7 +115,7 @@ _norc() {
 		if [[ $cur == -* ]]; then
 			COMPREPLY=($(compgen -W "$options" -- "$cur"))
 		else
-			COMPREPLY=($(compgen -W "account check ctl complete" -- "$cur"))
+			COMPREPLY=($(compgen -W "account check ctl complete update" -- "$cur"))
 		fi
 		return
 	fi
@@ -132,6 +132,12 @@ _norc() {
 		else
 			COMPREPLY=($(compgen -A hostname -- "$cur"))
 		fi
+		return
+	fi
+
+	# norc update [<version>] [--check]
+	if [[ $command == update ]]; then
+		[[ $cur == -* ]] && COMPREPLY=($(compgen -W "--check" -- "$cur"))
 		return
 	fi
 
