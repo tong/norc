@@ -15,7 +15,7 @@ using StringTools;
 	Ctrl-C included. Only on Unix terminals (`start` returns `null` otherwise); call `stop` to restore the terminal.
 
 	Keys: Tab (complete), ←/→, Home/End, Backspace/Delete, ↑/↓ history (the lines starting with the text typed), Ctrl-A/E (start/end), Ctrl-U/K (delete to start/end),
-	Ctrl-W (delete word), Ctrl-L (clear screen), Ctrl-C (clear the line; on an empty line `INTERRUPT`), Ctrl-D (quit on an empty line),
+	Ctrl-W (delete word), Ctrl-L (clear screen), Ctrl-C (clear the line; on an empty line `INTERRUPT`), Ctrl-D (quit on an empty line), Ctrl-Z (stop norc, `fg` continues it),
 	Shift-Enter or Alt-Enter (a line break: shown as `↵`, the line read has it as `\n`).
 
 	Terminals with the kitty keyboard protocol tell Shift-Enter from Enter once it is switched on: they report
@@ -408,6 +408,10 @@ class LineEditor {
 				completeWord();
 			case 12: // ctrl-l
 				clearScreen(false);
+			case 26: // ctrl-z: norc stopped until the shell continues it (fg)
+				mutex.release();
+				stopProcess();
+				mutex.acquire();
 			case 27: // escape sequence
 				final k = escape(input);
 				if (k != null) {
@@ -569,6 +573,36 @@ class LineEditor {
 		cursor -= n;
 		for (char in splitChars(insert))
 			line.insert(cursor++, char);
+	}
+
+	/**
+		Stops norc (Ctrl-Z), as the job control of the shell does without the editor's mode (no signals from keys): the
+		terminal restored, output held back, `SIGTSTP` to norc; once continued (`fg`), the editor's mode again.
+	**/
+	function stopProcess() {
+		mutex.acquire();
+		suspended = true;
+		if (active)
+			write("\r\x1B[K");
+		if (keyboard)
+			write(KEYBOARD_OFF);
+		mutex.release();
+		stty(saved);
+		Sys.command("kill", ["-TSTP", Std.string(Term.pid())]);
+		// continued: the terminal may have been resized meanwhile
+		stty("-icanon -echo -isig min 1 time 0");
+		if (keyboard)
+			write(KEYBOARD_ON);
+		mutex.acquire();
+		suspended = false;
+		final size = terminalSize();
+		if (size != null) {
+			screenRows = size.rows;
+			columns = size.columns;
+		}
+		mutex.release();
+		for (h in held.splice(0, held.length))
+			print(h.text, h.error);
 	}
 
 	/**

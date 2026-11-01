@@ -319,7 +319,7 @@ class Term {
 	}
 
 	@:hlNative("std", "sys_getpid")
-	static function pid():Int
+	public static function pid():Int
 		return 0;
 
 	/** Runs a program and returns its output, `null` if it can't be started or fails (exit code) **/
