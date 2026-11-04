@@ -34,7 +34,7 @@ norc update v0.9.1    # a given release (also an older one)
 macOS), verified with the checksums of the release, as `install.sh` does: it is tried (`norc --version`) before it
 replaces the old files. A running norc keeps the old version until it is restarted. It needs to write to norc's
 directory (`sudo norc update` if installed as root), and only updates release builds: not builds from the sources
-(development builds), nor packages of a distribution or Homebrew (built with `-D norc_no_update`: update them with the
+(development builds, `norc.hl`), nor packages of a distribution or Homebrew (built with `-D norc_no_update`: update them with the
 package manager). On Windows, download the zip of the release.
 
 ## Build

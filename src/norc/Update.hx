@@ -12,8 +12,9 @@ using StringTools;
 	the archive of the platform, verified with the checksums of the release (`SHA256SUMS`), unpacked with `tar` next
 	to norc, tried (`--version`), then renamed over the old files. A running norc keeps its file until it restarts.
 
-	Only release builds update themselves: not development builds (no tag, or uncommitted changes), nor builds of package managers
-	(`-D norc_no_update`), which update with their package. Not on Windows (its zip is a folder of DLLs and plugins).
+	Only release builds update themselves: not development builds (no tag, or uncommitted changes), not the bytecode
+	(`norc.hl`), nor builds of package managers (`-D norc_no_update`), which update with their package. Not on Windows
+	(its zip is a folder of DLLs and plugins).
 **/
 class Update {
 	public static final USAGE = 'Usage: norc update [<version>] [--check]
@@ -35,6 +36,9 @@ https://github.com/$REPO/releases, verified with the checksums of the release.
 		final current = Version.VERSION;
 		#if norc_no_update
 		return fail('norc $current was installed by a package manager: update it with that');
+		#elseif (hl && !hlc)
+		// Sys.programPath() is norc.hl: the binary of the release would be put over it
+		return fail('norc $current is HashLink bytecode (norc.hl), not a release: build it again (make), or install a release (install.sh)');
 		#else
 		if (!check && (Version.TAG == null || Version.DIRTY))
 			return fail('norc $current is a development build (no release): build it from the sources, or install a release (install.sh)');
@@ -44,7 +48,8 @@ https://github.com/$REPO/releases, verified with the checksums of the release.
 		final tag = try version ?? latestTag() catch (e) return fail('cannot find the latest release: $e');
 		final target = tag.substr(1);
 		if (latest && compare(target, current) <= 0) {
-			Term.info('norc $current is the latest release');
+			// a development build after the tag is not the release itself
+			Term.info(current == target ? 'norc $current is the latest release' : 'norc $target is the latest release (this is $current)');
 			return 0;
 		}
 		if (check) {
@@ -112,7 +117,9 @@ https://github.com/$REPO/releases, verified with the checksums of the release.
 		final out = try {
 			final p = new sys.io.Process(norc, ["--version"]);
 			final s = p.stdout.readAll().toString().trim();
-			p.exitCode() == 0 ? s : "";
+			final ok = p.exitCode() == 0;
+			p.close();
+			ok ? s : "";
 		} catch (e) "";
 		if (out != 'norc $version')
 			throw 'the new norc doesn\'t run here (norc --version: ${out == "" ? "failed" : out})';

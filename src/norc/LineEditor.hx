@@ -580,6 +580,8 @@ class LineEditor {
 		terminal restored, output held back, `SIGTSTP` to norc; once continued (`fg`), the editor's mode again.
 	**/
 	function stopProcess() {
+		// the shell writes to the screen meanwhile: the printed lines can't be found anymore
+		rows += screenRows;
 		mutex.acquire();
 		suspended = true;
 		if (active)

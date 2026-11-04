@@ -9,7 +9,7 @@ LIBHL_SRC := $(PCRE) src/gc $(addprefix src/std/,array buffer bytes cast date er
 	maps math obj random regexp socket string sys types ucs2 thread process track)
 
 .PHONY: all build from-c clean install install-completion uninstall omemo.hdll
-all: build
+all: norc.hl
 
 # Rebuild when sources or build settings change
 SRC := $(shell find src -name '*.hx') norc.hxml

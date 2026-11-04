@@ -116,3 +116,4 @@ alice> /chat
 | Ctrl-X Ctrl-E | edit the line in your text editor (`$VISUAL`, `$EDITOR`, else `vi`), see `/edit` |
 | Ctrl-C | clear the line, on an empty line: leave the chat mode, else quit |
 | Ctrl-D | quit on an empty line |
+| Ctrl-Z | stop norc (the shell's job control): `fg` continues it. Meanwhile it doesn't answer pings and the server may disconnect it, it reconnects then |
